@@ -1,0 +1,24 @@
+package controlsys
+
+import "errors"
+
+var (
+	ErrDimensionMismatch = errors.New("controlsys: dimension mismatch")
+	ErrSingularTransform = errors.New("controlsys: singular matrix in transformation")
+	ErrWrongDomain       = errors.New("controlsys: wrong time domain for operation")
+	ErrInvalidSampleTime = errors.New("controlsys: sample time must be positive")
+	ErrSingularDenom     = errors.New("controlsys: zero or near-zero leading denominator")
+	ErrOverflow          = errors.New("controlsys: coefficient overflow")
+
+	ErrNegativeDelay        = errors.New("controlsys: delay must be non-negative")
+	ErrFractionalDelay      = errors.New("controlsys: discrete delay must be non-negative integer")
+	ErrNonUniformInputDelay = errors.New("controlsys: AbsorbDelay requires uniform delay per input column")
+
+	ErrZeroInternalDelay = errors.New("controlsys: internal delay must be positive (tau=0 creates algebraic loop)")
+
+	ErrAlgebraicLoop = errors.New("controlsys: algebraic loop: (I-D22) singular")
+
+	ErrDomainMismatch  = errors.New("controlsys: systems must share the same time domain")
+	ErrFeedbackDelay   = errors.New("controlsys: feedback with delays not supported")
+	ErrMixedDelayTypes = errors.New("controlsys: InternalDelay and IODelay cannot coexist")
+)

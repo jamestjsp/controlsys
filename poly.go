@@ -1,0 +1,168 @@
+package controlsys
+
+import (
+	"errors"
+	"math"
+)
+
+// Poly represents a polynomial in descending power:
+//
+//	Poly{1, -3, 2} = s² - 3s + 2
+type Poly []float64
+
+func (p Poly) Degree() int { return len(p) - 1 }
+
+func (p Poly) Eval(s complex128) complex128 {
+	if len(p) == 0 {
+		return 0
+	}
+	result := complex(p[0], 0)
+	for i := 1; i < len(p); i++ {
+		result = result*s + complex(p[i], 0)
+	}
+	return result
+}
+
+func (p Poly) Mul(q Poly) Poly {
+	if len(p) == 0 || len(q) == 0 {
+		return Poly{}
+	}
+	r := make(Poly, len(p)+len(q)-1)
+	for i, pi := range p {
+		for j, qj := range q {
+			r[i+j] += pi * qj
+		}
+	}
+	return r
+}
+
+func (p Poly) Add(q Poly) Poly {
+	n := len(p)
+	m := len(q)
+	if n == 0 {
+		r := make(Poly, m)
+		copy(r, q)
+		return r
+	}
+	if m == 0 {
+		r := make(Poly, n)
+		copy(r, p)
+		return r
+	}
+	size := n
+	if m > size {
+		size = m
+	}
+	r := make(Poly, size)
+	for i := range r {
+		var pv, qv float64
+		if i >= size-n {
+			pv = p[i-(size-n)]
+		}
+		if i >= size-m {
+			qv = q[i-(size-m)]
+		}
+		r[i] = pv + qv
+	}
+	return r
+}
+
+func (p Poly) IsMonic() bool {
+	return len(p) > 0 && p[0] == 1
+}
+
+func (p Poly) Monic() (Poly, error) {
+	if len(p) == 0 {
+		return nil, errors.New("controlsys: monic of empty polynomial")
+	}
+	if p[0] == 0 {
+		return nil, errors.New("controlsys: monic with zero leading coefficient")
+	}
+	r := make(Poly, len(p))
+	inv := 1.0 / p[0]
+	for i, v := range p {
+		r[i] = v * inv
+	}
+	return r, nil
+}
+
+func (p Poly) Scale(s float64) Poly {
+	r := make(Poly, len(p))
+	for i, v := range p {
+		r[i] = v * s
+	}
+	return r
+}
+
+func (p Poly) MulTo(dst Poly, q Poly) Poly {
+	if len(p) == 0 || len(q) == 0 {
+		return dst[:0]
+	}
+	need := len(p) + len(q) - 1
+	if cap(dst) < need {
+		dst = make(Poly, need)
+	} else {
+		dst = dst[:need]
+	}
+	for i := range dst {
+		dst[i] = 0
+	}
+	for i, pi := range p {
+		for j, qj := range q {
+			dst[i+j] += pi * qj
+		}
+	}
+	return dst
+}
+
+func (p Poly) AddTo(dst Poly, q Poly) Poly {
+	n := len(p)
+	m := len(q)
+	if n == 0 && m == 0 {
+		return dst[:0]
+	}
+	size := n
+	if m > size {
+		size = m
+	}
+	if cap(dst) < size {
+		dst = make(Poly, size)
+	} else {
+		dst = dst[:size]
+	}
+	for i := range dst {
+		var pv, qv float64
+		if i >= size-n {
+			pv = p[i-(size-n)]
+		}
+		if i >= size-m {
+			qv = q[i-(size-m)]
+		}
+		dst[i] = pv + qv
+	}
+	return dst
+}
+
+func (p Poly) ScaleTo(dst Poly, s float64) Poly {
+	if cap(dst) < len(p) {
+		dst = make(Poly, len(p))
+	} else {
+		dst = dst[:len(p)]
+	}
+	for i, v := range p {
+		dst[i] = v * s
+	}
+	return dst
+}
+
+func (p Poly) Equal(q Poly, tol float64) bool {
+	if len(p) != len(q) {
+		return false
+	}
+	for i := range p {
+		if math.Abs(p[i]-q[i]) > tol {
+			return false
+		}
+	}
+	return true
+}

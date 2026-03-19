@@ -1,0 +1,2274 @@
+package controlsys
+
+import (
+	"fmt"
+	"math"
+
+	"gonum.org/v1/gonum/blas/blas64"
+	"gonum.org/v1/gonum/mat"
+)
+
+func NewWithDelay(A, B, C, D, delay *mat.Dense, dt float64) (*System, error) {
+	sys, err := New(A, B, C, D, dt)
+	if err != nil {
+		return nil, err
+	}
+	if delay != nil {
+		if err := sys.SetDelay(delay); err != nil {
+			return nil, err
+		}
+	}
+	return sys, nil
+}
+
+func (sys *System) SetDelay(delay *mat.Dense) error {
+	_, m, p := sys.Dims()
+	if err := validateDelay(delay, p, m, sys.Dt); err != nil {
+		return err
+	}
+	sys.Delay = delay
+	return nil
+}
+
+func (sys *System) SetInputDelay(delay []float64) error {
+	_, m, _ := sys.Dims()
+	if err := validateSliceDelay(delay, m, sys.Dt); err != nil {
+		return err
+	}
+	if delay == nil {
+		sys.InputDelay = nil
+		return nil
+	}
+	sys.InputDelay = make([]float64, len(delay))
+	copy(sys.InputDelay, delay)
+	return nil
+}
+
+func (sys *System) SetOutputDelay(delay []float64) error {
+	_, _, p := sys.Dims()
+	if err := validateSliceDelay(delay, p, sys.Dt); err != nil {
+		return err
+	}
+	if delay == nil {
+		sys.OutputDelay = nil
+		return nil
+	}
+	sys.OutputDelay = make([]float64, len(delay))
+	copy(sys.OutputDelay, delay)
+	return nil
+}
+
+func (sys *System) SetInternalDelay(tau []float64, B2, C2, D12, D21, D22 *mat.Dense) error {
+	if tau == nil {
+		sys.InternalDelay = nil
+		sys.B2 = nil
+		sys.C2 = nil
+		sys.D12 = nil
+		sys.D21 = nil
+		sys.D22 = nil
+		return nil
+	}
+	n, m, p := sys.Dims()
+	N := len(tau)
+	if err := validateSliceDelay(tau, N, sys.Dt); err != nil {
+		return err
+	}
+	for _, v := range tau {
+		if v == 0 {
+			return ErrZeroInternalDelay
+		}
+	}
+	if err := validateLFTDims(n, m, p, N, B2, C2, D12, D21, D22); err != nil {
+		return err
+	}
+	sys.InternalDelay = make([]float64, N)
+	copy(sys.InternalDelay, tau)
+	sys.B2 = mat.DenseCopyOf(B2)
+	sys.C2 = mat.DenseCopyOf(C2)
+	sys.D12 = mat.DenseCopyOf(D12)
+	sys.D21 = mat.DenseCopyOf(D21)
+	sys.D22 = mat.DenseCopyOf(D22)
+	return nil
+}
+
+func validateLFTDims(n, m, p, N int, B2, C2, D12, D21, D22 *mat.Dense) error {
+	check := func(name string, mat *mat.Dense, wantR, wantC int) error {
+		if mat == nil {
+			return fmt.Errorf("%s required when InternalDelay is set: %w", name, ErrDimensionMismatch)
+		}
+		r, c := mat.Dims()
+		if r != wantR || c != wantC {
+			return fmt.Errorf("%s %d×%d != %d×%d: %w", name, r, c, wantR, wantC, ErrDimensionMismatch)
+		}
+		return nil
+	}
+	if err := check("B2", B2, n, N); err != nil {
+		return err
+	}
+	if err := check("C2", C2, N, n); err != nil {
+		return err
+	}
+	if err := check("D12", D12, p, N); err != nil {
+		return err
+	}
+	if err := check("D21", D21, N, m); err != nil {
+		return err
+	}
+	return check("D22", D22, N, N)
+}
+
+func validateSliceDelay(delay []float64, expected int, dt float64) error {
+	if delay == nil {
+		return nil
+	}
+	if len(delay) != expected {
+		return fmt.Errorf("delay length %d != %d: %w", len(delay), expected, ErrDimensionMismatch)
+	}
+	for _, v := range delay {
+		if v < 0 {
+			return ErrNegativeDelay
+		}
+		if dt > 0 && math.Round(v) != v {
+			return ErrFractionalDelay
+		}
+	}
+	return nil
+}
+
+func (sys *System) TotalDelay() *mat.Dense {
+	_, m, p := sys.Dims()
+	if sys.Delay == nil && sys.InputDelay == nil && sys.OutputDelay == nil {
+		return nil
+	}
+	if p == 0 || m == 0 {
+		return nil
+	}
+	data := make([]float64, p*m)
+	if sys.Delay != nil {
+		raw := sys.Delay.RawMatrix()
+		for i := 0; i < p; i++ {
+			copy(data[i*m:i*m+m], raw.Data[i*raw.Stride:i*raw.Stride+m])
+		}
+	}
+	for j := 0; j < m; j++ {
+		if sys.InputDelay != nil {
+			for i := 0; i < p; i++ {
+				data[i*m+j] += sys.InputDelay[j]
+			}
+		}
+	}
+	if sys.OutputDelay != nil {
+		for i := 0; i < p; i++ {
+			for j := 0; j < m; j++ {
+				data[i*m+j] += sys.OutputDelay[i]
+			}
+		}
+	}
+	return mat.NewDense(p, m, data)
+}
+
+func (sys *System) HasDelay() bool {
+	if sys.HasInternalDelay() {
+		return true
+	}
+	if sys.Delay != nil {
+		raw := sys.Delay.RawMatrix()
+		for i := 0; i < raw.Rows; i++ {
+			for j := 0; j < raw.Cols; j++ {
+				if raw.Data[i*raw.Stride+j] != 0 {
+					return true
+				}
+			}
+		}
+	}
+	for _, v := range sys.InputDelay {
+		if v != 0 {
+			return true
+		}
+	}
+	for _, v := range sys.OutputDelay {
+		if v != 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func (sys *System) HasInternalDelay() bool {
+	for _, v := range sys.InternalDelay {
+		if v != 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func (tf *TransferFunc) HasDelay() bool {
+	if tf.Delay == nil {
+		return false
+	}
+	for _, row := range tf.Delay {
+		for _, v := range row {
+			if v != 0 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+type AbsorbScope string
+
+const (
+	AbsorbInput    AbsorbScope = "input"
+	AbsorbOutput   AbsorbScope = "output"
+	AbsorbIO       AbsorbScope = "io"
+	AbsorbInternal AbsorbScope = "internal"
+	AbsorbAll      AbsorbScope = "all"
+
+	DefaultPadeOrder = 5
+)
+
+func (sys *System) AbsorbDelay(scopes ...AbsorbScope) (*System, error) {
+	scope := AbsorbAll
+	if len(scopes) > 0 {
+		scope = scopes[0]
+	}
+
+	if scope == AbsorbInternal {
+		if !sys.HasInternalDelay() {
+			return sys.Copy(), nil
+		}
+		return absorbInternalDelay(sys)
+	}
+
+	if !sys.HasDelay() {
+		return sys.Copy(), nil
+	}
+
+	if sys.IsContinuous() {
+		switch scope {
+		case AbsorbInput:
+			return absorbInputDelayContinuous(sys, DefaultPadeOrder)
+		case AbsorbOutput:
+			return absorbOutputDelayContinuous(sys, DefaultPadeOrder)
+		case AbsorbIO:
+			return absorbIODelayContinuous(sys, DefaultPadeOrder)
+		default:
+			return sys.Pade(DefaultPadeOrder)
+		}
+	}
+
+	switch scope {
+	case AbsorbInput:
+		return absorbInputDelay(sys)
+	case AbsorbOutput:
+		return absorbOutputDelay(sys)
+	case AbsorbIO:
+		return absorbIODelay(sys)
+	default:
+		return absorbAllDelay(sys)
+	}
+}
+
+func absorbAllDelay(sys *System) (*System, error) {
+	cur := sys
+	var err error
+
+	if cur.HasInternalDelay() {
+		cur, err = absorbInternalDelay(cur)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if cur.Delay != nil {
+		cur, err = absorbIODelay(cur)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	hasInput := false
+	for _, v := range cur.InputDelay {
+		if v != 0 {
+			hasInput = true
+			break
+		}
+	}
+	if hasInput {
+		cur, err = absorbInputDelay(cur)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	hasOutput := false
+	for _, v := range cur.OutputDelay {
+		if v != 0 {
+			hasOutput = true
+			break
+		}
+	}
+	if hasOutput {
+		cur, err = absorbOutputDelay(cur)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return cur, nil
+}
+
+func absorbInternalDelay(sys *System) (*System, error) {
+	N := len(sys.InternalDelay)
+	if N == 0 {
+		return sys.Copy(), nil
+	}
+
+	if sys.IsDiscrete() {
+		return absorbInternalDiscreteDelay(sys)
+	}
+	return absorbInternalContinuousDelay(sys)
+}
+
+func absorbInternalDiscreteDelay(sys *System) (*System, error) {
+	H, tau := sys.GetDelayModel()
+	n, mN, pN := H.Dims()
+	N := len(tau)
+	m := mN - N
+	p := pN - N
+
+	delays := make([]int, N)
+	totalShift := 0
+	for j := 0; j < N; j++ {
+		delays[j] = int(math.Round(tau[j] / sys.Dt))
+		totalShift += delays[j]
+	}
+
+	if totalShift == 0 {
+		cp := sys.Copy()
+		cp.InternalDelay = nil
+		cp.B2 = nil
+		cp.C2 = nil
+		cp.D12 = nil
+		cp.D21 = nil
+		cp.D22 = nil
+		return cp, nil
+	}
+
+	nAug := n + totalShift
+
+	// H partitions:
+	// B = [B1 | B2], size n×(m+N)
+	// C = [C1; C2], size (p+N)×n
+	// D = [D11 D12; D21 D22], size (p+N)×(m+N)
+	hB := H.B.RawMatrix()
+	hC := H.C.RawMatrix()
+	hD := H.D.RawMatrix()
+
+	aAug := make([]float64, nAug*nAug)
+	bAug := make([]float64, nAug*m)
+	cAug := make([]float64, p*nAug)
+	dAug := make([]float64, p*m)
+
+	if n > 0 {
+		hA := H.A.RawMatrix()
+		for i := 0; i < n; i++ {
+			copy(aAug[i*nAug:i*nAug+n], hA.Data[i*hA.Stride:i*hA.Stride+n])
+		}
+		for i := 0; i < n; i++ {
+			copy(bAug[i*m:i*m+m], hB.Data[i*hB.Stride:i*hB.Stride+m])
+		}
+		for i := 0; i < p; i++ {
+			copy(cAug[i*nAug:i*nAug+n], hC.Data[i*hC.Stride:i*hC.Stride+n])
+		}
+	}
+
+	for i := 0; i < p; i++ {
+		copy(dAug[i*m:i*m+m], hD.Data[i*hD.Stride:i*hD.Stride+m])
+	}
+
+	// For each internal delay j, build a shift chain of length d_j.
+	// The chain connects z_j (output of H's lower block) to w_j (input to H's lower block).
+	//
+	// Shift chain states: s_1, s_2, ..., s_{d_j}
+	//   s_1[k+1] = z_j[k] = C2[j,:]*x[k] + D21[j,:]*u[k] + D22[j,:]*w[k]
+	//   s_t[k+1] = s_{t-1}[k]  for t=2..d_j
+	//   w_j[k] = s_{d_j}[k]
+	//
+	// Since w depends on shift states and D22 may couple delays,
+	// but each delay has tau_j > 0, so D22 only creates coupling through
+	// delayed paths. For the discrete case with d_j >= 1, w_j[k] reads
+	// from the last shift state, which was written at least 1 step ago.
+	// So the loop w -> D22*w is resolved by the shift registers, no algebraic loop.
+
+	offset := n
+	for j := 0; j < N; j++ {
+		dj := delays[j]
+		if dj == 0 {
+			continue
+		}
+
+		// s_1[k+1] = C2[j,:]*x[k] + D21[j,:]*u[k]
+		// (D22 contribution is handled after all shift chains are placed)
+		if n > 0 {
+			for col := 0; col < n; col++ {
+				aAug[offset*nAug+col] = hC.Data[(p+j)*hC.Stride+col]
+			}
+		}
+		for col := 0; col < m; col++ {
+			bAug[offset*m+col] = hD.Data[(p+j)*hD.Stride+col]
+		}
+
+		for t := 1; t < dj; t++ {
+			aAug[(offset+t)*nAug+(offset+t-1)] = 1
+		}
+
+		offset += dj
+	}
+
+	// Now handle the coupling: s_1[k+1] += D22[j,:]*w[k]
+	// where w_j[k] = s_{last_j}[k] (last state of chain j).
+	// Build a map from delay index to its last shift state column.
+	lastState := make([]int, N)
+	off := n
+	for j := 0; j < N; j++ {
+		lastState[j] = off + delays[j] - 1
+		off += delays[j]
+	}
+
+	off = n
+	for j := 0; j < N; j++ {
+		dj := delays[j]
+		if dj == 0 {
+			continue
+		}
+		for k := 0; k < N; k++ {
+			dk := delays[k]
+			if dk == 0 {
+				continue
+			}
+			d22val := hD.Data[(p+j)*hD.Stride+(m+k)]
+			if d22val != 0 {
+				aAug[off*nAug+lastState[k]] += d22val
+			}
+		}
+		off += dj
+	}
+
+	// B2 columns of H feed into original states: A[i,:] already has B2*w contribution
+	// through the shift chain last states.
+	// Original A_aug[i, lastState[j]] += B2[i,j] for the original state rows.
+	if n > 0 {
+		for i := 0; i < n; i++ {
+			for j := 0; j < N; j++ {
+				if delays[j] == 0 {
+					continue
+				}
+				b2val := hB.Data[i*hB.Stride+(m+j)]
+				if b2val != 0 {
+					aAug[i*nAug+lastState[j]] += b2val
+				}
+			}
+		}
+	}
+
+	// D12 columns: C_aug[i, lastState[j]] += D12[i,j]
+	for i := 0; i < p; i++ {
+		for j := 0; j < N; j++ {
+			if delays[j] == 0 {
+				continue
+			}
+			d12val := hD.Data[i*hD.Stride+(m+j)]
+			if d12val != 0 {
+				cAug[i*nAug+lastState[j]] += d12val
+			}
+		}
+	}
+
+	result, err := newNoCopy(
+		mat.NewDense(nAug, nAug, aAug),
+		mat.NewDense(nAug, m, bAug),
+		mat.NewDense(p, nAug, cAug),
+		mat.NewDense(p, m, dAug),
+		sys.Dt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	result.Delay = copyDelayOrNil(sys.Delay)
+	if sys.InputDelay != nil {
+		result.InputDelay = make([]float64, len(sys.InputDelay))
+		copy(result.InputDelay, sys.InputDelay)
+	}
+	if sys.OutputDelay != nil {
+		result.OutputDelay = make([]float64, len(sys.OutputDelay))
+		copy(result.OutputDelay, sys.OutputDelay)
+	}
+	return result, nil
+}
+
+func absorbInternalContinuousDelay(sys *System) (*System, error) {
+	H, tau := sys.GetDelayModel()
+	N := len(tau)
+	_, mN, pN := H.Dims()
+	m := mN - N
+	p := pN - N
+
+	// Build a block-diagonal Padé delay bank for all internal delays.
+	// delayBank is N-input, N-output.
+	var delayBank *System
+	for j := 0; j < N; j++ {
+		pade, err := PadeDelay(tau[j], 5)
+		if err != nil {
+			return nil, fmt.Errorf("absorbInternalDelay: Padé for delay %d: %w", j, err)
+		}
+		if delayBank == nil {
+			delayBank = pade
+		} else {
+			delayBank, err = Append(delayBank, pade)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	// H has inputs [u(m), w(N)] and outputs [y(p), z(N)].
+	// We need to close the loop: w = delayBank(z).
+	// Rearrange H so the feedback channels (z->w) are the "plant output -> controller input" path.
+	//
+	// Partition H into:
+	//   From u: columns 0..m-1
+	//   From w: columns m..m+N-1
+	//   To y: rows 0..p-1
+	//   To z: rows p..p+N-1
+	//
+	// Connect delayBank in feedback from z to w.
+	// This is: y = H11*u + H12*w, z = H21*u + H22*w, w = delayBank*z
+	// Substituting: w = delayBank*(H21*u + H22*w)
+	// => (I - delayBank*H22)*w = delayBank*H21*u
+	// This is a standard lower-LFT closure.
+	//
+	// Use Series(H, selector) + Feedback to close the loop,
+	// or build it directly. Simplest: use the lft_close approach.
+	//
+	// Approach: Create a plant that maps [u; w] -> [y; z], then
+	// close the z->w loop with delayBank using Feedback on the lower channels.
+
+	// Extract sub-systems from H.
+	// H11: u -> y (p×m), H12: w -> y (p×N), H21: u -> z (N×m), H22: w -> z (N×N)
+	// The full H already has state A with B=[B1|B2], C=[C1;C2], D=[D11 D12; D21 D22].
+	// We need to close the loop z->delayBank->w.
+
+	// Build the closed-loop using: result = lft(H, delayBank)
+	// Lower LFT: F_l(H, Delta) where Delta = delayBank
+	// y = H11*u + H12*delayBank*(I - H22*delayBank)^{-1}*H21*u
+	//
+	// Easiest implementation: use Series and Feedback on the partitioned system.
+
+	// Create "open" system from z to y,w using H structure, then connect delayBank.
+	// Actually, the cleanest approach: build the series delayBank -> H (lower channels),
+	// then extract the closed-loop transfer.
+
+	// Use the direct LFT closure formula via state-space.
+	// Let delayBank have state-space (Ad, Bd, Cd, Dd).
+	// Let H have state-space (Ah, [B1 B2], [C1; C2], [D11 D12; D21 D22]).
+	// Closed-loop: w = Dd*z + Cd*xd, xd' = Ad*xd + Bd*z
+	// z = C2*xh + D21*u + D22*w
+	// Substitute w into z equation:
+	// z = C2*xh + D21*u + D22*(Dd*z + Cd*xd)
+	// (I - D22*Dd)*z = C2*xh + D21*u + D22*Cd*xd
+	//
+	// Let E = (I - D22*Dd)^{-1}
+	// z = E*(C2*xh + D21*u + D22*Cd*xd)
+	//
+	// Then w = Dd*E*(C2*xh + D21*u + D22*Cd*xd) + Cd*xd
+	//
+	// Combined state [xh; xd]:
+	// xh' = Ah*xh + B1*u + B2*w
+	//      = Ah*xh + B1*u + B2*(Dd*E*(C2*xh + D21*u + D22*Cd*xd) + Cd*xd)
+	//      = (Ah + B2*Dd*E*C2)*xh + (B1 + B2*Dd*E*D21)*u + B2*(Dd*E*D22*Cd + Cd)*xd
+	//
+	// xd' = Ad*xd + Bd*z = Ad*xd + Bd*E*(C2*xh + D21*u + D22*Cd*xd)
+	//      = Bd*E*C2*xh + (Bd*E*D21)*u + (Ad + Bd*E*D22*Cd)*xd
+	//
+	// y = C1*xh + D11*u + D12*w
+	//   = C1*xh + D11*u + D12*(Dd*E*C2*xh + Dd*E*D21*u + (Dd*E*D22*Cd + Cd)*xd)
+	//   = (C1 + D12*Dd*E*C2)*xh + (D11 + D12*Dd*E*D21)*u + D12*(Dd*E*D22*Cd + Cd)*xd
+
+	nd, _, _ := delayBank.Dims()
+	nh := 0
+	if H.A != nil {
+		nh, _ = H.A.Dims()
+	}
+	nTotal := nh + nd
+
+	// Extract H partitions
+	B1 := mat.NewDense(nh, m, nil)
+	B2 := mat.NewDense(nh, N, nil)
+	C1 := mat.NewDense(p, nh, nil)
+	C2 := mat.NewDense(N, nh, nil)
+	D11 := mat.NewDense(p, m, nil)
+	D12 := mat.NewDense(p, N, nil)
+	D21 := mat.NewDense(N, m, nil)
+	D22 := mat.NewDense(N, N, nil)
+
+	if nh > 0 {
+		hbRaw := H.B.RawMatrix()
+		for i := 0; i < nh; i++ {
+			copy(B1.RawMatrix().Data[i*m:i*m+m], hbRaw.Data[i*hbRaw.Stride:i*hbRaw.Stride+m])
+			copy(B2.RawMatrix().Data[i*N:i*N+N], hbRaw.Data[i*hbRaw.Stride+m:i*hbRaw.Stride+mN])
+		}
+		hcRaw := H.C.RawMatrix()
+		for i := 0; i < p; i++ {
+			copy(C1.RawMatrix().Data[i*nh:i*nh+nh], hcRaw.Data[i*hcRaw.Stride:i*hcRaw.Stride+nh])
+		}
+		for i := 0; i < N; i++ {
+			copy(C2.RawMatrix().Data[i*nh:i*nh+nh], hcRaw.Data[(p+i)*hcRaw.Stride:(p+i)*hcRaw.Stride+nh])
+		}
+	}
+	hdRaw := H.D.RawMatrix()
+	for i := 0; i < p; i++ {
+		copy(D11.RawMatrix().Data[i*m:i*m+m], hdRaw.Data[i*hdRaw.Stride:i*hdRaw.Stride+m])
+		copy(D12.RawMatrix().Data[i*N:i*N+N], hdRaw.Data[i*hdRaw.Stride+m:i*hdRaw.Stride+mN])
+	}
+	for i := 0; i < N; i++ {
+		copy(D21.RawMatrix().Data[i*m:i*m+m], hdRaw.Data[(p+i)*hdRaw.Stride:(p+i)*hdRaw.Stride+m])
+		copy(D22.RawMatrix().Data[i*N:i*N+N], hdRaw.Data[(p+i)*hdRaw.Stride+m:(p+i)*hdRaw.Stride+mN])
+	}
+
+	// E = (I - D22*Dd)^{-1}
+	Dd := delayBank.D
+	D22Dd := mat.NewDense(N, N, nil)
+	D22Dd.Mul(D22, Dd)
+	E := mat.NewDense(N, N, nil)
+	eRaw := E.RawMatrix()
+	for i := 0; i < N; i++ {
+		eRaw.Data[i*eRaw.Stride+i] = 1
+	}
+	E.Sub(E, D22Dd)
+	var lu mat.LU
+	lu.Factorize(E)
+	D22Dd.Zero()
+	idRaw := D22Dd.RawMatrix()
+	for i := 0; i < N; i++ {
+		idRaw.Data[i*idRaw.Stride+i] = 1
+	}
+	Einv := mat.NewDense(N, N, nil)
+	if err := lu.SolveTo(Einv, false, D22Dd); err != nil {
+		return nil, fmt.Errorf("absorbInternalDelay: (I - D22*Dd) singular: %w", ErrSingularTransform)
+	}
+
+	// Precompute common products
+	DdE := mat.NewDense(N, N, nil)
+	DdE.Mul(Dd, Einv)
+
+	DdEC2 := mat.NewDense(N, nh, nil)
+	if nh > 0 {
+		DdEC2.Mul(DdE, C2)
+	}
+
+	DdED21 := mat.NewDense(N, m, nil)
+	DdED21.Mul(DdE, D21)
+
+	DdED22Cd := mat.NewDense(N, nd, nil)
+	if nd > 0 {
+		DdED22 := mat.NewDense(N, N, nil)
+		DdED22.Mul(DdE, D22)
+		DdED22Cd.Mul(DdED22, delayBank.C)
+	}
+
+	// Dd*E*D22*Cd + Cd
+	DdED22CdPlusCd := mat.NewDense(N, nd, nil)
+	if nd > 0 {
+		DdED22CdPlusCd.Add(DdED22Cd, delayBank.C)
+	}
+
+	BdE := mat.NewDense(nd, N, nil)
+	if nd > 0 {
+		BdE.Mul(delayBank.B, Einv)
+	}
+
+	// Build augmented state-space
+	Acl := mat.NewDense(nTotal, nTotal, nil)
+	Bcl := mat.NewDense(nTotal, m, nil)
+	Ccl := mat.NewDense(p, nTotal, nil)
+	Dcl := mat.NewDense(p, m, nil)
+
+	if nh > 0 {
+		// Acl[0:nh, 0:nh] = Ah + B2*DdE*C2
+		setBlock(Acl, 0, 0, H.A)
+		tmp := mat.NewDense(nh, nh, nil)
+		tmp.Mul(B2, DdEC2)
+		addBlock(Acl, 0, 0, tmp)
+
+		// Acl[0:nh, nh:] = B2*(DdE*D22*Cd + Cd)
+		if nd > 0 {
+			tmp2 := mat.NewDense(nh, nd, nil)
+			tmp2.Mul(B2, DdED22CdPlusCd)
+			setBlock(Acl, 0, nh, tmp2)
+		}
+
+		// Bcl[0:nh, :] = B1 + B2*DdE*D21
+		setBlock(Bcl, 0, 0, B1)
+		tmp3 := mat.NewDense(nh, m, nil)
+		tmp3.Mul(B2, DdED21)
+		addBlock(Bcl, 0, 0, tmp3)
+	}
+
+	if nd > 0 {
+		// Acl[nh:, 0:nh] = Bd*E*C2
+		if nh > 0 {
+			tmp := mat.NewDense(nd, nh, nil)
+			tmp.Mul(BdE, C2)
+			setBlock(Acl, nh, 0, tmp)
+		}
+
+		// Acl[nh:, nh:] = Ad + Bd*E*D22*Cd
+		setBlock(Acl, nh, nh, delayBank.A)
+		BdED22 := mat.NewDense(nd, N, nil)
+		BdED22.Mul(BdE, D22)
+		tmp2 := mat.NewDense(nd, nd, nil)
+		tmp2.Mul(BdED22, delayBank.C)
+		addBlock(Acl, nh, nh, tmp2)
+
+		// Bcl[nh:, :] = Bd*E*D21
+		tmp3 := mat.NewDense(nd, m, nil)
+		tmp3.Mul(BdE, D21)
+		setBlock(Bcl, nh, 0, tmp3)
+	}
+
+	// Ccl = (C1 + D12*DdE*C2, D12*(DdE*D22*Cd + Cd))
+	if nh > 0 {
+		setBlock(Ccl, 0, 0, C1)
+		tmp := mat.NewDense(p, nh, nil)
+		tmp.Mul(D12, DdEC2)
+		addBlock(Ccl, 0, 0, tmp)
+	}
+	if nd > 0 {
+		tmp := mat.NewDense(p, nd, nil)
+		tmp.Mul(D12, DdED22CdPlusCd)
+		setBlock(Ccl, 0, nh, tmp)
+	}
+
+	// Dcl = D11 + D12*DdE*D21
+	Dcl.Mul(D12, DdED21)
+	Dcl.Add(Dcl, D11)
+
+	result, err := newNoCopy(Acl, Bcl, Ccl, Dcl, sys.Dt)
+	if err != nil {
+		return nil, err
+	}
+	result.Delay = copyDelayOrNil(sys.Delay)
+	if sys.InputDelay != nil {
+		result.InputDelay = make([]float64, len(sys.InputDelay))
+		copy(result.InputDelay, sys.InputDelay)
+	}
+	if sys.OutputDelay != nil {
+		result.OutputDelay = make([]float64, len(sys.OutputDelay))
+		copy(result.OutputDelay, sys.OutputDelay)
+	}
+	return result, nil
+}
+
+func addBlock(dst *mat.Dense, r0, c0 int, src *mat.Dense) {
+	sr, sc := src.Dims()
+	if sr == 0 || sc == 0 {
+		return
+	}
+	dRaw := dst.RawMatrix()
+	sRaw := src.RawMatrix()
+	for i := 0; i < sr; i++ {
+		dRow := dRaw.Data[(r0+i)*dRaw.Stride+c0:]
+		sRow := sRaw.Data[i*sRaw.Stride:]
+		for j := 0; j < sc; j++ {
+			dRow[j] += sRow[j]
+		}
+	}
+}
+
+func absorbIODelay(sys *System) (*System, error) {
+	if sys.Delay == nil {
+		cp := sys.Copy()
+		return cp, nil
+	}
+
+	_, m, p := sys.Dims()
+
+	hasNonzero := false
+	raw := sys.Delay.RawMatrix()
+	for i := 0; i < p; i++ {
+		for j := 0; j < m; j++ {
+			if raw.Data[i*raw.Stride+j] != 0 {
+				hasNonzero = true
+				break
+			}
+		}
+		if hasNonzero {
+			break
+		}
+	}
+	if !hasNonzero {
+		cp := sys.Copy()
+		cp.Delay = nil
+		return cp, nil
+	}
+
+	inDel, outDel, residual := DecomposeIODelay(sys.Delay)
+
+	cp := sys.Copy()
+
+	if cp.InputDelay == nil {
+		cp.InputDelay = make([]float64, m)
+	}
+	for j := 0; j < m; j++ {
+		cp.InputDelay[j] += inDel[j]
+	}
+
+	if cp.OutputDelay == nil {
+		cp.OutputDelay = make([]float64, p)
+	}
+	for i := 0; i < p; i++ {
+		cp.OutputDelay[i] += outDel[i]
+	}
+
+	cp.Delay = residual
+
+	cur := cp
+	var err error
+
+	hasInput := false
+	for _, v := range cur.InputDelay {
+		if v != 0 {
+			hasInput = true
+			break
+		}
+	}
+	if hasInput {
+		cur, err = absorbInputDelay(cur)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	hasOutput := false
+	for _, v := range cur.OutputDelay {
+		if v != 0 {
+			hasOutput = true
+			break
+		}
+	}
+	if hasOutput {
+		cur, err = absorbOutputDelay(cur)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		cur.OutputDelay = nil
+	}
+
+	allZeroInput := true
+	for _, v := range cur.InputDelay {
+		if v != 0 {
+			allZeroInput = false
+			break
+		}
+	}
+	if allZeroInput {
+		cur.InputDelay = nil
+	}
+
+	return cur, nil
+}
+
+func absorbInputDelay(sys *System) (*System, error) {
+	if sys.IsContinuous() {
+		return nil, fmt.Errorf("absorbInputDelay: %w", ErrWrongDomain)
+	}
+
+	n, m, p := sys.Dims()
+
+	totalShift := 0
+	delays := make([]int, m)
+	if sys.InputDelay != nil {
+		for j, d := range sys.InputDelay {
+			delays[j] = int(math.Round(d))
+			totalShift += delays[j]
+		}
+	}
+
+	if totalShift == 0 {
+		cp := sys.Copy()
+		cp.InputDelay = nil
+		return cp, nil
+	}
+
+	nAug := n + totalShift
+
+	aAug := make([]float64, nAug*nAug)
+	bAug := make([]float64, nAug*m)
+	cAug := make([]float64, p*nAug)
+	dAug := make([]float64, p*m)
+
+	if n > 0 {
+		aRaw := sys.A.RawMatrix()
+		for i := 0; i < n; i++ {
+			copy(aAug[i*nAug:i*nAug+n], aRaw.Data[i*aRaw.Stride:i*aRaw.Stride+n])
+		}
+	}
+
+	if n > 0 {
+		cRaw := sys.C.RawMatrix()
+		for i := 0; i < p; i++ {
+			copy(cAug[i*nAug:i*nAug+n], cRaw.Data[i*cRaw.Stride:i*cRaw.Stride+n])
+		}
+	}
+
+	bRaw := sys.B.RawMatrix()
+	dRaw := sys.D.RawMatrix()
+
+	offset := n
+	for j := 0; j < m; j++ {
+		dj := delays[j]
+		if dj == 0 {
+			if n > 0 {
+				for i := 0; i < n; i++ {
+					bAug[i*m+j] = bRaw.Data[i*bRaw.Stride+j]
+				}
+			}
+			for i := 0; i < p; i++ {
+				dAug[i*m+j] = dRaw.Data[i*dRaw.Stride+j]
+			}
+			continue
+		}
+
+		bAug[offset*m+j] = 1
+
+		for t := 1; t < dj; t++ {
+			aAug[(offset+t)*nAug+(offset+t-1)] = 1
+		}
+
+		lastShift := offset + dj - 1
+		if n > 0 {
+			for i := 0; i < n; i++ {
+				aAug[i*nAug+lastShift] = bRaw.Data[i*bRaw.Stride+j]
+			}
+		}
+		for i := 0; i < p; i++ {
+			cAug[i*nAug+lastShift] += dRaw.Data[i*dRaw.Stride+j]
+		}
+
+		offset += dj
+	}
+
+	aAugMat := mat.NewDense(nAug, nAug, aAug)
+	bAugMat := mat.NewDense(nAug, m, bAug)
+	cAugMat := mat.NewDense(p, nAug, cAug)
+	dAugMat := mat.NewDense(p, m, dAug)
+
+	augSys, err := newNoCopy(aAugMat, bAugMat, cAugMat, dAugMat, sys.Dt)
+	if err != nil {
+		return nil, err
+	}
+	augSys.Delay = copyDelayOrNil(sys.Delay)
+	if sys.OutputDelay != nil {
+		augSys.OutputDelay = make([]float64, len(sys.OutputDelay))
+		copy(augSys.OutputDelay, sys.OutputDelay)
+	}
+	return augSys, nil
+}
+
+func absorbOutputDelay(sys *System) (*System, error) {
+	if sys.IsContinuous() {
+		return nil, fmt.Errorf("absorbOutputDelay: %w", ErrWrongDomain)
+	}
+
+	n, m, p := sys.Dims()
+
+	totalShift := 0
+	delays := make([]int, p)
+	if sys.OutputDelay != nil {
+		for i, d := range sys.OutputDelay {
+			delays[i] = int(math.Round(d))
+			totalShift += delays[i]
+		}
+	}
+
+	if totalShift == 0 {
+		cp := sys.Copy()
+		cp.OutputDelay = nil
+		return cp, nil
+	}
+
+	nAug := n + totalShift
+
+	aAug := make([]float64, nAug*nAug)
+	bAug := make([]float64, nAug*m)
+	cAug := make([]float64, p*nAug)
+	dAug := make([]float64, p*m)
+
+	if n > 0 {
+		aRaw := sys.A.RawMatrix()
+		for i := 0; i < n; i++ {
+			copy(aAug[i*nAug:i*nAug+n], aRaw.Data[i*aRaw.Stride:i*aRaw.Stride+n])
+		}
+
+		bRaw := sys.B.RawMatrix()
+		for i := 0; i < n; i++ {
+			copy(bAug[i*m:i*m+m], bRaw.Data[i*bRaw.Stride:i*bRaw.Stride+m])
+		}
+	}
+
+	cRaw := sys.C.RawMatrix()
+	dRaw := sys.D.RawMatrix()
+
+	offset := n
+	for i := 0; i < p; i++ {
+		di := delays[i]
+		if di == 0 {
+			if n > 0 {
+				copy(cAug[i*nAug:i*nAug+n], cRaw.Data[i*cRaw.Stride:i*cRaw.Stride+n])
+			}
+			copy(dAug[i*m:i*m+m], dRaw.Data[i*dRaw.Stride:i*dRaw.Stride+m])
+			continue
+		}
+
+		// w_1[k+1] = C[i,:]*x[k] + D[i,:]*u[k]
+		if n > 0 {
+			copy(aAug[offset*nAug:offset*nAug+n], cRaw.Data[i*cRaw.Stride:i*cRaw.Stride+n])
+		}
+		copy(bAug[offset*m:offset*m+m], dRaw.Data[i*dRaw.Stride:i*dRaw.Stride+m])
+
+		// w_{t+1}[k+1] = w_t[k]
+		for t := 1; t < di; t++ {
+			aAug[(offset+t)*nAug+(offset+t-1)] = 1
+		}
+
+		// y_i[k] = w_{d_i}[k]
+		cAug[i*nAug+(offset+di-1)] = 1
+
+		offset += di
+	}
+
+	aAugMat := mat.NewDense(nAug, nAug, aAug)
+	bAugMat := mat.NewDense(nAug, m, bAug)
+	cAugMat := mat.NewDense(p, nAug, cAug)
+	dAugMat := mat.NewDense(p, m, dAug)
+
+	augSys, err := newNoCopy(aAugMat, bAugMat, cAugMat, dAugMat, sys.Dt)
+	if err != nil {
+		return nil, err
+	}
+	augSys.Delay = copyDelayOrNil(sys.Delay)
+	if sys.InputDelay != nil {
+		augSys.InputDelay = make([]float64, len(sys.InputDelay))
+		copy(augSys.InputDelay, sys.InputDelay)
+	}
+	return augSys, nil
+}
+
+func buildPadeBank(delays []float64, order int) (*System, error) {
+	var bank *System
+	for _, tau := range delays {
+		if tau == 0 {
+			g, err := NewGain(mat.NewDense(1, 1, []float64{1}), 0)
+			if err != nil {
+				return nil, err
+			}
+			if bank == nil {
+				bank = g
+			} else {
+				bank, err = Append(bank, g)
+				if err != nil {
+					return nil, err
+				}
+			}
+			continue
+		}
+		pd, err := PadeDelay(tau, order)
+		if err != nil {
+			return nil, fmt.Errorf("buildPadeBank: %w", err)
+		}
+		if bank == nil {
+			bank = pd
+		} else {
+			bank, err = Append(bank, pd)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+	return bank, nil
+}
+
+func absorbInputDelayContinuous(sys *System, order int) (*System, error) {
+	hasInput := false
+	if sys.InputDelay != nil {
+		for _, v := range sys.InputDelay {
+			if v != 0 {
+				hasInput = true
+				break
+			}
+		}
+	}
+	if !hasInput {
+		cp := sys.Copy()
+		cp.InputDelay = nil
+		return cp, nil
+	}
+
+	bank, err := buildPadeBank(sys.InputDelay, order)
+	if err != nil {
+		return nil, fmt.Errorf("absorbInputDelayContinuous: %w", err)
+	}
+
+	plant := sys.Copy()
+	plant.InputDelay = nil
+
+	result, err := Series(bank, plant)
+	if err != nil {
+		return nil, fmt.Errorf("absorbInputDelayContinuous: %w", err)
+	}
+
+	return result, nil
+}
+
+func absorbOutputDelayContinuous(sys *System, order int) (*System, error) {
+	hasOutput := false
+	if sys.OutputDelay != nil {
+		for _, v := range sys.OutputDelay {
+			if v != 0 {
+				hasOutput = true
+				break
+			}
+		}
+	}
+	if !hasOutput {
+		cp := sys.Copy()
+		cp.OutputDelay = nil
+		return cp, nil
+	}
+
+	bank, err := buildPadeBank(sys.OutputDelay, order)
+	if err != nil {
+		return nil, fmt.Errorf("absorbOutputDelayContinuous: %w", err)
+	}
+
+	plant := sys.Copy()
+	plant.OutputDelay = nil
+
+	result, err := Series(plant, bank)
+	if err != nil {
+		return nil, fmt.Errorf("absorbOutputDelayContinuous: %w", err)
+	}
+
+	return result, nil
+}
+
+func absorbIODelayContinuous(sys *System, order int) (*System, error) {
+	if sys.Delay == nil {
+		cp := sys.Copy()
+		return cp, nil
+	}
+
+	_, m, p := sys.Dims()
+
+	hasNonzero := false
+	raw := sys.Delay.RawMatrix()
+	for i := 0; i < p; i++ {
+		for j := 0; j < m; j++ {
+			if raw.Data[i*raw.Stride+j] != 0 {
+				hasNonzero = true
+				break
+			}
+		}
+		if hasNonzero {
+			break
+		}
+	}
+	if !hasNonzero {
+		cp := sys.Copy()
+		cp.Delay = nil
+		return cp, nil
+	}
+
+	inDel, outDel, residual := DecomposeIODelay(sys.Delay)
+
+	cp := sys.Copy()
+
+	if cp.InputDelay == nil {
+		cp.InputDelay = make([]float64, m)
+	}
+	for j := 0; j < m; j++ {
+		cp.InputDelay[j] += inDel[j]
+	}
+
+	if cp.OutputDelay == nil {
+		cp.OutputDelay = make([]float64, p)
+	}
+	for i := 0; i < p; i++ {
+		cp.OutputDelay[i] += outDel[i]
+	}
+
+	cp.Delay = residual
+
+	cur := cp
+	var err error
+
+	hasInput := false
+	for _, v := range cur.InputDelay {
+		if v != 0 {
+			hasInput = true
+			break
+		}
+	}
+	if hasInput {
+		cur, err = absorbInputDelayContinuous(cur, order)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	hasOutput := false
+	for _, v := range cur.OutputDelay {
+		if v != 0 {
+			hasOutput = true
+			break
+		}
+	}
+	if hasOutput {
+		cur, err = absorbOutputDelayContinuous(cur, order)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		cur.OutputDelay = nil
+	}
+
+	allZeroInput := true
+	for _, v := range cur.InputDelay {
+		if v != 0 {
+			allZeroInput = false
+			break
+		}
+	}
+	if allZeroInput {
+		cur.InputDelay = nil
+	}
+
+	return cur, nil
+}
+
+func DecomposeIODelay(ioDelay *mat.Dense) (inputDelay, outputDelay []float64, residual *mat.Dense) {
+	raw := ioDelay.RawMatrix()
+	p, m := raw.Rows, raw.Cols
+
+	inI, outI, resI := decomposeInputFirst(raw.Data, raw.Stride, p, m)
+	inO, outO, resO := decomposeOutputFirst(raw.Data, raw.Stride, p, m)
+
+	sumI, sumO := 0.0, 0.0
+	for _, v := range resI {
+		sumI += v
+	}
+	for _, v := range resO {
+		sumO += v
+	}
+
+	if sumI <= sumO {
+		return inI, outI, mat.NewDense(p, m, resI)
+	}
+	return inO, outO, mat.NewDense(p, m, resO)
+}
+
+func decomposeInputFirst(data []float64, stride, p, m int) (inputDelay, outputDelay, residual []float64) {
+	inputDelay = make([]float64, m)
+	outputDelay = make([]float64, p)
+	residual = make([]float64, p*m)
+
+	for j := 0; j < m; j++ {
+		mn := math.Inf(1)
+		for i := 0; i < p; i++ {
+			if v := data[i*stride+j]; v < mn {
+				mn = v
+			}
+		}
+		inputDelay[j] = mn
+	}
+
+	for i := 0; i < p; i++ {
+		for j := 0; j < m; j++ {
+			residual[i*m+j] = data[i*stride+j] - inputDelay[j]
+		}
+	}
+
+	for i := 0; i < p; i++ {
+		mn := math.Inf(1)
+		for j := 0; j < m; j++ {
+			if v := residual[i*m+j]; v < mn {
+				mn = v
+			}
+		}
+		outputDelay[i] = mn
+	}
+
+	for i := 0; i < p; i++ {
+		for j := 0; j < m; j++ {
+			residual[i*m+j] -= outputDelay[i]
+		}
+	}
+
+	return
+}
+
+func decomposeOutputFirst(data []float64, stride, p, m int) (inputDelay, outputDelay, residual []float64) {
+	inputDelay = make([]float64, m)
+	outputDelay = make([]float64, p)
+	residual = make([]float64, p*m)
+
+	for i := 0; i < p; i++ {
+		mn := math.Inf(1)
+		for j := 0; j < m; j++ {
+			if v := data[i*stride+j]; v < mn {
+				mn = v
+			}
+		}
+		outputDelay[i] = mn
+	}
+
+	for i := 0; i < p; i++ {
+		for j := 0; j < m; j++ {
+			residual[i*m+j] = data[i*stride+j] - outputDelay[i]
+		}
+	}
+
+	for j := 0; j < m; j++ {
+		mn := math.Inf(1)
+		for i := 0; i < p; i++ {
+			if v := residual[i*m+j]; v < mn {
+				mn = v
+			}
+		}
+		inputDelay[j] = mn
+	}
+
+	for i := 0; i < p; i++ {
+		for j := 0; j < m; j++ {
+			residual[i*m+j] -= inputDelay[j]
+		}
+	}
+
+	return
+}
+
+type delayEntry struct {
+	row, col int
+	tau      float64
+	kind     byte // 'i' input, 'o' output, 'd' io-delay
+}
+
+// PullDelaysToLFT returns a copy of the system where all I/O delays (InputDelay,
+// OutputDelay, and IODelay) have been pulled into the InternalDelay (LFT) structure.
+func (sys *System) PullDelaysToLFT() (*System, error) {
+	if !sys.HasDelay() {
+		return sys.Copy(), nil
+	}
+
+	hasIODelay := sys.Delay != nil || sys.InputDelay != nil || sys.OutputDelay != nil
+	if !hasIODelay {
+		return sys.Copy(), nil
+	}
+
+	n, m, p := sys.Dims()
+	cur := sys.Copy()
+
+	if cur.Delay != nil {
+		inDel, outDel, residual := DecomposeIODelay(cur.Delay)
+		if cur.InputDelay == nil {
+			cur.InputDelay = make([]float64, m)
+		}
+		for j := 0; j < m; j++ {
+			cur.InputDelay[j] += inDel[j]
+		}
+		if cur.OutputDelay == nil {
+			cur.OutputDelay = make([]float64, p)
+		}
+		for i := 0; i < p; i++ {
+			cur.OutputDelay[i] += outDel[i]
+		}
+
+		hasResidual := false
+		if residual != nil {
+			raw := residual.RawMatrix()
+			for i := 0; i < raw.Rows; i++ {
+				for j := 0; j < raw.Cols; j++ {
+					if raw.Data[i*raw.Stride+j] != 0 {
+						hasResidual = true
+						break
+					}
+				}
+				if hasResidual {
+					break
+				}
+			}
+		}
+		if hasResidual {
+			// For n=0: merge InputDelay/OutputDelay into residual for overlapping
+			// channels to avoid parallel double-counting of feedthrough gains.
+			// For n>0: per-channel IODelay residuals approximate feedthrough-only
+			// delay (state path uses InputDelay/OutputDelay). Use newD in 'd'
+			// handler below to avoid double-counting feedthrough.
+			resRaw := residual.RawMatrix()
+			if n == 0 && cur.InputDelay != nil {
+				for j := 0; j < m; j++ {
+					if cur.InputDelay[j] == 0 {
+						continue
+					}
+					colHasRes := false
+					for i := 0; i < p; i++ {
+						if resRaw.Data[i*resRaw.Stride+j] > 0 {
+							colHasRes = true
+							break
+						}
+					}
+					if colHasRes {
+						for i := 0; i < p; i++ {
+							resRaw.Data[i*resRaw.Stride+j] += cur.InputDelay[j]
+						}
+						cur.InputDelay[j] = 0
+					}
+				}
+			}
+			if n == 0 && cur.OutputDelay != nil {
+				for i := 0; i < p; i++ {
+					if cur.OutputDelay[i] == 0 {
+						continue
+					}
+					rowHasRes := false
+					row := resRaw.Data[i*resRaw.Stride : i*resRaw.Stride+m]
+					for _, v := range row {
+						if v > 0 {
+							rowHasRes = true
+							break
+						}
+					}
+					if rowHasRes {
+						for j := range row {
+							row[j] += cur.OutputDelay[i]
+						}
+						cur.OutputDelay[i] = 0
+					}
+				}
+			}
+			cur.Delay = residual
+		} else {
+			cur.Delay = nil
+		}
+	}
+
+	var entries []delayEntry
+	if cur.InputDelay != nil {
+		for j, tau := range cur.InputDelay {
+			if tau > 0 {
+				entries = append(entries, delayEntry{0, j, tau, 'i'})
+			}
+		}
+	}
+	if cur.OutputDelay != nil {
+		for i, tau := range cur.OutputDelay {
+			if tau > 0 {
+				entries = append(entries, delayEntry{i, 0, tau, 'o'})
+			}
+		}
+	}
+	if cur.Delay != nil {
+		raw := cur.Delay.RawMatrix()
+		for i := 0; i < p; i++ {
+			for j := 0; j < m; j++ {
+				v := raw.Data[i*raw.Stride+j]
+				if v > 0 {
+					entries = append(entries, delayEntry{i, j, v, 'd'})
+				}
+			}
+		}
+	}
+
+	N0 := len(sys.InternalDelay)
+	Nnew := len(entries)
+	N := N0 + Nnew
+	taus := make([]float64, 0, N)
+	if N0 > 0 {
+		taus = append(taus, sys.InternalDelay...)
+	}
+	for _, e := range entries {
+		taus = append(taus, e.tau)
+	}
+
+	b2 := mat.NewDense(max(n, 1), N, nil)
+	c2 := mat.NewDense(N, max(n, 1), nil)
+	d12 := mat.NewDense(max(p, 1), N, nil)
+	d21 := mat.NewDense(N, max(m, 1), nil)
+	d22 := mat.NewDense(N, N, nil)
+
+	if N0 > 0 {
+		if n > 0 {
+			setBlock(b2, 0, 0, sys.B2)
+			setBlock(c2, 0, 0, sys.C2)
+		}
+		setBlock(d12, 0, 0, sys.D12)
+		setBlock(d21, 0, 0, sys.D21)
+		setBlock(d22, 0, 0, sys.D22)
+	}
+
+	newB := mat.DenseCopyOf(cur.B)
+	newC := mat.DenseCopyOf(cur.C)
+	newD := mat.DenseCopyOf(cur.D)
+
+	inputDelayIdx := make(map[int]int)
+	{
+		tmpIdx := N0
+		for _, e := range entries {
+			if e.kind == 'i' {
+				inputDelayIdx[e.col] = tmpIdx
+			}
+			tmpIdx++
+		}
+	}
+	outputDelayRows := make(map[int]bool)
+	for _, e := range entries {
+		if e.kind == 'o' {
+			outputDelayRows[e.row] = true
+		}
+	}
+
+	b2Raw := b2.RawMatrix()
+	c2Raw := c2.RawMatrix()
+	d12Raw := d12.RawMatrix()
+	d21Raw := d21.RawMatrix()
+	d22Raw := d22.RawMatrix()
+	newBRaw := newB.RawMatrix()
+	newCRaw := newC.RawMatrix()
+	newDRaw := newD.RawMatrix()
+	curBRaw := cur.B.RawMatrix()
+	curCRaw := cur.C.RawMatrix()
+	curDRaw := cur.D.RawMatrix()
+
+	idx := N0
+	for _, e := range entries {
+		switch e.kind {
+		case 'i':
+			j := e.col
+			if n > 0 {
+				for i := 0; i < n; i++ {
+					b2Raw.Data[i*b2Raw.Stride+idx] = curBRaw.Data[i*curBRaw.Stride+j]
+					newBRaw.Data[i*newBRaw.Stride+j] = 0
+				}
+			}
+			for i := 0; i < p; i++ {
+				dVal := curDRaw.Data[i*curDRaw.Stride+j]
+				if !outputDelayRows[i] {
+					d12Raw.Data[i*d12Raw.Stride+idx] = dVal
+				}
+				newDRaw.Data[i*newDRaw.Stride+j] = 0
+			}
+			d21Raw.Data[idx*d21Raw.Stride+j] = 1
+
+		case 'o':
+			i := e.row
+			if n > 0 {
+				for j := 0; j < n; j++ {
+					c2Raw.Data[idx*c2Raw.Stride+j] = curCRaw.Data[i*curCRaw.Stride+j]
+					newCRaw.Data[i*newCRaw.Stride+j] = 0
+				}
+			}
+			for j := 0; j < m; j++ {
+				dVal := curDRaw.Data[i*curDRaw.Stride+j]
+				if inIdx, ok := inputDelayIdx[j]; ok {
+					d22Raw.Data[idx*d22Raw.Stride+inIdx] = dVal
+				} else {
+					d21Raw.Data[idx*d21Raw.Stride+j] = dVal
+				}
+				newDRaw.Data[i*newDRaw.Stride+j] = 0
+			}
+			d12Raw.Data[i*d12Raw.Stride+idx] = 1
+
+		case 'd':
+			i, j := e.row, e.col
+			d21Raw.Data[idx*d21Raw.Stride+j] = 1
+			d12Raw.Data[i*d12Raw.Stride+idx] = newDRaw.Data[i*newDRaw.Stride+j]
+			newDRaw.Data[i*newDRaw.Stride+j] = 0
+		}
+		idx++
+	}
+
+	if n == 0 {
+		b2 = &mat.Dense{}
+		c2 = &mat.Dense{}
+	} else {
+		b2 = resizeDense(b2, n, N)
+		c2 = resizeDense(c2, N, n)
+	}
+	d12 = resizeDense(d12, p, N)
+	d21 = resizeDense(d21, N, m)
+	d22 = resizeDense(d22, N, N)
+
+	res := &System{
+		A:             denseCopy(cur.A),
+		B:             newB,
+		C:             newC,
+		D:             newD,
+		Dt:            cur.Dt,
+		InternalDelay: taus,
+		B2:            b2,
+		C2:            c2,
+		D12:           d12,
+		D21:           d21,
+		D22:           d22,
+	}
+	return res, nil
+}
+
+func (sys *System) GetDelayModel() (H *System, tau []float64) {
+	if !sys.HasDelay() && !sys.HasInternalDelay() {
+		return sys.Copy(), nil
+	}
+
+	// Pull all delays into LFT
+	lft, err := sys.PullDelaysToLFT()
+	if err != nil {
+		// If PullDelaysToLFT fails (e.g. non-decomposable residual), 
+		// we fallback to just extracting InternalDelay if it exists,
+		// or return the original system.
+		if len(sys.InternalDelay) == 0 {
+			return sys.Copy(), nil
+		}
+		// Extract existing InternalDelay only
+		n, m, p := sys.Dims()
+		N := len(sys.InternalDelay)
+		tau = make([]float64, N)
+		copy(tau, sys.InternalDelay)
+
+		H = &System{
+			A:  denseCopy(sys.A),
+			B:  mat.NewDense(n, m+N, nil),
+			C:  mat.NewDense(p+N, n, nil),
+			D:  mat.NewDense(p+N, m+N, nil),
+			Dt: sys.Dt,
+		}
+		setBlock(H.B, 0, 0, sys.B)
+		setBlock(H.B, 0, m, sys.B2)
+		setBlock(H.C, 0, 0, sys.C)
+		setBlock(H.C, p, 0, sys.C2)
+		setBlock(H.D, 0, 0, sys.D)
+		setBlock(H.D, 0, m, sys.D12)
+		setBlock(H.D, p, 0, sys.D21)
+		setBlock(H.D, p, m, sys.D22)
+		return H, tau
+	}
+
+	// Get augmented model H from LFT structure
+	n, m, p := lft.Dims()
+	N := len(lft.InternalDelay)
+	tau = make([]float64, N)
+	copy(tau, lft.InternalDelay)
+
+	H = &System{
+		A:  denseCopy(lft.A),
+		B:  mat.NewDense(n, m+N, nil),
+		C:  mat.NewDense(p+N, n, nil),
+		D:  mat.NewDense(p+N, m+N, nil),
+		Dt: lft.Dt,
+	}
+	if n > 0 {
+		setBlock(H.B, 0, 0, lft.B)
+		setBlock(H.B, 0, m, lft.B2)
+		setBlock(H.C, 0, 0, lft.C)
+		setBlock(H.C, p, 0, lft.C2)
+	}
+	setBlock(H.D, 0, 0, lft.D)
+	setBlock(H.D, 0, m, lft.D12)
+	setBlock(H.D, p, 0, lft.D21)
+	setBlock(H.D, p, m, lft.D22)
+
+	return H, tau
+}
+
+func SetDelayModel(H *System, tau []float64) (*System, error) {
+	N := len(tau)
+	if N == 0 {
+		return H.Copy(), nil
+	}
+
+	for _, v := range tau {
+		if v < 0 {
+			return nil, ErrNegativeDelay
+		}
+		if v == 0 {
+			return nil, ErrZeroInternalDelay
+		}
+	}
+
+	n, mN, pN := H.Dims()
+	if mN < N || pN < N {
+		return nil, fmt.Errorf("H dimensions %d×%d too small for %d internal delays: %w",
+			pN, mN, N, ErrDimensionMismatch)
+	}
+	m := mN - N
+	p := pN - N
+
+	var aMat *mat.Dense
+	if n > 0 {
+		aMat = mat.DenseCopyOf(H.A)
+	} else {
+		aMat = &mat.Dense{}
+	}
+
+	bData := make([]float64, n*m)
+	b2Data := make([]float64, n*N)
+	cData := make([]float64, p*n)
+	c2Data := make([]float64, N*n)
+	dData := make([]float64, p*m)
+	d12Data := make([]float64, p*N)
+	d21Data := make([]float64, N*m)
+	d22Data := make([]float64, N*N)
+
+	if n > 0 {
+		hbRaw := H.B.RawMatrix()
+		for i := 0; i < n; i++ {
+			copy(bData[i*m:i*m+m], hbRaw.Data[i*hbRaw.Stride:i*hbRaw.Stride+m])
+			copy(b2Data[i*N:i*N+N], hbRaw.Data[i*hbRaw.Stride+m:i*hbRaw.Stride+mN])
+		}
+
+		hcRaw := H.C.RawMatrix()
+		for i := 0; i < p; i++ {
+			copy(cData[i*n:i*n+n], hcRaw.Data[i*hcRaw.Stride:i*hcRaw.Stride+n])
+		}
+		for i := 0; i < N; i++ {
+			copy(c2Data[i*n:i*n+n], hcRaw.Data[(p+i)*hcRaw.Stride:(p+i)*hcRaw.Stride+n])
+		}
+	}
+
+	hdRaw := H.D.RawMatrix()
+	for i := 0; i < p; i++ {
+		copy(dData[i*m:i*m+m], hdRaw.Data[i*hdRaw.Stride:i*hdRaw.Stride+m])
+		copy(d12Data[i*N:i*N+N], hdRaw.Data[i*hdRaw.Stride+m:i*hdRaw.Stride+mN])
+	}
+	for i := 0; i < N; i++ {
+		copy(d21Data[i*m:i*m+m], hdRaw.Data[(p+i)*hdRaw.Stride:(p+i)*hdRaw.Stride+m])
+		copy(d22Data[i*N:i*N+N], hdRaw.Data[(p+i)*hdRaw.Stride+m:(p+i)*hdRaw.Stride+mN])
+	}
+
+	tauCopy := make([]float64, N)
+	copy(tauCopy, tau)
+
+	var bMat, cMat, dMat *mat.Dense
+	if n > 0 && m > 0 {
+		bMat = mat.NewDense(n, m, bData)
+	} else if n > 0 {
+		bMat = newDense(n, m)
+	} else {
+		bMat = &mat.Dense{}
+	}
+	if p > 0 && n > 0 {
+		cMat = mat.NewDense(p, n, cData)
+	} else if p > 0 {
+		cMat = newDense(p, n)
+	} else {
+		cMat = &mat.Dense{}
+	}
+	if p > 0 && m > 0 {
+		dMat = mat.NewDense(p, m, dData)
+	} else {
+		dMat = newDense(p, m)
+	}
+
+	sys := &System{
+		A:             aMat,
+		B:             bMat,
+		C:             cMat,
+		D:             dMat,
+		Dt:            H.Dt,
+		InternalDelay: tauCopy,
+		B2:            mat.NewDense(n, N, b2Data),
+		C2:            mat.NewDense(N, n, c2Data),
+		D12:           mat.NewDense(p, N, d12Data),
+		D21:           mat.NewDense(N, m, d21Data),
+		D22:           mat.NewDense(N, N, d22Data),
+	}
+	return sys, nil
+}
+
+func copyDelayOrNil(m *mat.Dense) *mat.Dense {
+	if m == nil {
+		return nil
+	}
+	r, c := m.Dims()
+	if r == 0 || c == 0 {
+		return nil
+	}
+	return mat.DenseCopyOf(m)
+}
+
+func validateDelay(delay *mat.Dense, p, m int, dt float64) error {
+	if delay == nil {
+		return nil
+	}
+	dr, dc := delay.Dims()
+	if dr != p || dc != m {
+		return fmt.Errorf("delay %d×%d != p×m %d×%d: %w", dr, dc, p, m, ErrDimensionMismatch)
+	}
+	raw := delay.RawMatrix()
+	for i := 0; i < dr; i++ {
+		for j := 0; j < dc; j++ {
+			v := raw.Data[i*raw.Stride+j]
+			if v < 0 {
+				return ErrNegativeDelay
+			}
+			if dt > 0 {
+				if math.Round(v) != v {
+					return ErrFractionalDelay
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func convertDelayToDiscrete(delay *mat.Dense, dt float64) (*mat.Dense, error) {
+	r, c := delay.Dims()
+	out := mat.NewDense(r, c, nil)
+	inRaw := delay.RawMatrix()
+	outRaw := out.RawMatrix()
+	for i := 0; i < r; i++ {
+		for j := 0; j < c; j++ {
+			tau := inRaw.Data[i*inRaw.Stride+j]
+			samples := tau / dt
+			rounded := math.Round(samples)
+			if math.Abs(samples-rounded) > 1e-9 {
+				return nil, fmt.Errorf("delay[%d][%d]=%g not integer multiple of dt=%g: %w",
+					i, j, tau, dt, ErrFractionalDelay)
+			}
+			outRaw.Data[i*outRaw.Stride+j] = rounded
+		}
+	}
+	return out, nil
+}
+
+func convertDelayToContinuous(delay *mat.Dense, dt float64) *mat.Dense {
+	r, c := delay.Dims()
+	out := mat.NewDense(r, c, nil)
+	inRaw := delay.RawMatrix()
+	outRaw := out.RawMatrix()
+	for i := 0; i < r; i++ {
+		for j := 0; j < c; j++ {
+			outRaw.Data[i*outRaw.Stride+j] = inRaw.Data[i*inRaw.Stride+j] * dt
+		}
+	}
+	return out
+}
+
+func denseToSlice2D(m *mat.Dense) [][]float64 {
+	if m == nil {
+		return nil
+	}
+	raw := m.RawMatrix()
+	r, c := raw.Rows, raw.Cols
+	out := make([][]float64, r)
+	for i := 0; i < r; i++ {
+		out[i] = make([]float64, c)
+		copy(out[i], raw.Data[i*raw.Stride:i*raw.Stride+c])
+	}
+	return out
+}
+
+func slice2DToDense(s [][]float64) *mat.Dense {
+	if s == nil {
+		return nil
+	}
+	p := len(s)
+	if p == 0 {
+		return nil
+	}
+	m := len(s[0])
+	data := make([]float64, p*m)
+	for i := 0; i < p; i++ {
+		copy(data[i*m:], s[i][:m])
+	}
+	return mat.NewDense(p, m, data)
+}
+
+func (sys *System) MinimalLFT() (*System, error) {
+	if !sys.HasInternalDelay() {
+		return sys.Copy(), nil
+	}
+
+	N := len(sys.InternalDelay)
+	n, m, p := sys.Dims()
+
+	keep := make([]int, 0, N)
+	for j := 0; j < N; j++ {
+		if !isZeroGainChannel(sys, j, n, m, p, N) {
+			keep = append(keep, j)
+		}
+	}
+
+	if len(keep) == 0 {
+		result := sys.Copy()
+		result.InternalDelay = nil
+		result.B2 = nil
+		result.C2 = nil
+		result.D12 = nil
+		result.D21 = nil
+		result.D22 = nil
+		return result, nil
+	}
+
+	cur := sys
+	if len(keep) < N {
+		cur = lftSelectChannels(sys, keep, n, m, p)
+	}
+
+	merged := lftMergeProportional(cur, n, m, p)
+
+	if merged == cur && cur == sys {
+		return sys.Copy(), nil
+	}
+	if merged == cur {
+		return cur, nil
+	}
+	return merged, nil
+}
+
+func lftSelectChannels(sys *System, keep []int, n, m, p int) *System {
+	Nk := len(keep)
+	newTau := make([]float64, Nk)
+	newB2 := mat.NewDense(n, Nk, nil)
+	newC2 := mat.NewDense(Nk, n, nil)
+	newD12 := mat.NewDense(p, Nk, nil)
+	newD21 := mat.NewDense(Nk, m, nil)
+	newD22 := mat.NewDense(Nk, Nk, nil)
+
+	b2Raw := sys.B2.RawMatrix()
+	c2Raw := sys.C2.RawMatrix()
+	d12Raw := sys.D12.RawMatrix()
+	d21Raw := sys.D21.RawMatrix()
+	d22Raw := sys.D22.RawMatrix()
+	nb2 := newB2.RawMatrix()
+	nc2 := newC2.RawMatrix()
+	nd12 := newD12.RawMatrix()
+	nd21 := newD21.RawMatrix()
+	nd22 := newD22.RawMatrix()
+
+	for ki, j := range keep {
+		newTau[ki] = sys.InternalDelay[j]
+		for i := 0; i < n; i++ {
+			nb2.Data[i*nb2.Stride+ki] = b2Raw.Data[i*b2Raw.Stride+j]
+		}
+		for i := 0; i < n; i++ {
+			nc2.Data[ki*nc2.Stride+i] = c2Raw.Data[j*c2Raw.Stride+i]
+		}
+		for i := 0; i < p; i++ {
+			nd12.Data[i*nd12.Stride+ki] = d12Raw.Data[i*d12Raw.Stride+j]
+		}
+		for i := 0; i < m; i++ {
+			nd21.Data[ki*nd21.Stride+i] = d21Raw.Data[j*d21Raw.Stride+i]
+		}
+		for kj, jj := range keep {
+			nd22.Data[ki*nd22.Stride+kj] = d22Raw.Data[j*d22Raw.Stride+jj]
+		}
+	}
+
+	result := sys.Copy()
+	result.InternalDelay = newTau
+	result.B2 = newB2
+	result.C2 = newC2
+	result.D12 = newD12
+	result.D21 = newD21
+	result.D22 = newD22
+	return result
+}
+
+func lftMergeProportional(sys *System, n, m, p int) *System {
+	const tol = 1e-12
+	N := len(sys.InternalDelay)
+	if N < 2 {
+		return sys
+	}
+
+	c2Raw := sys.C2.RawMatrix()
+	d21Raw := sys.D21.RawMatrix()
+	d22Raw := sys.D22.RawMatrix()
+
+	merged := make([]int, N)
+	for i := range merged {
+		merged[i] = i
+	}
+	alpha := make([]float64, N)
+	for i := range alpha {
+		alpha[i] = 1
+	}
+
+	for i := 0; i < N; i++ {
+		if merged[i] != i {
+			continue
+		}
+		for j := i + 1; j < N; j++ {
+			if merged[j] != j {
+				continue
+			}
+			if math.Abs(sys.InternalDelay[i]-sys.InternalDelay[j]) > tol {
+				continue
+			}
+			if !d22ZeroCrossCoupling(d22Raw, i, j, N, tol) {
+				continue
+			}
+			a, ok := proportionalRows(c2Raw, d21Raw, i, j, n, m, tol)
+			if !ok {
+				continue
+			}
+			merged[j] = i
+			alpha[j] = a
+		}
+	}
+
+	changed := false
+	for i := 0; i < N; i++ {
+		if merged[i] != i {
+			changed = true
+			break
+		}
+	}
+	if !changed {
+		return sys
+	}
+
+	reps := make([]int, 0, N)
+	for i := 0; i < N; i++ {
+		if merged[i] == i {
+			reps = append(reps, i)
+		}
+	}
+	Nk := len(reps)
+
+	repIdx := make(map[int]int, Nk)
+	for ki, r := range reps {
+		repIdx[r] = ki
+	}
+
+	b2Raw := sys.B2.RawMatrix()
+	d12Raw := sys.D12.RawMatrix()
+
+	newTau := make([]float64, Nk)
+	newB2 := mat.NewDense(n, Nk, nil)
+	newC2 := mat.NewDense(Nk, n, nil)
+	newD12 := mat.NewDense(p, Nk, nil)
+	newD21 := mat.NewDense(Nk, m, nil)
+	newD22 := mat.NewDense(Nk, Nk, nil)
+	nb2 := newB2.RawMatrix()
+	nc2 := newC2.RawMatrix()
+	nd12 := newD12.RawMatrix()
+	nd21 := newD21.RawMatrix()
+	nd22 := newD22.RawMatrix()
+
+	for ki, r := range reps {
+		newTau[ki] = sys.InternalDelay[r]
+		for i := 0; i < n; i++ {
+			nc2.Data[ki*nc2.Stride+i] = c2Raw.Data[r*c2Raw.Stride+i]
+		}
+		for i := 0; i < m; i++ {
+			nd21.Data[ki*nd21.Stride+i] = d21Raw.Data[r*d21Raw.Stride+i]
+		}
+	}
+
+	for j := 0; j < N; j++ {
+		r := merged[j]
+		ki := repIdx[r]
+		a := alpha[j]
+		for i := 0; i < n; i++ {
+			nb2.Data[i*nb2.Stride+ki] += a * b2Raw.Data[i*b2Raw.Stride+j]
+		}
+		for i := 0; i < p; i++ {
+			nd12.Data[i*nd12.Stride+ki] += a * d12Raw.Data[i*d12Raw.Stride+j]
+		}
+	}
+
+	for ki, ri := range reps {
+		for kj, rj := range reps {
+			nd22.Data[ki*nd22.Stride+kj] = d22Raw.Data[ri*d22Raw.Stride+rj]
+		}
+	}
+
+	result := sys.Copy()
+	result.InternalDelay = newTau
+	result.B2 = newB2
+	result.C2 = newC2
+	result.D12 = newD12
+	result.D21 = newD21
+	result.D22 = newD22
+	return result
+}
+
+func d22ZeroCrossCoupling(d22Raw blas64.General, i, j, N int, tol float64) bool {
+	if math.Abs(d22Raw.Data[i*d22Raw.Stride+j]) > tol {
+		return false
+	}
+	if math.Abs(d22Raw.Data[j*d22Raw.Stride+i]) > tol {
+		return false
+	}
+	return true
+}
+
+func proportionalRows(c2Raw, d21Raw blas64.General, i, j, n, m int, tol float64) (float64, bool) {
+	var a float64
+	found := false
+
+	for k := 0; k < n; k++ {
+		vi := c2Raw.Data[i*c2Raw.Stride+k]
+		vj := c2Raw.Data[j*c2Raw.Stride+k]
+		if math.Abs(vi) <= tol && math.Abs(vj) <= tol {
+			continue
+		}
+		if math.Abs(vi) <= tol {
+			return 0, false
+		}
+		ratio := vj / vi
+		if !found {
+			a = ratio
+			found = true
+		} else if math.Abs(ratio-a) > tol*math.Max(1, math.Abs(a)) {
+			return 0, false
+		}
+	}
+
+	for k := 0; k < m; k++ {
+		vi := d21Raw.Data[i*d21Raw.Stride+k]
+		vj := d21Raw.Data[j*d21Raw.Stride+k]
+		if math.Abs(vi) <= tol && math.Abs(vj) <= tol {
+			continue
+		}
+		if math.Abs(vi) <= tol {
+			return 0, false
+		}
+		ratio := vj / vi
+		if !found {
+			a = ratio
+			found = true
+		} else if math.Abs(ratio-a) > tol*math.Max(1, math.Abs(a)) {
+			return 0, false
+		}
+	}
+
+	if !found {
+		return 0, false
+	}
+	return a, true
+}
+
+func isZeroGainChannel(sys *System, j, n, m, p, N int) bool {
+	const tol = 1e-15
+	b2Raw := sys.B2.RawMatrix()
+	for i := 0; i < n; i++ {
+		if math.Abs(b2Raw.Data[i*b2Raw.Stride+j]) > tol {
+			return false
+		}
+	}
+	d12Raw := sys.D12.RawMatrix()
+	for i := 0; i < p; i++ {
+		if math.Abs(d12Raw.Data[i*d12Raw.Stride+j]) > tol {
+			return false
+		}
+	}
+	c2Raw := sys.C2.RawMatrix()
+	for i := 0; i < n; i++ {
+		if math.Abs(c2Raw.Data[j*c2Raw.Stride+i]) > tol {
+			return false
+		}
+	}
+	d21Raw := sys.D21.RawMatrix()
+	for i := 0; i < m; i++ {
+		if math.Abs(d21Raw.Data[j*d21Raw.Stride+i]) > tol {
+			return false
+		}
+	}
+	d22Raw := sys.D22.RawMatrix()
+	for i := 0; i < N; i++ {
+		if math.Abs(d22Raw.Data[j*d22Raw.Stride+i]) > tol {
+			return false
+		}
+		if math.Abs(d22Raw.Data[i*d22Raw.Stride+j]) > tol {
+			return false
+		}
+	}
+	return true
+}
+
+func (sys *System) ZeroDelayApprox() (*System, error) {
+	if sys.InternalDelay == nil {
+		return sys.Copy(), nil
+	}
+
+	N := len(sys.InternalDelay)
+	n, m, p := sys.Dims()
+
+	ImD22 := mat.NewDense(N, N, nil)
+	d22Raw := sys.D22.RawMatrix()
+	imRaw := ImD22.RawMatrix()
+	for i := 0; i < N; i++ {
+		for j := 0; j < N; j++ {
+			imRaw.Data[i*imRaw.Stride+j] = -d22Raw.Data[i*d22Raw.Stride+j]
+		}
+		imRaw.Data[i*imRaw.Stride+i] += 1
+	}
+
+	var lu mat.LU
+	lu.Factorize(ImD22)
+	if lu.Det() == 0 {
+		return nil, ErrAlgebraicLoop
+	}
+
+	eye := mat.NewDense(N, N, nil)
+	eyeRaw := eye.RawMatrix()
+	for i := 0; i < N; i++ {
+		eyeRaw.Data[i*eyeRaw.Stride+i] = 1
+	}
+	E := mat.NewDense(N, N, nil)
+	if err := lu.SolveTo(E, false, eye); err != nil {
+		return nil, ErrAlgebraicLoop
+	}
+
+	EC2 := mat.NewDense(N, n, nil)
+	EC2.Mul(E, sys.C2)
+	ED21 := mat.NewDense(N, m, nil)
+	ED21.Mul(E, sys.D21)
+
+	Aa := mat.NewDense(n, n, nil)
+	Aa.Mul(sys.B2, EC2)
+	Aa.Add(sys.A, Aa)
+
+	Ba := mat.NewDense(n, m, nil)
+	Ba.Mul(sys.B2, ED21)
+	Ba.Add(sys.B, Ba)
+
+	Ca := mat.NewDense(p, n, nil)
+	Ca.Mul(sys.D12, EC2)
+	Ca.Add(sys.C, Ca)
+
+	Da := mat.NewDense(p, m, nil)
+	Da.Mul(sys.D12, ED21)
+	Da.Add(sys.D, Da)
+
+	result, err := newNoCopy(Aa, Ba, Ca, Da, sys.Dt)
+	if err != nil {
+		return nil, err
+	}
+	result.Delay = copyDelayOrNil(sys.Delay)
+	if sys.InputDelay != nil {
+		result.InputDelay = make([]float64, len(sys.InputDelay))
+		copy(result.InputDelay, sys.InputDelay)
+	}
+	if sys.OutputDelay != nil {
+		result.OutputDelay = make([]float64, len(sys.OutputDelay))
+		copy(result.OutputDelay, sys.OutputDelay)
+	}
+	return result, nil
+}
