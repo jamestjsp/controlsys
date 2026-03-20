@@ -1826,3 +1826,50 @@ func TestSeriesKeepsExternalDelays(t *testing.T) {
 		t.Errorf("sys2 OutputDelay should stay external: got %v, want [0.7]", result.OutputDelay)
 	}
 }
+
+func TestFeedback_DelayInFeedbackPath(t *testing.T) {
+	plant, _ := New(
+		mat.NewDense(1, 1, []float64{-1.0 / 3.0}),
+		mat.NewDense(1, 1, []float64{1.5 / 3.0}),
+		mat.NewDense(1, 1, []float64{1.0}),
+		mat.NewDense(1, 1, []float64{0.0}),
+		0,
+	)
+	_ = plant.SetInputDelay([]float64{0.5})
+
+	ctrl, _ := New(
+		mat.NewDense(1, 1, []float64{0}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{0.25}),
+		mat.NewDense(1, 1, []float64{0.5}),
+		0,
+	)
+
+	L, _ := Series(ctrl, plant)
+
+	I, _ := NewGain(mat.NewDense(1, 1, []float64{1}), 0)
+	S, _ := Feedback(I, L, -1)
+	T, _ := Feedback(L, nil, -1)
+
+	dt := 0.05
+	nSteps := 1001
+	u := mat.NewDense(1, nSteps, nil)
+	for j := range nSteps {
+		u.Set(0, j, 1.0)
+	}
+
+	Sd, _ := S.DiscretizeZOH(dt)
+	sResp, _ := Sd.Simulate(u, nil, nil)
+	sFinal := sResp.Y.At(0, nSteps-1)
+
+	Td, _ := T.DiscretizeZOH(dt)
+	tResp, _ := Td.Simulate(u, nil, nil)
+	tFinal := tResp.Y.At(0, nSteps-1)
+
+	if math.Abs(sFinal) > 0.05 {
+		t.Errorf("S(inf) = %.4f, want ~0", sFinal)
+	}
+	if math.Abs(tFinal-1.0) > 0.05 {
+		t.Errorf("T(inf) = %.4f, want ~1", tFinal)
+	}
+}

@@ -14,6 +14,11 @@ func (sys *System) Discretize(dt float64) (*System, error) {
 	if dt <= 0 {
 		return nil, ErrInvalidSampleTime
 	}
+
+	if sys.HasInternalDelay() {
+		return discretizeWithInternalDelay(sys, dt, C2DOptions{Method: "tustin"})
+	}
+
 	beta := 2.0 / dt
 	if math.IsInf(beta, 0) {
 		return nil, fmt.Errorf("Discretize: dt too small, 2/dt overflows: %w", ErrOverflow)
@@ -553,6 +558,10 @@ func (sys *System) DiscretizeZOH(dt float64) (*System, error) {
 		return nil, ErrInvalidSampleTime
 	}
 
+	if sys.HasInternalDelay() {
+		return discretizeWithInternalDelay(sys, dt, C2DOptions{Method: "zoh"})
+	}
+
 	n, m, _ := sys.Dims()
 
 	D := denseCopy(sys.D)
@@ -643,22 +652,10 @@ func discretizeWithInternalDelay(sys *System, dt float64, opts C2DOptions) (*Sys
 		method = "zoh"
 	}
 
-	rational := &System{A: sys.A, B: sys.B, C: sys.C, D: sys.D, Delay: sys.Delay}
-	var disc *System
-	var err error
-	switch method {
-	case "zoh":
-		disc, err = rational.DiscretizeZOH(dt)
-	case "tustin":
-		disc, err = rational.Discretize(dt)
-	default:
-		return nil, fmt.Errorf("DiscretizeWithOpts: unknown method %q", method)
-	}
-	if err != nil {
-		return nil, err
-	}
+	n, _, _ := sys.Dims()
+	N := len(sys.InternalDelay)
 
-	discTau := make([]float64, len(sys.InternalDelay))
+	discTau := make([]float64, N)
 	for j, tau := range sys.InternalDelay {
 		samples := tau / dt
 		rounded := math.Round(samples)
@@ -670,15 +667,187 @@ func discretizeWithInternalDelay(sys *System, dt float64, opts C2DOptions) (*Sys
 		}
 	}
 
+	var disc *System
+	var Bd2 *mat.Dense
+	var err error
+
+	switch method {
+	case "zoh":
+		disc, Bd2, err = discretizeZOHAugmented(sys, dt)
+	case "tustin":
+		disc, Bd2, err = discretizeTustinAugmented(sys, dt)
+	default:
+		return nil, fmt.Errorf("DiscretizeWithOpts: unknown method %q", method)
+	}
+	if err != nil {
+		return nil, err
+	}
+
 	disc.InternalDelay = discTau
-	disc.B2 = mat.DenseCopyOf(sys.B2)
+	if n > 0 && N > 0 {
+		disc.B2 = Bd2
+	} else {
+		disc.B2 = mat.DenseCopyOf(sys.B2)
+	}
 	disc.C2 = mat.DenseCopyOf(sys.C2)
 	disc.D12 = mat.DenseCopyOf(sys.D12)
 	disc.D21 = mat.DenseCopyOf(sys.D21)
 	disc.D22 = mat.DenseCopyOf(sys.D22)
 
+	if sys.Delay != nil {
+		d, convErr := convertDelayToDiscrete(sys.Delay, dt)
+		if convErr != nil {
+			return nil, convErr
+		}
+		disc.Delay = d
+	}
+	if sys.InputDelay != nil {
+		id, convErr := convertSliceDelayToDiscrete(sys.InputDelay, dt, 0)
+		if convErr != nil {
+			return nil, convErr
+		}
+		disc.InputDelay = id
+	}
+	if sys.OutputDelay != nil {
+		od, convErr := convertSliceDelayToDiscrete(sys.OutputDelay, dt, 0)
+		if convErr != nil {
+			return nil, convErr
+		}
+		disc.OutputDelay = od
+	}
+
 	return disc, nil
 }
+
+func discretizeZOHAugmented(sys *System, dt float64) (*System, *mat.Dense, error) {
+	n, m, _ := sys.Dims()
+	N := len(sys.InternalDelay)
+
+	C := denseCopy(sys.C)
+	D := denseCopy(sys.D)
+
+	if n == 0 {
+		out := &System{A: newDense(0, 0), B: denseCopy(sys.B), C: C, D: D, Dt: dt}
+		return out, mat.DenseCopyOf(sys.B2), nil
+	}
+
+	mTotal := m + N
+	nm := n + mTotal
+	if mTotal == 0 {
+		var eA mat.Dense
+		Adt := mat.NewDense(n, n, nil)
+		Adt.Scale(dt, sys.A)
+		eA.Exp(Adt)
+		Ad := mat.NewDense(n, n, nil)
+		Ad.Copy(&eA)
+		out := &System{A: Ad, B: denseCopy(sys.B), C: C, D: D, Dt: dt}
+		return out, mat.DenseCopyOf(sys.B2), nil
+	}
+
+	M := mat.NewDense(nm, nm, nil)
+	mRaw := M.RawMatrix()
+	aRaw := sys.A.RawMatrix()
+
+	for i := 0; i < n; i++ {
+		row := mRaw.Data[i*mRaw.Stride:]
+		for j := 0; j < n; j++ {
+			row[j] = aRaw.Data[i*aRaw.Stride+j] * dt
+		}
+		if m > 0 {
+			bRaw := sys.B.RawMatrix()
+			for j := 0; j < m; j++ {
+				row[n+j] = bRaw.Data[i*bRaw.Stride+j] * dt
+			}
+		}
+		if N > 0 {
+			b2Raw := sys.B2.RawMatrix()
+			for j := 0; j < N; j++ {
+				row[n+m+j] = b2Raw.Data[i*b2Raw.Stride+j] * dt
+			}
+		}
+	}
+
+	var eM mat.Dense
+	eM.Exp(M)
+	emRaw := eM.RawMatrix()
+
+	adData := make([]float64, n*n)
+	bdData := make([]float64, n*m)
+	bd2Data := make([]float64, n*N)
+	for i := 0; i < n; i++ {
+		copy(adData[i*n:i*n+n], emRaw.Data[i*emRaw.Stride:i*emRaw.Stride+n])
+		if m > 0 {
+			copy(bdData[i*m:i*m+m], emRaw.Data[i*emRaw.Stride+n:i*emRaw.Stride+n+m])
+		}
+		if N > 0 {
+			copy(bd2Data[i*N:i*N+N], emRaw.Data[i*emRaw.Stride+n+m:i*emRaw.Stride+n+m+N])
+		}
+	}
+
+	Ad := mat.NewDense(n, n, adData)
+	var Bd *mat.Dense
+	if m > 0 {
+		Bd = mat.NewDense(n, m, bdData)
+	} else {
+		Bd = newDense(n, 0)
+	}
+	var Bd2 *mat.Dense
+	if N > 0 {
+		Bd2 = mat.NewDense(n, N, bd2Data)
+	} else {
+		Bd2 = newDense(n, 0)
+	}
+
+	out := &System{A: Ad, B: Bd, C: C, D: D, Dt: dt}
+	return out, Bd2, nil
+}
+
+func discretizeTustinAugmented(sys *System, dt float64) (*System, *mat.Dense, error) {
+	n, _, _ := sys.Dims()
+	N := len(sys.InternalDelay)
+
+	beta := 2.0 / dt
+	if math.IsInf(beta, 0) {
+		return nil, nil, fmt.Errorf("discretizeTustinAugmented: dt too small: %w", ErrOverflow)
+	}
+
+	rational := &System{A: sys.A, B: sys.B, C: sys.C, D: sys.D}
+	disc, err := bilinear(rational, -beta, -1.0, 1.0, beta)
+	if err != nil {
+		return nil, nil, err
+	}
+	disc.Dt = dt
+
+	if n == 0 || N == 0 {
+		return disc, mat.DenseCopyOf(sys.B2), nil
+	}
+
+	palpha := -beta
+	A := mat.NewDense(n, n, nil)
+	A.Copy(sys.A)
+	aRaw := A.RawMatrix()
+	for i := 0; i < n; i++ {
+		aRaw.Data[i*aRaw.Stride+i] += palpha
+	}
+
+	var lu mat.LU
+	lu.Factorize(A)
+
+	B2 := mat.DenseCopyOf(sys.B2)
+	if err := lu.SolveTo(B2, false, B2); err != nil {
+		return nil, nil, fmt.Errorf("discretizeTustinAugmented: LU solve for B2 failed: %w", ErrSingularTransform)
+	}
+
+	twoAB := 2.0 * 1.0 * beta
+	scale := math.Sqrt(math.Abs(twoAB))
+	if palpha < 0 {
+		scale = -scale
+	}
+	B2.Scale(scale, B2)
+
+	return disc, B2, nil
+}
+
 
 func isStrictlyUpperTriangular(m *mat.Dense) bool {
 	if m == nil {

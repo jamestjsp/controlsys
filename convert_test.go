@@ -875,7 +875,8 @@ func TestDiscretizeZOHWithInternalDelay(t *testing.T) {
 	if len(disc.InternalDelay) != 1 || disc.InternalDelay[0] != 2 {
 		t.Errorf("InternalDelay = %v, want [2]", disc.InternalDelay)
 	}
-	assertMatClose(t, "B2", disc.B2, sys.B2, 1e-15)
+	expectedB2 := mat.NewDense(2, 1, []float64{0.0512036577844453, 0.021304040984362})
+	assertMatClose(t, "B2", disc.B2, expectedB2, 1e-12)
 	assertMatClose(t, "C2", disc.C2, sys.C2, 1e-15)
 	assertMatClose(t, "D12", disc.D12, sys.D12, 1e-15)
 	assertMatClose(t, "D21", disc.D21, sys.D21, 1e-15)
