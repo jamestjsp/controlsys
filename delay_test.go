@@ -3627,6 +3627,109 @@ func TestMixedDelaySimulate_MIMO(t *testing.T) {
 	}
 }
 
+func TestSimulateWithDelay_MIMOManualReference(t *testing.T) {
+	A := mat.NewDense(4, 4, []float64{
+		0.82, 0.14, 0.00, 0.05,
+		0.07, 0.76, 0.11, 0.00,
+		0.03, 0.09, 0.71, 0.12,
+		0.00, 0.04, 0.08, 0.68,
+	})
+	B := mat.NewDense(4, 3, []float64{
+		1.0, 0.2, 0.0,
+		0.1, 0.9, 0.3,
+		0.0, 0.4, 0.8,
+		0.2, 0.0, 0.7,
+	})
+	C := mat.NewDense(3, 4, []float64{
+		1.0, 0.1, 0.0, 0.2,
+		0.0, 0.8, 0.3, 0.0,
+		0.2, 0.0, 0.7, 0.4,
+	})
+	D := mat.NewDense(3, 3, []float64{
+		0.10, 0.05, 0.00,
+		0.00, 0.15, 0.07,
+		0.03, 0.00, 0.12,
+	})
+	delay := mat.NewDense(3, 3, []float64{
+		0, 2, 1,
+		3, 1, 4,
+		2, 0, 3,
+	})
+
+	sys, err := NewWithDelay(A, B, C, D, delay, 1.0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	steps := 18
+	u := mat.NewDense(3, steps, nil)
+	for k := 0; k < steps; k++ {
+		u.Set(0, k, math.Sin(0.2*float64(k))+0.1)
+		u.Set(1, k, math.Cos(0.15*float64(k))-0.2)
+		u.Set(2, k, 0.05*float64(k)-0.3)
+	}
+	x0 := mat.NewVecDense(4, []float64{0.5, -0.3, 0.2, -0.1})
+
+	got, err := sys.Simulate(u, x0, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	autoSys, err := New(A, mat.NewDense(4, 3, nil), C, mat.NewDense(3, 3, nil), 1.0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	autoResp, err := autoSys.Simulate(u, x0, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	wantY := mat.DenseCopyOf(autoResp.Y)
+	wantX := mat.NewVecDense(4, nil)
+	wantX.CopyVec(autoResp.XFinal)
+
+	for j := 0; j < 3; j++ {
+		Bj := mat.NewDense(4, 1, nil)
+		Dj := mat.NewDense(3, 1, nil)
+		uj := mat.NewDense(1, steps, nil)
+		for i := 0; i < 4; i++ {
+			Bj.Set(i, 0, B.At(i, j))
+		}
+		for i := 0; i < 3; i++ {
+			Dj.Set(i, 0, D.At(i, j))
+		}
+		for k := 0; k < steps; k++ {
+			uj.Set(0, k, u.At(j, k))
+		}
+
+		simoSys, err := New(A, Bj, C, Dj, 1.0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		simoResp, err := simoSys.Simulate(uj, nil, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		for i := 0; i < 3; i++ {
+			d := int(delay.At(i, j))
+			for k := d; k < steps; k++ {
+				wantY.Set(i, k, wantY.At(i, k)+simoResp.Y.At(i, k-d))
+			}
+		}
+		wantX.AddVec(wantX, simoResp.XFinal)
+	}
+
+	if !matEqual(got.Y, wantY, 1e-10) {
+		t.Errorf("delayed MIMO response mismatch\n got: %v\nwant: %v",
+			mat.Formatted(got.Y), mat.Formatted(wantY))
+	}
+	if !vecEqual(got.XFinal, wantX, 1e-10) {
+		t.Errorf("delayed MIMO final state mismatch\n got: %v\nwant: %v",
+			mat.Formatted(got.XFinal), mat.Formatted(wantX))
+	}
+}
+
 func TestMinimalLFTNoInternal(t *testing.T) {
 	sys, _ := NewFromSlices(2, 1, 1,
 		[]float64{0, 1, -2, -3}, []float64{0, 1}, []float64{1, 0}, []float64{0}, 0)
