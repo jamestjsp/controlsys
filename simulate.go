@@ -3,6 +3,7 @@ package controlsys
 import (
 	"math"
 
+	"gonum.org/v1/gonum/blas/blas64"
 	"gonum.org/v1/gonum/mat"
 )
 
@@ -178,27 +179,12 @@ func (sys *System) simulateWithDelay(u *mat.Dense, x0 *mat.VecDense) (*Response,
 	}
 
 	Y := mat.NewDense(p, steps, nil)
-	ws := mat.NewVecDense(max(n, 1), nil)
-	var bukBuf *mat.VecDense
-	if n > 0 {
-		bukBuf = mat.NewVecDense(n, nil)
-	}
-	ykBuf := mat.NewVecDense(p, nil)
-	simoY := mat.NewDense(p, steps, nil)
-	duBuf := mat.NewDense(p, steps, nil)
-	opts := &SimulateOpts{
-		Workspace: ws,
-		yBuf:      simoY,
-		buk:       bukBuf,
-		yk:        ykBuf,
-		duBuf:     duBuf,
-	}
 
 	if n > 0 && x0 != nil {
 		x := mat.NewVecDense(n, nil)
 		x.CopyVec(x0)
-		tmp := ws
-		yk := ykBuf
+		tmp := mat.NewVecDense(n, nil)
+		yk := mat.NewVecDense(p, nil)
 		yAutoRaw := Y.RawMatrix()
 		ykRaw := yk.RawVector()
 		for k := 0; k < steps; k++ {
@@ -212,54 +198,75 @@ func (sys *System) simulateWithDelay(u *mat.Dense, x0 *mat.VecDense) (*Response,
 		xFinal.CopyVec(x)
 	}
 
-	var bCol *mat.Dense
-	var bColRaw []float64
-	if n > 0 {
-		bCol = mat.NewDense(n, 1, nil)
-		bColRaw = bCol.RawMatrix().Data
-	} else {
-		bCol = &mat.Dense{}
+	if m == 0 {
+		return &Response{Y: Y, XFinal: xFinal}, nil
 	}
-	dCol := mat.NewDense(p, 1, nil)
-	dColRaw := dCol.RawMatrix().Data
-	uj := mat.NewDense(1, steps, nil)
-	ujRaw := uj.RawMatrix().Data
 
-	simoSys := &System{A: sys.A, B: bCol, C: sys.C, D: dCol, Dt: sys.Dt}
 	uRaw := u.RawMatrix()
-	bRaw := sys.B.RawMatrix()
 	dRaw := sys.D.RawMatrix()
 	delayRaw := totalDelay.RawMatrix()
 	yRaw := Y.RawMatrix()
 
-	for j := 0; j < m; j++ {
+	delayIdx := make([]int, p*m)
+	for i := 0; i < p; i++ {
+		for j := 0; j < m; j++ {
+			delayIdx[i*m+j] = int(math.Round(delayRaw.Data[i*delayRaw.Stride+j]))
+		}
+	}
+
+	yForced := mat.NewDense(p, m, nil)
+	yForcedRaw := yForced.RawMatrix()
+
+	var xCols, nextX *mat.Dense
+	var bRaw blas64.General
+	if n > 0 {
+		xCols = mat.NewDense(n, m, nil)
+		nextX = mat.NewDense(n, m, nil)
+		bRaw = sys.B.RawMatrix()
+	}
+
+	for k := 0; k < steps; k++ {
+		var nextRaw blas64.General
 		if n > 0 {
-			for i := 0; i < n; i++ {
-				bColRaw[i] = bRaw.Data[i*bRaw.Stride+j]
+			yForced.Mul(sys.C, xCols)
+			nextX.Mul(sys.A, xCols)
+			nextRaw = nextX.RawMatrix()
+		} else {
+			yForced.Zero()
+		}
+
+		for j := 0; j < m; j++ {
+			uk := uRaw.Data[j*uRaw.Stride+k]
+			if n > 0 && uk != 0 {
+				for i := 0; i < n; i++ {
+					nextRaw.Data[i*nextRaw.Stride+j] += bRaw.Data[i*bRaw.Stride+j] * uk
+				}
+			}
+			for i := 0; i < p; i++ {
+				outIdx := k + delayIdx[i*m+j]
+				if outIdx >= steps {
+					continue
+				}
+				val := yForcedRaw.Data[i*yForcedRaw.Stride+j] + dRaw.Data[i*dRaw.Stride+j]*uk
+				yRaw.Data[i*yRaw.Stride+outIdx] += val
 			}
 		}
-		for i := 0; i < p; i++ {
-			dColRaw[i] = dRaw.Data[i*dRaw.Stride+j]
-		}
-		copy(ujRaw, uRaw.Data[j*uRaw.Stride:j*uRaw.Stride+steps])
 
-		simoResp, err := simoSys.simulateNoDelay(uj, nil, opts)
-		if err != nil {
-			return nil, err
+		if n > 0 {
+			xCols, nextX = nextX, xCols
 		}
+	}
 
-		sRaw := simoResp.Y.RawMatrix()
-		for i := 0; i < p; i++ {
-			d := int(math.Round(delayRaw.Data[i*delayRaw.Stride+j]))
-			yRow := yRaw.Data[i*yRaw.Stride:]
-			sRow := sRaw.Data[i*sRaw.Stride:]
-			for k := d; k < steps; k++ {
-				yRow[k] += sRow[k-d]
+	if xFinal != nil {
+		xRaw := xCols.RawMatrix()
+		xFinalRaw := xFinal.RawVector()
+		for i := 0; i < n; i++ {
+			sum := xFinalRaw.Data[i*xFinalRaw.Inc]
+			row := xRaw.Data[i*xRaw.Stride : i*xRaw.Stride+m]
+			for _, v := range row {
+				sum += v
 			}
-		}
-
-		if xFinal != nil {
-			xFinal.AddVec(xFinal, simoResp.XFinal)
+			xFinalRaw.Data[i*xFinalRaw.Inc] = sum
 		}
 	}
 
