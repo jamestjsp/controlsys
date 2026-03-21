@@ -1,6 +1,7 @@
 package controlsys
 
 import (
+	"fmt"
 	"math"
 
 	"gonum.org/v1/gonum/blas/blas64"
@@ -210,8 +211,11 @@ func (sys *System) simulateWithDelay(u *mat.Dense, x0 *mat.VecDense) (*Response,
 	delayIdx := make([]int, p*m)
 	for i := 0; i < p; i++ {
 		for j := 0; j < m; j++ {
-			// Delays are discrete here, so convert once before the time loop.
-			delayIdx[i*m+j] = int(math.Round(delayRaw.Data[i*delayRaw.Stride+j]))
+			d := int(math.Round(delayRaw.Data[i*delayRaw.Stride+j]))
+			if d < 0 {
+				return nil, fmt.Errorf("%w: delay(%d,%d) = %d", ErrNegativeDelay, i, j, d)
+			}
+			delayIdx[i*m+j] = d
 		}
 	}
 
@@ -239,7 +243,6 @@ func (sys *System) simulateWithDelay(u *mat.Dense, x0 *mat.VecDense) (*Response,
 		for j := 0; j < m; j++ {
 			uk := uRaw.Data[j*uRaw.Stride+k]
 			if n > 0 && uk != 0 {
-				// Skip the column update when the current input sample is zero.
 				blas64.Axpy(uk,
 					blas64.Vector{N: n, Inc: bRaw.Stride, Data: bRaw.Data[j:]},
 					blas64.Vector{N: n, Inc: nextRaw.Stride, Data: nextRaw.Data[j:]},
