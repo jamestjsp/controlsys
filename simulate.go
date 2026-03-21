@@ -210,6 +210,7 @@ func (sys *System) simulateWithDelay(u *mat.Dense, x0 *mat.VecDense) (*Response,
 	delayIdx := make([]int, p*m)
 	for i := 0; i < p; i++ {
 		for j := 0; j < m; j++ {
+			// Delays are discrete here, so convert once before the time loop.
 			delayIdx[i*m+j] = int(math.Round(delayRaw.Data[i*delayRaw.Stride+j]))
 		}
 	}
@@ -238,9 +239,11 @@ func (sys *System) simulateWithDelay(u *mat.Dense, x0 *mat.VecDense) (*Response,
 		for j := 0; j < m; j++ {
 			uk := uRaw.Data[j*uRaw.Stride+k]
 			if n > 0 && uk != 0 {
-				for i := 0; i < n; i++ {
-					nextRaw.Data[i*nextRaw.Stride+j] += bRaw.Data[i*bRaw.Stride+j] * uk
-				}
+				// Skip the column update when the current input sample is zero.
+				blas64.Axpy(uk,
+					blas64.Vector{N: n, Inc: bRaw.Stride, Data: bRaw.Data[j:]},
+					blas64.Vector{N: n, Inc: nextRaw.Stride, Data: nextRaw.Data[j:]},
+				)
 			}
 			for i := 0; i < p; i++ {
 				outIdx := k + delayIdx[i*m+j]
@@ -262,9 +265,8 @@ func (sys *System) simulateWithDelay(u *mat.Dense, x0 *mat.VecDense) (*Response,
 		xFinalRaw := xFinal.RawVector()
 		for i := 0; i < n; i++ {
 			sum := xFinalRaw.Data[i*xFinalRaw.Inc]
-			row := xRaw.Data[i*xRaw.Stride : i*xRaw.Stride+m]
-			for _, v := range row {
-				sum += v
+			for j := 0; j < m; j++ {
+				sum += xRaw.Data[i*xRaw.Stride+j]
 			}
 			xFinalRaw.Data[i*xFinalRaw.Inc] = sum
 		}
