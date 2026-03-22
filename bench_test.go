@@ -893,6 +893,62 @@ func BenchmarkDare_N10_M2(b *testing.B)  { benchDare(b, 10, 2) }
 func BenchmarkDare_N50_M5(b *testing.B)  { benchDare(b, 50, 5) }
 func BenchmarkDare_N100_M5(b *testing.B) { benchDare(b, 100, 5) }
 
+func BenchmarkGram(b *testing.B) {
+	sys := benchSys(10, 2, 3)
+	b.ResetTimer()
+	for b.Loop() {
+		Gram(sys, GramControllability)
+	}
+}
+
+func BenchmarkCtrb(b *testing.B) {
+	sys := benchSys(10, 2, 3)
+	b.ResetTimer()
+	for b.Loop() {
+		Ctrb(sys.A, sys.B)
+	}
+}
+
+func BenchmarkH2Norm(b *testing.B) {
+	sys := benchSys(10, 2, 3)
+	b.ResetTimer()
+	for b.Loop() {
+		H2Norm(sys)
+	}
+}
+
+func BenchmarkHSV(b *testing.B) {
+	sys := benchSys(10, 2, 3)
+	b.ResetTimer()
+	for b.Loop() {
+		HSV(sys)
+	}
+}
+
+func BenchmarkHinfNorm(b *testing.B) {
+	sys := benchSys(10, 2, 3)
+	b.ResetTimer()
+	for b.Loop() {
+		HinfNorm(sys)
+	}
+}
+
+func BenchmarkBalreal(b *testing.B) {
+	sys := benchSys(10, 2, 3)
+	b.ResetTimer()
+	for b.Loop() {
+		Balreal(sys)
+	}
+}
+
+func BenchmarkBalred(b *testing.B) {
+	sys := benchSys(10, 2, 3)
+	b.ResetTimer()
+	for b.Loop() {
+		Balred(sys, 5, Truncate)
+	}
+}
+
 func benchSys(n, m, p int) *System {
 	A := mat.NewDense(n, n, nil)
 	for i := 0; i < n; i++ {

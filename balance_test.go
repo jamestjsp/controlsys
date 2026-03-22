@@ -1,0 +1,370 @@
+package controlsys
+
+import (
+	"errors"
+	"math"
+	"math/cmplx"
+	"sort"
+	"testing"
+
+	"gonum.org/v1/gonum/mat"
+)
+
+func TestBalreal_1x1(t *testing.T) {
+	sys, _ := New(
+		mat.NewDense(1, 1, []float64{-1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{0}), 0)
+
+	br, err := Balreal(sys)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(br.HSV) != 1 {
+		t.Fatalf("len(HSV) = %d", len(br.HSV))
+	}
+	if math.Abs(br.HSV[0]-0.5) > 1e-10 {
+		t.Errorf("HSV[0] = %g, want 0.5", br.HSV[0])
+	}
+}
+
+func TestBalreal_2x2_NonSymA(t *testing.T) {
+	sys, _ := New(
+		mat.NewDense(2, 2, []float64{-1, 0.5, 0, -2}),
+		mat.NewDense(2, 1, []float64{1, 1}),
+		mat.NewDense(1, 2, []float64{1, 1}),
+		mat.NewDense(1, 1, []float64{0}), 0)
+
+	br, err := Balreal(sys)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	checkTinvT(t, br.T, br.Tinv, 2, 1e-8)
+	checkEigsPreserved(t, sys, br.Sys, 1e-8)
+	checkFreqPreserved(t, sys, br.Sys, 1e-8)
+	checkGramiansEqual(t, br.Sys, br.HSV, 1e-6)
+}
+
+func TestBalreal_Discrete(t *testing.T) {
+	sys, _ := New(
+		mat.NewDense(2, 2, []float64{0.5, 0.1, 0, 0.8}),
+		mat.NewDense(2, 1, []float64{1, 0.5}),
+		mat.NewDense(1, 2, []float64{1, 0}),
+		mat.NewDense(1, 1, []float64{0}), 0.1)
+
+	br, err := Balreal(sys)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkTinvT(t, br.T, br.Tinv, 2, 1e-8)
+	checkEigsPreserved(t, sys, br.Sys, 1e-8)
+}
+
+func TestBalreal_Unstable(t *testing.T) {
+	sys, _ := New(
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{0}), 0)
+
+	_, err := Balreal(sys)
+	if !errors.Is(err, ErrUnstable) {
+		t.Errorf("got %v, want ErrUnstable", err)
+	}
+}
+
+func TestBalreal_Empty(t *testing.T) {
+	sys, _ := New(nil, nil, nil, mat.NewDense(1, 1, []float64{1}), 0)
+	br, err := Balreal(sys)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n, _, _ := br.Sys.Dims()
+	if n != 0 {
+		t.Errorf("n = %d, want 0", n)
+	}
+}
+
+func TestBalred_Truncation(t *testing.T) {
+	sys := make4thOrderSystem()
+
+	red, hsv, err := Balred(sys, 2, Truncate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nr, _, _ := red.Dims()
+	if nr != 2 {
+		t.Errorf("n = %d, want 2", nr)
+	}
+	if len(hsv) != 4 {
+		t.Fatalf("len(HSV) = %d, want 4", len(hsv))
+	}
+
+	checkFreqApprox(t, sys, red, 0.3)
+}
+
+func TestBalred_SingularPerturbation(t *testing.T) {
+	sys := make4thOrderSystem()
+
+	red, _, err := Balred(sys, 2, SingularPerturbation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nr, _, _ := red.Dims()
+	if nr != 2 {
+		t.Errorf("n = %d, want 2", nr)
+	}
+
+	origDC, _ := sys.DCGain()
+	redDC, _ := red.DCGain()
+	assertMatNearT(t, "DCGain", redDC, origDC, 1e-6)
+}
+
+func TestBalred_AutoOrder(t *testing.T) {
+	sys := make4thOrderSystem()
+
+	red, hsv, err := Balred(sys, 0, Truncate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nr, _, _ := red.Dims()
+	if nr < 1 || nr > 3 {
+		t.Errorf("auto order = %d, want 1-3", nr)
+	}
+	_ = hsv
+}
+
+func TestBalred_InvalidOrder(t *testing.T) {
+	sys := make4thOrderSystem()
+
+	_, _, err := Balred(sys, 4, Truncate)
+	if !errors.Is(err, ErrInvalidOrder) {
+		t.Errorf("got %v, want ErrInvalidOrder", err)
+	}
+	_, _, err = Balred(sys, -1, Truncate)
+	if !errors.Is(err, ErrInvalidOrder) {
+		t.Errorf("got %v, want ErrInvalidOrder", err)
+	}
+}
+
+func TestModred_Truncation(t *testing.T) {
+	sys, _ := New(
+		mat.NewDense(3, 3, []float64{
+			-1, 0.5, 0,
+			0, -2, 0.3,
+			0, 0, -5,
+		}),
+		mat.NewDense(3, 1, []float64{1, 0, 1}),
+		mat.NewDense(1, 3, []float64{1, 1, 0}),
+		mat.NewDense(1, 1, []float64{0}), 0)
+
+	red, err := Modred(sys, []int{2}, Truncate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nr, _, _ := red.Dims()
+	if nr != 2 {
+		t.Errorf("n = %d, want 2", nr)
+	}
+}
+
+func TestModred_SingularPerturbation(t *testing.T) {
+	sys, _ := New(
+		mat.NewDense(3, 3, []float64{
+			-1, 0.5, 0,
+			0, -2, 0.3,
+			0, 0, -5,
+		}),
+		mat.NewDense(3, 1, []float64{1, 0, 1}),
+		mat.NewDense(1, 3, []float64{1, 1, 0}),
+		mat.NewDense(1, 1, []float64{0}), 0)
+
+	red, err := Modred(sys, []int{2}, SingularPerturbation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nr, _, _ := red.Dims()
+	if nr != 2 {
+		t.Errorf("n = %d, want 2", nr)
+	}
+
+	origDC, _ := sys.DCGain()
+	redDC, _ := red.DCGain()
+	assertMatNearT(t, "DCGain", redDC, origDC, 1e-6)
+}
+
+func TestModred_Empty(t *testing.T) {
+	sys, _ := New(
+		mat.NewDense(2, 2, []float64{-1, 0, 0, -2}),
+		mat.NewDense(2, 1, []float64{1, 1}),
+		mat.NewDense(1, 2, []float64{1, 0}),
+		mat.NewDense(1, 1, []float64{0}), 0)
+
+	red, err := Modred(sys, nil, Truncate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n, _, _ := red.Dims()
+	if n != 2 {
+		t.Errorf("n = %d, want 2 (no elimination)", n)
+	}
+}
+
+func TestModred_AllEliminated(t *testing.T) {
+	sys, _ := New(
+		mat.NewDense(2, 2, []float64{-1, 0, 0, -2}),
+		mat.NewDense(2, 1, []float64{1, 1}),
+		mat.NewDense(1, 2, []float64{1, 0}),
+		mat.NewDense(1, 1, []float64{0.5}), 0)
+
+	red, err := Modred(sys, []int{0, 1}, Truncate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n, _, _ := red.Dims()
+	if n != 0 {
+		t.Errorf("n = %d, want 0", n)
+	}
+}
+
+func TestModred_InvalidIndex(t *testing.T) {
+	sys, _ := New(
+		mat.NewDense(2, 2, []float64{-1, 0, 0, -2}),
+		mat.NewDense(2, 1, []float64{1, 1}),
+		mat.NewDense(1, 2, []float64{1, 0}),
+		mat.NewDense(1, 1, []float64{0}), 0)
+
+	_, err := Modred(sys, []int{5}, Truncate)
+	if err == nil {
+		t.Error("expected error for out-of-range index")
+	}
+}
+
+func make4thOrderSystem() *System {
+	sys, _ := New(
+		mat.NewDense(4, 4, []float64{
+			-1, 0.5, 0.1, 0,
+			0, -2, 0.3, 0.1,
+			0, 0, -10, 1,
+			0, 0, -1, -20,
+		}),
+		mat.NewDense(4, 1, []float64{1, 0.5, 0.1, 0}),
+		mat.NewDense(1, 4, []float64{1, 1, 0.5, 0.1}),
+		mat.NewDense(1, 1, []float64{0}), 0)
+	return sys
+}
+
+func checkTinvT(t *testing.T, T, Tinv *mat.Dense, n int, tol float64) {
+	t.Helper()
+	prod := mat.NewDense(n, n, nil)
+	prod.Mul(Tinv, T)
+	for i := range n {
+		for j := range n {
+			want := 0.0
+			if i == j {
+				want = 1.0
+			}
+			got := prod.At(i, j)
+			if math.Abs(got-want) > tol {
+				t.Errorf("Tinv*T[%d,%d] = %g, want %g", i, j, got, want)
+			}
+		}
+	}
+}
+
+func checkEigsPreserved(t *testing.T, orig, bal *System, tol float64) {
+	t.Helper()
+	p1, _ := orig.Poles()
+	p2, _ := bal.Poles()
+	if len(p1) != len(p2) {
+		t.Fatalf("pole count %d != %d", len(p1), len(p2))
+	}
+	sort.Slice(p1, func(i, j int) bool {
+		if real(p1[i]) != real(p1[j]) {
+			return real(p1[i]) < real(p1[j])
+		}
+		return imag(p1[i]) < imag(p1[j])
+	})
+	sort.Slice(p2, func(i, j int) bool {
+		if real(p2[i]) != real(p2[j]) {
+			return real(p2[i]) < real(p2[j])
+		}
+		return imag(p2[i]) < imag(p2[j])
+	})
+	for i := range p1 {
+		if cmplx.Abs(p1[i]-p2[i]) > tol {
+			t.Errorf("pole[%d]: %v != %v", i, p1[i], p2[i])
+		}
+	}
+}
+
+func checkFreqPreserved(t *testing.T, orig, bal *System, tol float64) {
+	t.Helper()
+	for _, w := range []float64{0.01, 0.1, 1, 10, 100} {
+		g1, _ := orig.EvalFr(complex(0, w))
+		g2, _ := bal.EvalFr(complex(0, w))
+		_, m1, p1 := orig.Dims()
+		for i := range p1 {
+			for j := range m1 {
+				diff := cmplx.Abs(g1[i][j] - g2[i][j])
+				mag := cmplx.Abs(g1[i][j])
+				relTol := tol
+				if mag > 1e-10 {
+					relTol = tol * mag
+				}
+				if diff > relTol {
+					t.Errorf("w=%g: G[%d,%d] diff=%g > tol=%g", w, i, j, diff, relTol)
+				}
+			}
+		}
+	}
+}
+
+func checkGramiansEqual(t *testing.T, sys *System, hsv []float64, tol float64) {
+	t.Helper()
+	wcRes, err := Gram(sys, GramControllability)
+	if err != nil {
+		t.Fatalf("Wc: %v", err)
+	}
+	woRes, err := Gram(sys, GramObservability)
+	if err != nil {
+		t.Fatalf("Wo: %v", err)
+	}
+	n, _, _ := sys.Dims()
+	for i := range n {
+		for j := range n {
+			want := 0.0
+			if i == j {
+				want = hsv[i]
+			}
+			wcVal := wcRes.X.At(i, j)
+			woVal := woRes.X.At(i, j)
+			if math.Abs(wcVal-want) > tol {
+				t.Errorf("Wc[%d,%d] = %g, want %g", i, j, wcVal, want)
+			}
+			if math.Abs(woVal-want) > tol {
+				t.Errorf("Wo[%d,%d] = %g, want %g", i, j, woVal, want)
+			}
+		}
+	}
+}
+
+func checkFreqApprox(t *testing.T, orig, red *System, relTol float64) {
+	t.Helper()
+	for _, w := range []float64{0.01, 0.1, 1, 10} {
+		g1, _ := orig.EvalFr(complex(0, w))
+		g2, _ := red.EvalFr(complex(0, w))
+		_, m1, p1 := orig.Dims()
+		for i := range p1 {
+			for j := range m1 {
+				mag := cmplx.Abs(g1[i][j])
+				diff := cmplx.Abs(g1[i][j] - g2[i][j])
+				if mag > 1e-10 && diff/mag > relTol {
+					t.Errorf("w=%g: G[%d,%d] reldiff=%g > %g", w, i, j, diff/mag, relTol)
+				}
+			}
+		}
+	}
+}
