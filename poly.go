@@ -189,9 +189,9 @@ func (p Poly) Roots() ([]complex128, error) {
 	}
 	roots := eig.Values(nil)
 
-	machEps := math.Float64frombits(0x3CB0000000000000) // 2^-52
+	snapTol := 100 * eps()
 	for i, r := range roots {
-		if imag(r) != 0 && math.Abs(imag(r)) < math.Abs(real(r))*100*machEps {
+		if imag(r) != 0 && math.Abs(imag(r)) < math.Abs(real(r))*snapTol {
 			roots[i] = complex(real(r), 0)
 		}
 	}

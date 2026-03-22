@@ -1059,6 +1059,98 @@ func BenchmarkReg_N10_M2_P3(b *testing.B)  { benchReg(b, 10, 2, 3) }
 func BenchmarkReg_N50_M5_P5(b *testing.B)  { benchReg(b, 50, 5, 5) }
 func BenchmarkReg_N100_M5_P5(b *testing.B) { benchReg(b, 100, 5, 5) }
 
+func BenchmarkPolyRoots_N10(b *testing.B) {
+	p := Poly{1, -1}
+	for i := 2; i <= 10; i++ {
+		p = p.Mul(Poly{1, float64(-i)})
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		p.Roots()
+	}
+}
+
+func BenchmarkZPKEval_SISO(b *testing.B) {
+	z, _ := NewZPK([]complex128{-1, -2, -3}, []complex128{-4, -5, -6, -7}, 2.0, 0)
+	s := complex(0, 1)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		z.Eval(s)
+	}
+}
+
+func BenchmarkZPKFreqResponse_SISO_100(b *testing.B) {
+	z, _ := NewZPK([]complex128{-1, -2}, []complex128{-3, -4, -5}, 2.0, 0)
+	omega := make([]float64, 100)
+	for i := range omega {
+		omega[i] = 0.01 * math.Pow(10, 4*float64(i)/99)
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		z.FreqResponse(omega)
+	}
+}
+
+func BenchmarkZPKToTF_SISO_N10(b *testing.B) {
+	zeros := make([]complex128, 9)
+	poles := make([]complex128, 10)
+	for i := range zeros {
+		zeros[i] = complex(float64(-i-1), 0)
+	}
+	for i := range poles {
+		poles[i] = complex(float64(-i-11), 0)
+	}
+	z, _ := NewZPK(zeros, poles, 1.0, 0)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		z.TransferFunction()
+	}
+}
+
+func BenchmarkTFToZPK_SISO_N10(b *testing.B) {
+	zeros := make([]complex128, 9)
+	poles := make([]complex128, 10)
+	for i := range zeros {
+		zeros[i] = complex(float64(-i-1), 0)
+	}
+	for i := range poles {
+		poles[i] = complex(float64(-i-11), 0)
+	}
+	z, _ := NewZPK(zeros, poles, 1.0, 0)
+	tf, _ := z.TransferFunction()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		tf.ZPK()
+	}
+}
+
+func BenchmarkSSToZPK_SISO(b *testing.B) {
+	sys := benchSys(5, 1, 1)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		sys.ZPKModel(nil)
+	}
+}
+
+func BenchmarkZPKToSS_SISO(b *testing.B) {
+	z, _ := NewZPK([]complex128{-1, -2}, []complex128{-3, -4, -5}, 2.0, 0)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		z.StateSpace(nil)
+	}
+}
+
+func BenchmarkPolyFromComplexRoots_N20(b *testing.B) {
+	roots := make([]complex128, 20)
+	for i := range roots {
+		roots[i] = complex(float64(-i-1), 0)
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		polyFromComplexRoots(roots)
+	}
+}
+
 func benchSys(n, m, p int) *System {
 	A := mat.NewDense(n, n, nil)
 	for i := 0; i < n; i++ {

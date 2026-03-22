@@ -126,12 +126,14 @@ func (z *ZPK) FreqResponse(omega []float64) (*FreqResponseMatrix, error) {
 	}
 	p, m := z.Dims()
 	data := make([]complex128, len(omega)*p*m)
+	continuous := z.IsContinuous()
+	dt := z.Dt
 	for k, w := range omega {
 		var s complex128
-		if z.IsContinuous() {
+		if continuous {
 			s = complex(0, w)
 		} else {
-			s = cmplx.Exp(complex(0, w*z.Dt))
+			s = cmplx.Exp(complex(0, w*dt))
 		}
 		off := k * p * m
 		for i := 0; i < p; i++ {
@@ -250,46 +252,47 @@ func copyComplex(src []complex128) []complex128 {
 }
 
 func sortConjugatePairs(roots []complex128) []complex128 {
-	if len(roots) == 0 {
+	n := len(roots)
+	if n == 0 {
 		return nil
 	}
-	result := make([]complex128, 0, len(roots))
-	var reals []complex128
-	var complex_ []complex128
+
+	result := make([]complex128, 0, n)
+	cmplx_ := make([]complex128, 0, n)
 	for _, r := range roots {
 		if imag(r) == 0 {
-			reals = append(reals, r)
+			result = append(result, r)
 		} else {
-			complex_ = append(complex_, r)
+			cmplx_ = append(cmplx_, r)
 		}
 	}
-	sort.Slice(reals, func(i, j int) bool { return real(reals[i]) < real(reals[j]) })
-	result = append(result, reals...)
 
-	used := make([]bool, len(complex_))
-	for i := 0; i < len(complex_); i++ {
+	sort.Slice(result, func(i, j int) bool { return real(result[i]) < real(result[j]) })
+
+	machTol := 100 * eps()
+	used := make([]bool, len(cmplx_))
+	for i, r := range cmplx_ {
 		if used[i] {
 			continue
 		}
-		r := complex_[i]
 		if imag(r) < 0 {
 			r = cmplx.Conj(r)
 		}
-		for k := i + 1; k < len(complex_); k++ {
-			if used[k] {
-				continue
-			}
-			tol := 100 * eps() * (1 + cmplx.Abs(r))
-			if cmplx.Abs(complex_[k]-cmplx.Conj(r)) < tol {
+		conjR := cmplx.Conj(r)
+		tol := machTol * (1 + cmplx.Abs(r))
+		matched := false
+		for k := i + 1; k < len(cmplx_); k++ {
+			if !used[k] && cmplx.Abs(cmplx_[k]-conjR) < tol {
 				used[i] = true
 				used[k] = true
-				result = append(result, r, cmplx.Conj(r))
+				matched = true
+				result = append(result, r, conjR)
 				break
 			}
 		}
-		if !used[i] {
+		if !matched {
 			used[i] = true
-			result = append(result, r, cmplx.Conj(r))
+			result = append(result, r, conjR)
 		}
 	}
 	return result

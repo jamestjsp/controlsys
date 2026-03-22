@@ -474,20 +474,59 @@ func validatePoles(poles []complex128) error {
 	return nil
 }
 
-func polyFromComplexRoots(poles []complex128) Poly {
-	p := Poly{1}
+func polyFromComplexRoots(roots []complex128) Poly {
+	n := len(roots)
+	if n == 0 {
+		return Poly{1}
+	}
+
+	sz := n + 1
+	buf := make([]float64, 2*sz)
+	a, b := buf[:sz], buf[sz:]
+	for k := range a {
+		a[k] = 0
+	}
+	a[0] = 1
+	deg := 0
+
 	i := 0
-	for i < len(poles) {
-		if imag(poles[i]) == 0 {
-			p = p.Mul(Poly{1, -real(poles[i])})
+	for i < n {
+		if imag(roots[i]) == 0 {
+			u := real(roots[i])
+			b[0] = a[0]
+			for k := 1; k <= deg; k++ {
+				b[k] = a[k] - u*a[k-1]
+			}
+			b[deg+1] = -u * a[deg]
+			deg++
+			a, b = b, a
 			i++
 		} else {
-			a, b := real(poles[i]), imag(poles[i])
-			p = p.Mul(Poly{1, -2 * a, a*a + b*b})
+			ar, ai := real(roots[i]), imag(roots[i])
+			c1 := -2 * ar
+			c0 := ar*ar + ai*ai
+			b[0] = a[0]
+			b[1] = c1 * a[0]
+			if deg >= 1 {
+				b[1] += a[1]
+			}
+			for k := 2; k <= deg; k++ {
+				b[k] = a[k] + c1*a[k-1] + c0*a[k-2]
+			}
+			b[deg+1] = c1 * a[deg]
+			if deg >= 1 {
+				b[deg+1] += c0 * a[deg-1]
+			}
+			b[deg+2] = c0 * a[deg]
+			deg += 2
+			a, b = b, a
 			i += 2
 		}
 	}
-	return p
+
+	result := make(Poly, deg+1)
+	copy(result, a[:deg+1])
+	return result
 }
 
 func selectClosestPole(pool []complex128, target complex128, preferReal bool) int {
