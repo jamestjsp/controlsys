@@ -618,6 +618,10 @@ func TestAllMargin_ThirdOrderPythonControl(t *testing.T) {
 	if !foundGM {
 		t.Errorf("phase crossover at w≈%.2f not found in %v", wantWp, all.PhaseCrossFreqs)
 	}
+
+	if len(all.GainCrossFreqs) != 0 {
+		t.Errorf("expected no gain crossings, got %v", all.GainCrossFreqs)
+	}
 }
 
 // python-control: tf([2],[1,3,2,0]) sampled at dt=0.01
@@ -953,6 +957,138 @@ func TestDiskMargin_LFTSystem(t *testing.T) {
 	}
 	if dm.Alpha <= 0 {
 		t.Errorf("Alpha = %v, want > 0", dm.Alpha)
+	}
+}
+
+func TestMargin_PythonControl_StableNoMargin(t *testing.T) {
+	sys, err := NewFromSlices(2, 1, 1,
+		[]float64{0, 1, -3, -2},
+		[]float64{0, 1},
+		[]float64{2, 1},
+		[]float64{0}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	m, err := Margin(sys)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !math.IsInf(m.GainMargin, 1) {
+		t.Errorf("GM = %v, want +Inf", m.GainMargin)
+	}
+	if !math.IsInf(m.PhaseMargin, 1) {
+		t.Errorf("PM = %v, want +Inf", m.PhaseMargin)
+	}
+	if !math.IsNaN(m.WgFreq) {
+		t.Errorf("WgFreq = %v, want NaN", m.WgFreq)
+	}
+	if !math.IsNaN(m.WpFreq) {
+		t.Errorf("WpFreq = %v, want NaN", m.WpFreq)
+	}
+}
+
+func TestMargin_PythonControl_StateSpace(t *testing.T) {
+	sys, err := NewFromSlices(2, 1, 1,
+		[]float64{1, 4, 3, 2},
+		[]float64{1, -4},
+		[]float64{1, 0},
+		[]float64{0}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	m, err := Margin(sys)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !math.IsInf(m.GainMargin, 1) {
+		t.Errorf("GM = %v, want +Inf", m.GainMargin)
+	}
+	if math.Abs(m.PhaseMargin-147.0743) > 0.5 {
+		t.Errorf("PM = %v deg, want ~147.0743 deg", m.PhaseMargin)
+	}
+	if math.Abs(m.WgFreq-2.5483) > 0.02 {
+		t.Errorf("WgFreq = %v, want ~2.5483", m.WgFreq)
+	}
+	if !math.IsNaN(m.WpFreq) {
+		t.Errorf("WpFreq = %v, want NaN", m.WpFreq)
+	}
+}
+
+func TestAllMargin_PythonControl_Returnall(t *testing.T) {
+	sys, err := NewFromSlices(3, 1, 1,
+		[]float64{0, 1, 0, 0, 0, 1, -4, -3, -2},
+		[]float64{0, 0, 1},
+		[]float64{1, 0, 0},
+		[]float64{0}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	all, err := AllMargin(sys)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(all.GainMargins) != 1 {
+		t.Fatalf("expected 1 gain margin, got %d", len(all.GainMargins))
+	}
+	wantGM := 20 * math.Log10(2.0)
+	if math.Abs(all.GainMargins[0]-wantGM) > 0.2 {
+		t.Errorf("GM = %v dB, want ~%v dB", all.GainMargins[0], wantGM)
+	}
+
+	if len(all.PhaseMargins) != 0 {
+		t.Errorf("expected no phase margins, got %v", all.PhaseMargins)
+	}
+
+	if len(all.PhaseCrossFreqs) != 1 {
+		t.Fatalf("expected 1 phase cross freq, got %d", len(all.PhaseCrossFreqs))
+	}
+	if math.Abs(all.PhaseCrossFreqs[0]-1.7321) > 0.02 {
+		t.Errorf("PhaseCrossFreq = %v, want ~1.7321", all.PhaseCrossFreqs[0])
+	}
+
+	if len(all.GainCrossFreqs) != 0 {
+		t.Errorf("expected no gain cross freqs, got %v", all.GainCrossFreqs)
+	}
+}
+
+func TestMargin_Discrete_PythonControl_SecondCase(t *testing.T) {
+	sys, err := NewFromSlices(3, 1, 1,
+		[]float64{0, 1, 0, 0, 0, 1, -1, -3, -3},
+		[]float64{0, 0, 1},
+		[]float64{2, 0, 0},
+		[]float64{0}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dsys, err := sys.DiscretizeZOH(0.1)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	m, err := Margin(dsys)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	wantGM := 20 * math.Log10(3.4927)
+	if math.Abs(m.GainMargin-wantGM) > 0.2 {
+		t.Errorf("GM = %v dB, want ~%v dB", m.GainMargin, wantGM)
+	}
+	if math.Abs(m.PhaseMargin-65.4212) > 0.5 {
+		t.Errorf("PM = %v deg, want ~65.4212 deg", m.PhaseMargin)
+	}
+	if math.Abs(m.WpFreq-1.6283) > 0.02 {
+		t.Errorf("WpFreq = %v, want ~1.6283", m.WpFreq)
+	}
+	if math.Abs(m.WgFreq-0.76625) > 0.02 {
+		t.Errorf("WgFreq = %v, want ~0.76625", m.WgFreq)
 	}
 }
 

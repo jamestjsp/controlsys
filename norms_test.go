@@ -605,6 +605,28 @@ func TestH2Norm_Discrete_MATLABVerified(t *testing.T) {
 	}
 }
 
+func TestH2Norm_Discrete_FirstOrder_MATLABVerified(t *testing.T) {
+	sys, _ := New(
+		mat.NewDense(1, 1, []float64{-1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{0}), 0)
+
+	dsys, err := sys.DiscretizeZOH(0.1)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := H2Norm(dsys)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := 0.223513699524858
+	if math.Abs(got-want) > 1e-3 {
+		t.Errorf("discrete H2 = %g, want %g", got, want)
+	}
+}
+
 func TestH2_HSV_Relationship(t *testing.T) {
 	sys, _ := New(
 		mat.NewDense(2, 2, []float64{-1, 0.5, 0, -2}),

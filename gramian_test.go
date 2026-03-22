@@ -280,6 +280,66 @@ func TestGram_CholeskyFactor(t *testing.T) {
 	assertMatNearT(t, "L'L=X", LtL, res.X, 1e-10)
 }
 
+func TestGram_PythonControl_Wc(t *testing.T) {
+	sys, _ := New(
+		mat.NewDense(2, 2, []float64{1, -2, 3, -4}),
+		mat.NewDense(2, 2, []float64{5, 6, 7, 8}),
+		mat.NewDense(2, 2, []float64{4, 5, 6, 7}),
+		mat.NewDense(2, 2, []float64{13, 14, 15, 16}), 0)
+
+	res, err := Gram(sys, GramControllability)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := mat.NewDense(2, 2, []float64{18.5, 24.5, 24.5, 32.5})
+	assertMatNearT(t, "Wc", res.X, want, 1e-3)
+}
+
+func TestGram_PythonControl_Wo(t *testing.T) {
+	sys, _ := New(
+		mat.NewDense(2, 2, []float64{1, -2, 3, -4}),
+		mat.NewDense(2, 2, []float64{5, 6, 7, 8}),
+		mat.NewDense(2, 2, []float64{4, 5, 6, 7}),
+		mat.NewDense(2, 2, []float64{13, 14, 15, 16}), 0)
+
+	res, err := Gram(sys, GramObservability)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := mat.NewDense(2, 2, []float64{257.5, -94.5, -94.5, 56.5})
+	assertMatNearT(t, "Wo", res.X, want, 1e-2)
+}
+
+func TestGram_PythonControl_Wc2(t *testing.T) {
+	sys, _ := New(
+		mat.NewDense(2, 2, []float64{1, -2, 3, -4}),
+		mat.NewDense(2, 1, []float64{5, 7}),
+		mat.NewDense(1, 2, []float64{6, 8}),
+		mat.NewDense(1, 1, []float64{9}), 0)
+
+	res, err := Gram(sys, GramControllability)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := mat.NewDense(2, 2, []float64{7.166667, 9.833333, 9.833333, 13.5})
+	assertMatNearT(t, "Wc2", res.X, want, 1e-3)
+}
+
+func TestGram_PythonControl_Wo2(t *testing.T) {
+	sys, _ := New(
+		mat.NewDense(2, 2, []float64{1, -2, 3, -4}),
+		mat.NewDense(2, 1, []float64{5, 7}),
+		mat.NewDense(1, 2, []float64{6, 8}),
+		mat.NewDense(1, 1, []float64{9}), 0)
+
+	res, err := Gram(sys, GramObservability)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := mat.NewDense(2, 2, []float64{198., -72., -72., 44.})
+	assertMatNearT(t, "Wo2", res.X, want, 1e-2)
+}
+
 func TestGram_Empty(t *testing.T) {
 	sys, _ := New(nil, nil, nil, mat.NewDense(1, 1, []float64{1}), 0)
 	res, err := Gram(sys, GramControllability)

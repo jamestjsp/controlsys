@@ -437,22 +437,20 @@ func TestImpulse_PythonControlVerified(t *testing.T) {
 		t.Fatal("too few steps")
 	}
 
-	// For continuous impulse, early samples should be near C*B = 86
-	found := false
+	foundNear86 := false
 	for k := 0; k < min(10, steps); k++ {
-		y := resp.Y.At(0, k)
-		if y > 70 && y < 100 {
-			found = true
+		if math.Abs(resp.Y.At(0, k)-86.0) < 5.0 {
+			foundNear86 = true
 			break
 		}
 	}
-	if !found {
+	if !foundNear86 {
 		t.Errorf("early impulse response should be near C*B=86")
 	}
 
 	yLast := resp.Y.At(0, steps-1)
-	if yLast > 20 {
-		t.Errorf("final value = %f, want decaying", yLast)
+	if math.Abs(yLast-14.89) > 3.0 {
+		t.Errorf("final value = %f, want near 14.89", yLast)
 	}
 }
 
@@ -582,6 +580,119 @@ func TestDamp_RealPoles(t *testing.T) {
 	for _, d := range info {
 		if d.Zeta != 1.0 {
 			t.Errorf("real pole zeta = %f, want 1.0", d.Zeta)
+		}
+	}
+}
+
+func TestStep_PythonControl_D0(t *testing.T) {
+	sys, _ := New(
+		mat.NewDense(2, 2, []float64{1, -2, 3, -4}),
+		mat.NewDense(2, 1, []float64{5, 7}),
+		mat.NewDense(1, 2, []float64{6, 8}),
+		mat.NewDense(1, 1, []float64{0}), 0)
+
+	resp, err := Step(sys, 1.0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := []float64{0., 8.6457, 15.7072, 21.4855, 26.2234, 30.1165, 33.3227, 35.9694, 38.1599, 39.9776}
+
+	_, steps := resp.Y.Dims()
+	if steps < len(want) {
+		t.Fatalf("only %d steps, want at least %d", steps, len(want))
+	}
+
+	for i, w := range want {
+		ti := resp.T[0] + float64(i)*(1.0/float64(len(want)-1))
+		k := 0
+		for j := 1; j < steps; j++ {
+			if math.Abs(resp.T[j]-ti) < math.Abs(resp.T[k]-ti) {
+				k = j
+			}
+		}
+		got := resp.Y.At(0, k)
+		tol := 1.0
+		if i == 0 {
+			tol = 1e-12
+		}
+		if math.Abs(got-w) > tol {
+			t.Errorf("t=%.3f: got %f, want %f (±%.1f)", resp.T[k], got, w, tol)
+		}
+	}
+}
+
+func TestImpulse_PythonControl_D0(t *testing.T) {
+	sys, _ := New(
+		mat.NewDense(2, 2, []float64{1, -2, 3, -4}),
+		mat.NewDense(2, 1, []float64{5, 7}),
+		mat.NewDense(1, 2, []float64{6, 8}),
+		mat.NewDense(1, 1, []float64{0}), 0)
+
+	resp, err := Impulse(sys, 1.0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := []float64{86., 70.1808, 57.3753, 46.9975, 38.5766, 31.7344, 26.1668, 21.6292, 17.9245, 14.8945}
+
+	_, steps := resp.Y.Dims()
+	if steps < 10 {
+		t.Fatal("too few steps")
+	}
+
+	foundNear86 := false
+	for k := 0; k < min(10, steps); k++ {
+		if math.Abs(resp.Y.At(0, k)-86.0) < 5.0 {
+			foundNear86 = true
+			break
+		}
+	}
+	if !foundNear86 {
+		t.Errorf("first non-zero sample should be near C*B=86")
+	}
+
+	lastK := steps - 1
+	if math.Abs(resp.Y.At(0, lastK)-want[len(want)-1]) > 2.0 {
+		t.Errorf("final value got %f, want near %f", resp.Y.At(0, lastK), want[len(want)-1])
+	}
+}
+
+func TestInitial_PythonControl_Continuous(t *testing.T) {
+	sys, _ := New(
+		mat.NewDense(2, 2, []float64{1, -2, 3, -4}),
+		mat.NewDense(2, 1, []float64{5, 7}),
+		mat.NewDense(1, 2, []float64{6, 8}),
+		mat.NewDense(1, 1, []float64{9}), 0)
+
+	x0 := mat.NewVecDense(2, []float64{0.5, 1.0})
+	resp, err := Initial(sys, x0, 1.0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := []float64{11., 8.1494, 5.9361, 4.2258, 2.9118, 1.9092, 1.1508, 0.5833, 0.1645, -0.1391}
+
+	_, steps := resp.Y.Dims()
+	if steps < len(want) {
+		t.Fatalf("only %d steps, want at least %d", steps, len(want))
+	}
+
+	for i, w := range want {
+		ti := resp.T[0] + float64(i)*(1.0/float64(len(want)-1))
+		k := 0
+		for j := 1; j < steps; j++ {
+			if math.Abs(resp.T[j]-ti) < math.Abs(resp.T[k]-ti) {
+				k = j
+			}
+		}
+		got := resp.Y.At(0, k)
+		tol := 1.0
+		if i == 0 {
+			tol = 0.01
+		}
+		if math.Abs(got-w) > tol {
+			t.Errorf("t=%.3f: got %f, want %f (±%.2f)", resp.T[k], got, w, tol)
 		}
 	}
 }

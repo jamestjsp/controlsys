@@ -368,3 +368,96 @@ func checkFreqApprox(t *testing.T, orig, red *System, relTol float64) {
 		}
 	}
 }
+
+func makePythonControlSystem() *System {
+	sys, _ := New(
+		mat.NewDense(4, 4, []float64{
+			-15, -7.5, -6.25, -1.875,
+			8, 0, 0, 0,
+			0, 4, 0, 0,
+			0, 0, 1, 0,
+		}),
+		mat.NewDense(4, 1, []float64{2, 0, 0, 0}),
+		mat.NewDense(1, 4, []float64{0.5, 0.6875, 0.7031, 0.5}),
+		mat.NewDense(1, 1, []float64{0}), 0)
+	return sys
+}
+
+func TestBalred_PythonControl_Truncate(t *testing.T) {
+	sys := makePythonControlSystem()
+
+	red, hsv, err := Balred(sys, 2, Truncate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nr, _, _ := red.Dims()
+	if nr != 2 {
+		t.Fatalf("n = %d, want 2", nr)
+	}
+
+	origDC, err := sys.DCGain()
+	if err != nil {
+		t.Fatal(err)
+	}
+	redDC, err := red.DCGain()
+	if err != nil {
+		t.Fatal(err)
+	}
+	truncSum := 0.0
+	for i := 2; i < len(hsv); i++ {
+		truncSum += hsv[i]
+	}
+	dcBound := 2 * truncSum
+	assertMatNearT(t, "DCGain", redDC, origDC, dcBound)
+
+	negC := mat.NewDense(1, 2, nil)
+	negC.Scale(-1, red.C)
+	negD := mat.NewDense(1, 1, nil)
+	negD.Scale(-1, red.D)
+	redNeg, _ := New(denseCopy(red.A), denseCopy(red.B), negC, negD, 0)
+	errSys, err := Parallel(sys, redNeg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hinfErr, _, err := HinfNorm(errSys)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hinfErr > dcBound {
+		t.Errorf("Hinf error = %g, exceeds 2*sum(truncated HSV) = %g", hinfErr, dcBound)
+	}
+}
+
+func TestBalred_PythonControl_MatchDC(t *testing.T) {
+	sys := makePythonControlSystem()
+
+	red, _, err := Balred(sys, 2, SingularPerturbation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nr, _, _ := red.Dims()
+	if nr != 2 {
+		t.Fatalf("n = %d, want 2", nr)
+	}
+
+	wantDr := mat.NewDense(1, 1, []float64{-0.08383902})
+	assertMatNearT(t, "Dr", red.D, wantDr, 1e-4)
+
+	origDC, err := sys.DCGain()
+	if err != nil {
+		t.Fatal(err)
+	}
+	redDC, err := red.DCGain()
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertMatNearT(t, "DCGain", redDC, origDC, 1e-4)
+
+	stable, err := red.IsStable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !stable {
+		t.Error("reduced system is not stable")
+	}
+}
