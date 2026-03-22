@@ -1151,6 +1151,75 @@ func BenchmarkPolyFromComplexRoots_N20(b *testing.B) {
 	}
 }
 
+func BenchmarkSigma_SISO(b *testing.B) {
+	sys := benchSys(4, 1, 1)
+	omega := logspace(-1, 2, 200)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		sys.Sigma(omega, 0)
+	}
+}
+
+func BenchmarkSigma_MIMO(b *testing.B) {
+	sys := benchSys(4, 2, 2)
+	omega := logspace(-1, 2, 200)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		sys.Sigma(omega, 0)
+	}
+}
+
+func BenchmarkNichols(b *testing.B) {
+	sys := benchSys(4, 1, 1)
+	omega := logspace(-1, 2, 200)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		sys.Nichols(omega, 0)
+	}
+}
+
+func BenchmarkNyquist(b *testing.B) {
+	sys := benchSys(4, 1, 1)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		sys.Nyquist(nil, 500)
+	}
+}
+
+func BenchmarkFreqRespEst_SISO(b *testing.B) {
+	dt := 0.01
+	N := 4096
+	uData := make([]float64, N)
+	yData := make([]float64, N)
+	for i := range N {
+		uData[i] = math.Sin(float64(i) * 0.1)
+		yData[i] = 0.5 * uData[i]
+	}
+	u := mat.NewDense(1, N, uData)
+	y := mat.NewDense(1, N, yData)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		FreqRespEst(u, y, dt, nil)
+	}
+}
+
+func BenchmarkFreqRespEst_MIMO(b *testing.B) {
+	dt := 0.01
+	N := 4096
+	uData := make([]float64, 2*N)
+	yData := make([]float64, 2*N)
+	for i := range 2 * N {
+		uData[i] = math.Sin(float64(i) * 0.1)
+		yData[i] = 0.3 * uData[i]
+	}
+	u := mat.NewDense(2, N, uData)
+	y := mat.NewDense(2, N, yData)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		FreqRespEst(u, y, dt, nil)
+	}
+}
+
 func benchSys(n, m, p int) *System {
 	A := mat.NewDense(n, n, nil)
 	for i := 0; i < n; i++ {

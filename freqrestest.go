@@ -223,49 +223,62 @@ func welchMIMO(fft *fourier.FFT, seg []float64, _ []complex128, win []float64,
 	inR := input.RawMatrix()
 	outR := output.RawMatrix()
 
-	uFFT := make([][]complex128, m)
-	yFFT := make([][]complex128, p)
-	for i := range m {
-		uFFT[i] = make([]complex128, nFreq)
-	}
-	for i := range p {
-		yFFT[i] = make([]complex128, nFreq)
-	}
+	// Flat FFT storage: uFlat[ch*nFreq + f], yFlat[ch*nFreq + f]
+	uFlat := make([]complex128, m*nFreq)
+	yFlat := make([]complex128, p*nFreq)
 
 	Suu := make([]complex128, nFreq*m*m)
 	Syu := make([]complex128, nFreq*p*m)
 	Syy := make([]complex128, nFreq*p*p)
 
-	for s := 0; s < nSeg; s++ {
+	mm := m * m
+	pm := p * m
+	pp := p * p
+
+	for s := range nSeg {
 		start := s * hop
 
 		for ch := range m {
-			for k := 0; k < nfft; k++ {
+			for k := range nfft {
 				seg[k] = inR.Data[ch*inR.Stride+start+k] * win[k]
 			}
-			fft.Coefficients(uFFT[ch], seg)
+			fft.Coefficients(uFlat[ch*nFreq:(ch+1)*nFreq], seg)
 		}
 		for ch := range p {
-			for k := 0; k < nfft; k++ {
+			for k := range nfft {
 				seg[k] = outR.Data[ch*outR.Stride+start+k] * win[k]
 			}
-			fft.Coefficients(yFFT[ch], seg)
+			fft.Coefficients(yFlat[ch*nFreq:(ch+1)*nFreq], seg)
 		}
 
-		for f := range nFreq {
-			for j1 := range m {
-				for j2 := range m {
-					Suu[f*m*m+j1*m+j2] += cmplx.Conj(uFFT[j1][f]) * uFFT[j2][f]
+		// Fused accumulation: iterate channel pairs, then sweep frequencies
+		for j1 := range m {
+			u1 := uFlat[j1*nFreq : (j1+1)*nFreq]
+			for j2 := range m {
+				u2 := uFlat[j2*nFreq : (j2+1)*nFreq]
+				off := j1*m + j2
+				for f := range nFreq {
+					Suu[f*mm+off] += cmplx.Conj(u1[f]) * u2[f]
 				}
 			}
-			for i := range p {
-				for j := range m {
-					Syu[f*p*m+i*m+j] += cmplx.Conj(uFFT[j][f]) * yFFT[i][f]
+		}
+		for i := range p {
+			yi := yFlat[i*nFreq : (i+1)*nFreq]
+			for j := range m {
+				uj := uFlat[j*nFreq : (j+1)*nFreq]
+				off := i*m + j
+				for f := range nFreq {
+					Syu[f*pm+off] += cmplx.Conj(uj[f]) * yi[f]
 				}
 			}
-			for i1 := range p {
-				for i2 := range p {
-					Syy[f*p*p+i1*p+i2] += cmplx.Conj(yFFT[i1][f]) * yFFT[i2][f]
+		}
+		for i1 := range p {
+			y1 := yFlat[i1*nFreq : (i1+1)*nFreq]
+			for i2 := range p {
+				y2 := yFlat[i2*nFreq : (i2+1)*nFreq]
+				off := i1*p + i2
+				for f := range nFreq {
+					Syy[f*pp+off] += cmplx.Conj(y1[f]) * y2[f]
 				}
 			}
 		}
@@ -335,25 +348,31 @@ func freqRespEstFFT(input, output *mat.Dense, dt float64, m, p, _, nfft int,
 	inRaw := input.RawMatrix()
 	outRaw := output.RawMatrix()
 
+	// Pre-compute all output FFTs once: O(p) instead of O(p*m)
+	yCoeffs := make([]complex128, p*nFreq)
+	for i := range p {
+		for k := range nfft {
+			seg[k] = outRaw.Data[i*outRaw.Stride+k] * win[k]
+		}
+		fft.Coefficients(yCoeffs[i*nFreq:(i+1)*nFreq], seg)
+	}
+
 	H := make([]complex128, nFreq*p*m)
+	uCoeff := make([]complex128, nFreq)
 
 	for j := range m {
-		for k := 0; k < nfft; k++ {
+		for k := range nfft {
 			seg[k] = inRaw.Data[j*inRaw.Stride+k] * win[k]
 		}
-		uCoeff := fft.Coefficients(nil, seg)
+		fft.Coefficients(uCoeff, seg)
 
 		for i := range p {
-			for k := 0; k < nfft; k++ {
-				seg[k] = outRaw.Data[i*outRaw.Stride+k] * win[k]
-			}
-			yCoeff := fft.Coefficients(nil, seg)
-
+			yC := yCoeffs[i*nFreq : (i+1)*nFreq]
 			for f := range nFreq {
 				if cmplx.Abs(uCoeff[f]) < 1e-30 {
 					continue
 				}
-				H[f*p*m+i*m+j] = yCoeff[f] / uCoeff[f]
+				H[f*p*m+i*m+j] = yC[f] / uCoeff[f]
 			}
 		}
 	}

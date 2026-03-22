@@ -633,27 +633,33 @@ func (sys *System) Sigma(omega []float64, nPoints int) (*SigmaResult, error) {
 	}
 
 	nw := len(omega)
+	pm := p * m
+	data := resp.Data
 
 	if p == 1 && m == 1 {
 		sv := make([]float64, nw)
-		for k := range omega {
-			sv[k] = cmplx.Abs(resp.At(k, 0, 0))
+		for k := range nw {
+			sv[k] = cmplx.Abs(data[k])
 		}
 		return &SigmaResult{Omega: omega, sv: sv, nSV: 1}, nil
 	}
 
 	ws := newSVDWorkspace(p, m)
 	allSV := make([]float64, nw*nSV)
+	rData := ws.rData
 
-	for k := range omega {
-		for i := 0; i < p; i++ {
-			for j := 0; j < m; j++ {
-				h := resp.At(k, i, j)
-				ws.rData[i*m+j] = real(h)
-				ws.rData[(p+i)*m+j] = imag(h)
+	for k := range nw {
+		base := k * pm
+		for i := range p {
+			row := i * m
+			rowShift := (p + i) * m
+			for j := range m {
+				h := data[base+row+j]
+				rData[row+j] = real(h)
+				rData[rowShift+j] = imag(h)
 			}
 		}
-		impl.Dgesvd(lapack.SVDNone, lapack.SVDNone, 2*p, m, ws.rData, m,
+		impl.Dgesvd(lapack.SVDNone, lapack.SVDNone, 2*p, m, rData, m,
 			ws.sv, nil, 1, nil, 1, ws.work, len(ws.work))
 		copy(allSV[k*nSV:], ws.sv[:nSV])
 	}

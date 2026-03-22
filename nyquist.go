@@ -165,7 +165,7 @@ func autoNyquistFreqs(sys *System, poles []complex128, imagPoles []imagAxisPole,
 		nPoints = 500
 	}
 
-	var natFreqs []float64
+	natFreqs := make([]float64, 0, len(poles))
 	for _, p := range poles {
 		var wn float64
 		if sys.IsContinuous() {
@@ -272,8 +272,8 @@ func buildNyquistContour(sys *System, omega []float64, imagPoles []imagAxisPole,
 	copy(sortedPoles, imagPoles)
 	sort.Slice(sortedPoles, func(i, j int) bool { return sortedPoles[i].w0 < sortedPoles[j].w0 })
 
-	var segments []segment
-	var curFreqs []float64
+	segments := make([]segment, 0, len(imagPoles)*2+1)
+	curFreqs := make([]float64, 0, len(omega))
 
 	for _, w := range omega {
 		insertArc := false
@@ -322,8 +322,9 @@ func buildNyquistContour(sys *System, omega []float64, imagPoles []imagAxisPole,
 		_ = originMult
 	}
 
-	var contour []complex128
-	var contourOmega []float64
+	estSize := len(omega) + len(imagPoles)*50
+	contour := make([]complex128, 0, estSize)
+	contourOmega := make([]float64, 0, estSize)
 
 	for _, seg := range segments {
 		if seg.isArc {
