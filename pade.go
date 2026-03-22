@@ -158,7 +158,12 @@ func (sys *System) Pade(order int) (*System, error) {
 	Dcl.Mul(D12, DdED21)
 	Dcl.Add(Dcl, lft.D)
 
-	return newNoCopy(Acl, Bcl, Ccl, Dcl, 0)
+	result, err := newNoCopy(Acl, Bcl, Ccl, Dcl, 0)
+	if err != nil {
+		return nil, err
+	}
+	propagateIONames(result, sys)
+	return result, nil
 }
 
 func PadeDelay(tau float64, order int) (*System, error) {

@@ -199,6 +199,7 @@ func Balreal(sys *System) (*BalrealResult, error) {
 	Db := denseCopy(sys.D)
 
 	balSys, _ := newNoCopy(Ab, Bb, Cb, Db, sys.Dt)
+	propagateIONames(balSys, sys)
 
 	return &BalrealResult{
 		Sys:  balSys,
@@ -242,10 +243,19 @@ func Balred(sys *System, order int, method BalredMethod) (*System, []float64, er
 	if method == Truncate {
 		Dr := denseCopy(Db)
 		red, err := newNoCopy(A11, B1, C1, Dr, sys.Dt)
-		return red, hsv, err
+		if err != nil {
+			return nil, hsv, err
+		}
+		propagateIONames(red, sys)
+		return red, hsv, nil
 	}
 
-	return singularPerturbation(Ab, Bb, Cb, Db, A11, B1, C1, n, m, p, r, hsv, sys.Dt)
+	red, hsvOut, err := singularPerturbation(Ab, Bb, Cb, Db, A11, B1, C1, n, m, p, r, hsv, sys.Dt)
+	if err != nil {
+		return nil, hsvOut, err
+	}
+	propagateIONames(red, sys)
+	return red, hsvOut, nil
 }
 
 // Modred reduces a system by eliminating specified states.
@@ -278,7 +288,12 @@ func Modred(sys *System, elim []int, method BalredMethod) (*System, error) {
 	r := len(keep)
 
 	if r == 0 {
-		return NewGain(denseCopy(sys.D), sys.Dt)
+		g, err := NewGain(denseCopy(sys.D), sys.Dt)
+		if err != nil {
+			return nil, err
+		}
+		propagateIONames(g, sys)
+		return g, nil
 	}
 	if r == n {
 		return sys.Copy(), nil
@@ -327,11 +342,20 @@ func Modred(sys *System, elim []int, method BalredMethod) (*System, error) {
 	C1 := extractSubmatrix(Cp, 0, p, 0, r)
 
 	if method == Truncate {
-		return newNoCopy(A11, B1, C1, denseCopy(sys.D), sys.Dt)
+		red, err := newNoCopy(A11, B1, C1, denseCopy(sys.D), sys.Dt)
+		if err != nil {
+			return nil, err
+		}
+		propagateIONames(red, sys)
+		return red, nil
 	}
 
 	red, _, err := singularPerturbation(Ap, Bp, Cp, sys.D, A11, B1, C1, n, m, p, r, nil, sys.Dt)
-	return red, err
+	if err != nil {
+		return nil, err
+	}
+	propagateIONames(red, sys)
+	return red, nil
 }
 
 // singularPerturbation computes the reduced system via residualization.

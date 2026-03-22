@@ -99,6 +99,9 @@ func seriesSimple(sys1, sys2 *System) (*System, error) {
 		}
 		sys.InputDelay = inDel
 		sys.OutputDelay = outDel
+		sys.InputName = copyStringSlice(sys1.InputName)
+		sys.OutputName = copyStringSlice(sys2.OutputName)
+		sys.StateName = concatStringSlices([][]string{sys1.StateName, sys2.StateName}, []int{n1, n2})
 		return sys, nil
 	}
 
@@ -321,6 +324,9 @@ func parallelSimple(sys1, sys2 *System) (*System, error) {
 		}
 		sys.InputDelay = inDel
 		sys.OutputDelay = outDel
+		sys.InputName = copyStringSlice(sys1.InputName)
+		sys.OutputName = copyStringSlice(sys1.OutputName)
+		sys.StateName = concatStringSlices([][]string{sys1.StateName, sys2.StateName}, []int{n1, n2})
 		return sys, nil
 	}
 
@@ -531,7 +537,14 @@ func Feedback(plant, controller *System, sign float64) (*System, error) {
 	if n1 == 0 && n2 == 0 {
 		D := mat.NewDense(p, m, nil)
 		D.Mul(E21, plant.D)
-		return buildSystem(nil, nil, nil, D, plant.Dt, nil)
+		sys, err := buildSystem(nil, nil, nil, D, plant.Dt, nil)
+		if err != nil {
+			return nil, err
+		}
+		sys.InputName = copyStringSlice(plant.InputName)
+		sys.OutputName = copyStringSlice(plant.OutputName)
+		sys.StateName = concatStringSlices([][]string{plant.StateName, controller.StateName}, []int{n1, n2})
+		return sys, nil
 	}
 
 	A := mat.NewDense(n, n, nil)
@@ -600,7 +613,14 @@ func Feedback(plant, controller *System, sign float64) (*System, error) {
 
 	D.Mul(E21, plant.D)
 
-	return buildSystem(A, Bres, C, D, plant.Dt, nil)
+	sys, err := buildSystem(A, Bres, C, D, plant.Dt, nil)
+	if err != nil {
+		return nil, err
+	}
+	sys.InputName = copyStringSlice(plant.InputName)
+	sys.OutputName = copyStringSlice(plant.OutputName)
+	sys.StateName = concatStringSlices([][]string{plant.StateName, controller.StateName}, []int{n1, n2})
+	return sys, nil
 }
 
 func subBlock(dst *mat.Dense, r0, c0 int, src *mat.Dense) {
@@ -662,6 +682,9 @@ func Append(sys1, sys2 *System) (*System, error) {
 		setBlock(res.D, 0, 0, s1.D)
 		setBlock(res.D, p1, m1, s2.D)
 		appendInternalDelay(res, s1, s2, n1, n2, m1, m2, p1, p2)
+		res.InputName = concatStringSlices([][]string{sys1.InputName, sys2.InputName}, []int{m1, m2})
+		res.OutputName = concatStringSlices([][]string{sys1.OutputName, sys2.OutputName}, []int{p1, p2})
+		res.StateName = concatStringSlices([][]string{sys1.StateName, sys2.StateName}, []int{n1, n2})
 		return res, nil
 	}
 
@@ -693,6 +716,9 @@ func Append(sys1, sys2 *System) (*System, error) {
 		sys.InputDelay = inDel
 		sys.OutputDelay = outDel
 		appendInternalDelay(sys, sys1, sys2, n1, n2, m1, m2, p1, p2)
+		sys.InputName = concatStringSlices([][]string{sys1.InputName, sys2.InputName}, []int{m1, m2})
+		sys.OutputName = concatStringSlices([][]string{sys1.OutputName, sys2.OutputName}, []int{p1, p2})
+		sys.StateName = concatStringSlices([][]string{sys1.StateName, sys2.StateName}, []int{n1, n2})
 		return sys, nil
 	}
 
@@ -708,6 +734,9 @@ func Append(sys1, sys2 *System) (*System, error) {
 	sys.InputDelay = inDel
 	sys.OutputDelay = outDel
 	appendInternalDelay(sys, sys1, sys2, n1, n2, m1, m2, p1, p2)
+	sys.InputName = concatStringSlices([][]string{sys1.InputName, sys2.InputName}, []int{m1, m2})
+	sys.OutputName = concatStringSlices([][]string{sys1.OutputName, sys2.OutputName}, []int{p1, p2})
+	sys.StateName = concatStringSlices([][]string{sys1.StateName, sys2.StateName}, []int{n1, n2})
 	return sys, nil
 }
 
@@ -837,6 +866,9 @@ func seriesLFT(sys1, sys2 *System) (*System, error) {
 		}
 		sys.InputDelay = savedInput1
 		sys.OutputDelay = savedOutput2
+		sys.InputName = copyStringSlice(sys1.InputName)
+		sys.OutputName = copyStringSlice(sys2.OutputName)
+		sys.StateName = concatStringSlices([][]string{sys1.StateName, sys2.StateName}, []int{n1, n2})
 		return sys, nil
 	}
 
@@ -905,6 +937,9 @@ func seriesLFT(sys1, sys2 *System) (*System, error) {
 	sys.D22 = d22
 	sys.InputDelay = savedInput1
 	sys.OutputDelay = savedOutput2
+	sys.InputName = copyStringSlice(sys1.InputName)
+	sys.OutputName = copyStringSlice(sys2.OutputName)
+	sys.StateName = concatStringSlices([][]string{sys1.StateName, sys2.StateName}, []int{n1, n2})
 	return sys, nil
 }
 
@@ -991,6 +1026,9 @@ func parallelLFT(sys1, sys2 *System) (*System, error) {
 		}
 		sys.InputDelay = commonIn
 		sys.OutputDelay = commonOut
+		sys.InputName = copyStringSlice(sys1.InputName)
+		sys.OutputName = copyStringSlice(sys1.OutputName)
+		sys.StateName = concatStringSlices([][]string{sys1.StateName, sys2.StateName}, []int{n1, n2})
 		return sys, nil
 	}
 
@@ -1041,6 +1079,9 @@ func parallelLFT(sys1, sys2 *System) (*System, error) {
 	sys.D22 = d22
 	sys.InputDelay = commonIn
 	sys.OutputDelay = commonOut
+	sys.InputName = copyStringSlice(sys1.InputName)
+	sys.OutputName = copyStringSlice(sys1.OutputName)
+	sys.StateName = concatStringSlices([][]string{sys1.StateName, sys2.StateName}, []int{n1, n2})
 	return sys, nil
 }
 
@@ -1238,12 +1279,22 @@ func BlkDiag(systems ...*System) (*System, error) {
 		}
 	}
 
+	var inNames, outNames, stNames [][]string
+	for _, s := range systems {
+		inNames = append(inNames, s.InputName)
+		outNames = append(outNames, s.OutputName)
+		stNames = append(stNames, s.StateName)
+	}
+
 	if nTotal == 0 {
 		sys, _ := NewGain(D, dt)
 		sys.Delay = delay
 		sys.InputDelay = inDel
 		sys.OutputDelay = outDel
 		blkDiagInternalDelay(sys, srcs, ns, ms, ps, nTotal, mTotal, pTotal)
+		sys.InputName = concatStringSlices(inNames, ms)
+		sys.OutputName = concatStringSlices(outNames, ps)
+		sys.StateName = concatStringSlices(stNames, ns)
 		return sys, nil
 	}
 
@@ -1255,6 +1306,9 @@ func BlkDiag(systems ...*System) (*System, error) {
 	sys.InputDelay = inDel
 	sys.OutputDelay = outDel
 	blkDiagInternalDelay(sys, srcs, ns, ms, ps, nTotal, mTotal, pTotal)
+	sys.InputName = concatStringSlices(inNames, ms)
+	sys.OutputName = concatStringSlices(outNames, ps)
+	sys.StateName = concatStringSlices(stNames, ns)
 	return sys, nil
 }
 
@@ -1570,6 +1624,9 @@ func connectWithDelay(sys *System, Q *mat.Dense, inputs, outputs []int) (*System
 		result.OutputDelay = savedOutputDelay
 	}
 
+	result.InputName = selectStringSlice(sys.InputName, inputs)
+	result.OutputName = selectStringSlice(sys.OutputName, outputs)
+
 	return result, nil
 }
 
@@ -1612,7 +1669,14 @@ func connectSimple(sys *System, Q *mat.Dense, inputs, outputs []int, n, m, p int
 				Dcl.Set(ki, kj, Dfull.At(oi, ij))
 			}
 		}
-		return NewGain(Dcl, sys.Dt)
+		result, err := NewGain(Dcl, sys.Dt)
+		if err != nil {
+			return nil, err
+		}
+		result.InputName = selectStringSlice(sys.InputName, inputs)
+		result.OutputName = selectStringSlice(sys.OutputName, outputs)
+		result.StateName = copyStringSlice(sys.StateName)
+		return result, nil
 	}
 
 	BEQC := mat.NewDense(n, n, nil)
@@ -1659,7 +1723,14 @@ func connectSimple(sys *System, Q *mat.Dense, inputs, outputs []int, n, m, p int
 		}
 	}
 
-	return newNoCopy(Acl, Bcl, Ccl, Dcl, sys.Dt)
+	result, err := newNoCopy(Acl, Bcl, Ccl, Dcl, sys.Dt)
+	if err != nil {
+		return nil, err
+	}
+	result.InputName = selectStringSlice(sys.InputName, inputs)
+	result.OutputName = selectStringSlice(sys.OutputName, outputs)
+	result.StateName = copyStringSlice(sys.StateName)
+	return result, nil
 }
 
 func buildSystem(A, B, C, D *mat.Dense, dt float64, delay *mat.Dense) (*System, error) {

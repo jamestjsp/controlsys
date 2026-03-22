@@ -284,6 +284,8 @@ func feedbackWithLFT(plant, controller *System, sign float64) (*System, error) {
 		return nil, err
 	}
 	result.InputDelay = savedPlantInput
+	result.InputName = copyStringSlice(plant.InputName)
+	result.OutputName = copyStringSlice(plant.OutputName)
 	return result, nil
 }
 

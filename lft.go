@@ -51,12 +51,32 @@ func lftExtract(M *System, nu, ny int) (*System, error) {
 	D11 := extractBlock(M.D, 0, 0, ny, nu)
 
 	if nM == 0 {
-		return buildSystem(nil, nil, nil, D11, M.Dt, nil)
+		result, err := buildSystem(nil, nil, nil, D11, M.Dt, nil)
+		if err != nil {
+			return nil, err
+		}
+		if M.InputName != nil {
+			result.InputName = copyStringSlice(M.InputName[:nu])
+		}
+		if M.OutputName != nil {
+			result.OutputName = copyStringSlice(M.OutputName[:ny])
+		}
+		return result, nil
 	}
 
 	B1 := extractBlock(M.B, 0, 0, nM, nu)
 	C1 := extractBlock(M.C, 0, 0, ny, nM)
-	return newNoCopy(M.A, B1, C1, D11, M.Dt)
+	result, err := newNoCopy(M.A, B1, C1, D11, M.Dt)
+	if err != nil {
+		return nil, err
+	}
+	if M.InputName != nil {
+		result.InputName = copyStringSlice(M.InputName[:nu])
+	}
+	if M.OutputName != nil {
+		result.OutputName = copyStringSlice(M.OutputName[:ny])
+	}
+	return result, nil
 }
 
 func lftSimple(M, Delta *System, nu, ny int) (*System, error) {
@@ -97,7 +117,17 @@ func lftSimple(M, Delta *System, nu, ny int) (*System, error) {
 	if n == 0 {
 		Dcl := mat.NewDense(ny, nu, nil)
 		Dcl.Add(D11, mulDense(D12, PhiD21))
-		return buildSystem(nil, nil, nil, Dcl, M.Dt, nil)
+		result, err := buildSystem(nil, nil, nil, Dcl, M.Dt, nil)
+		if err != nil {
+			return nil, err
+		}
+		if M.InputName != nil {
+			result.InputName = copyStringSlice(M.InputName[:nu])
+		}
+		if M.OutputName != nil {
+			result.OutputName = copyStringSlice(M.OutputName[:ny])
+		}
+		return result, nil
 	}
 
 	Acl := mat.NewDense(n, n, nil)
@@ -137,7 +167,17 @@ func lftSimple(M, Delta *System, nu, ny int) (*System, error) {
 
 	Dcl.Add(D11, mulDense(D12, PhiD21))
 
-	return newNoCopy(Acl, Bcl, Ccl, Dcl, M.Dt)
+	result, err := newNoCopy(Acl, Bcl, Ccl, Dcl, M.Dt)
+	if err != nil {
+		return nil, err
+	}
+	if M.InputName != nil {
+		result.InputName = copyStringSlice(M.InputName[:nu])
+	}
+	if M.OutputName != nil {
+		result.OutputName = copyStringSlice(M.OutputName[:ny])
+	}
+	return result, nil
 }
 
 func solveLFTLoop(D22M, DDelta *mat.Dense, w int) (*mat.Dense, error) {
@@ -337,6 +377,12 @@ func lftWithDelay(M, Delta *System, nu, ny int) (*System, error) {
 		if hasExtOutput {
 			sys.OutputDelay = savedOutputDelay
 		}
+		if M.InputName != nil {
+			sys.InputName = copyStringSlice(M.InputName[:nu])
+		}
+		if M.OutputName != nil {
+			sys.OutputName = copyStringSlice(M.OutputName[:ny])
+		}
 		return sys, nil
 	}
 
@@ -483,6 +529,12 @@ func lftWithDelay(M, Delta *System, nu, ny int) (*System, error) {
 	}
 	if hasExtOutput {
 		result.OutputDelay = savedOutputDelay
+	}
+	if M.InputName != nil {
+		result.InputName = copyStringSlice(M.InputName[:nu])
+	}
+	if M.OutputName != nil {
+		result.OutputName = copyStringSlice(M.OutputName[:ny])
 	}
 	return result, nil
 }

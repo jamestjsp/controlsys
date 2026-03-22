@@ -273,7 +273,13 @@ func Estim(sys *System, L *mat.Dense) (*System, error) {
 	De := mat.NewDense(pn, mp, nil)
 	setBlock(De, 0, 0, sys.D)
 
-	return New(Ae, Be, Ce, De, sys.Dt)
+	result, err := New(Ae, Be, Ce, De, sys.Dt)
+	if err != nil {
+		return nil, err
+	}
+	result.InputName = concatStringSlices([][]string{sys.InputName, sys.OutputName}, []int{m, p})
+	result.OutputName = concatStringSlices([][]string{sys.OutputName, sys.StateName}, []int{p, n})
+	return result, nil
 }
 
 // Reg constructs a regulator (observer-based controller) from a plant,
@@ -313,7 +319,13 @@ func Reg(sys *System, K, L *mat.Dense) (*System, error) {
 
 	Dr := mat.NewDense(m, p, nil)
 
-	return New(Ar, Br, Cr, Dr, sys.Dt)
+	result, err := New(Ar, Br, Cr, Dr, sys.Dt)
+	if err != nil {
+		return nil, err
+	}
+	result.InputName = copyStringSlice(sys.OutputName)
+	result.OutputName = copyStringSlice(sys.InputName)
+	return result, nil
 }
 
 func transposeGain(K *mat.Dense) *mat.Dense {

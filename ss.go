@@ -28,6 +28,11 @@ type System struct {
 	D22           *mat.Dense // N×N
 
 	Dt float64
+
+	InputName  []string
+	OutputName []string
+	StateName  []string
+	Notes      string
 }
 
 func (sys *System) Dims() (n, m, p int) {
@@ -263,5 +268,9 @@ func (sys *System) Copy() *System {
 		cp.InternalDelay = make([]float64, len(sys.InternalDelay))
 		copy(cp.InternalDelay, sys.InternalDelay)
 	}
+	cp.InputName = copyStringSlice(sys.InputName)
+	cp.OutputName = copyStringSlice(sys.OutputName)
+	cp.StateName = copyStringSlice(sys.StateName)
+	cp.Notes = sys.Notes
 	return cp
 }

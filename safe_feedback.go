@@ -78,7 +78,13 @@ func SafeFeedback(plant, controller *System, sign float64, opts ...SafeFeedbackO
 		}
 	}
 
-	return Feedback(p, c, sign)
+	result, err := Feedback(p, c, sign)
+	if err != nil {
+		return nil, err
+	}
+	result.InputName = copyStringSlice(plant.InputName)
+	result.OutputName = copyStringSlice(plant.OutputName)
+	return result, nil
 }
 
 func replaceContinuousDelays(sys *System, padeOrder int) (*System, error) {

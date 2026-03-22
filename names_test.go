@@ -1,0 +1,593 @@
+package controlsys
+
+import (
+	"errors"
+	"math/cmplx"
+	"reflect"
+	"testing"
+
+	"gonum.org/v1/gonum/mat"
+)
+
+const nameTol = 1e-10
+
+func TestCopyStringSlice(t *testing.T) {
+	if got := copyStringSlice(nil); got != nil {
+		t.Errorf("nil input: got %v, want nil", got)
+	}
+
+	orig := []string{"a", "b", "c"}
+	cp := copyStringSlice(orig)
+	if !reflect.DeepEqual(cp, orig) {
+		t.Errorf("got %v, want %v", cp, orig)
+	}
+
+	cp[0] = "z"
+	if orig[0] != "a" {
+		t.Error("modifying copy mutated original")
+	}
+}
+
+func TestConcatStringSlices(t *testing.T) {
+	if got := concatStringSlices([][]string{nil, nil}, []int{2, 3}); got != nil {
+		t.Errorf("all nil: got %v, want nil", got)
+	}
+
+	got := concatStringSlices([][]string{nil, {"x", "y"}}, []int{2, 2})
+	want := []string{"", "", "x", "y"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("one nil: got %v, want %v", got, want)
+	}
+
+	got = concatStringSlices([][]string{{"a", "b"}, {"c"}}, []int{2, 1})
+	want = []string{"a", "b", "c"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("both non-nil: got %v, want %v", got, want)
+	}
+}
+
+func TestSelectStringSlice(t *testing.T) {
+	if got := selectStringSlice(nil, []int{0, 1}); got != nil {
+		t.Errorf("nil input: got %v, want nil", got)
+	}
+
+	names := []string{"a", "b", "c", "d"}
+	got := selectStringSlice(names, []int{3, 0, 2})
+	want := []string{"d", "a", "c"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+}
+
+func TestLookupSignalIndex(t *testing.T) {
+	names := []string{"u", "y", "e"}
+
+	idx, err := lookupSignalIndex(names, "y")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if idx != 1 {
+		t.Errorf("got %d, want 1", idx)
+	}
+
+	_, err = lookupSignalIndex(names, "missing")
+	if !errors.Is(err, ErrSignalNotFound) {
+		t.Errorf("got err=%v, want ErrSignalNotFound", err)
+	}
+}
+
+func TestLookupSignalIndices(t *testing.T) {
+	names := []string{"a", "b", "c", "d"}
+
+	got, err := lookupSignalIndices(names, []string{"c", "a", "d"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []int{2, 0, 3}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+
+	_, err = lookupSignalIndices(names, []string{"a", "missing"})
+	if !errors.Is(err, ErrSignalNotFound) {
+		t.Errorf("got err=%v, want ErrSignalNotFound", err)
+	}
+}
+
+func TestCopy_Names(t *testing.T) {
+	sys, _ := New(
+		mat.NewDense(2, 2, []float64{-1, 0.5, 0, -2}),
+		mat.NewDense(2, 1, []float64{1, 0}),
+		mat.NewDense(1, 2, []float64{1, 0}),
+		mat.NewDense(1, 1, []float64{0}),
+		0,
+	)
+	sys.InputName = []string{"u"}
+	sys.OutputName = []string{"y"}
+	sys.StateName = []string{"x1", "x2"}
+	sys.Notes = "test"
+
+	cp := sys.Copy()
+	if !reflect.DeepEqual(cp.InputName, sys.InputName) {
+		t.Errorf("InputName mismatch")
+	}
+	if !reflect.DeepEqual(cp.OutputName, sys.OutputName) {
+		t.Errorf("OutputName mismatch")
+	}
+	if !reflect.DeepEqual(cp.StateName, sys.StateName) {
+		t.Errorf("StateName mismatch")
+	}
+	if cp.Notes != sys.Notes {
+		t.Errorf("Notes mismatch")
+	}
+
+	cp.InputName[0] = "changed"
+	cp.OutputName[0] = "changed"
+	cp.StateName[0] = "changed"
+	cp.Notes = "changed"
+
+	if sys.InputName[0] != "u" {
+		t.Error("InputName not deep copied")
+	}
+	if sys.OutputName[0] != "y" {
+		t.Error("OutputName not deep copied")
+	}
+	if sys.StateName[0] != "x1" {
+		t.Error("StateName not deep copied")
+	}
+	if sys.Notes != "test" {
+		t.Error("Notes not independent")
+	}
+}
+
+func makeSISO(a, b, c, d float64) *System {
+	sys, _ := New(
+		mat.NewDense(1, 1, []float64{a}),
+		mat.NewDense(1, 1, []float64{b}),
+		mat.NewDense(1, 1, []float64{c}),
+		mat.NewDense(1, 1, []float64{d}),
+		0,
+	)
+	return sys
+}
+
+func TestSeries_Names(t *testing.T) {
+	g1 := makeSISO(-1, 1, 1, 0)
+	g1.InputName = []string{"u"}
+	g1.OutputName = []string{"x"}
+	g1.StateName = []string{"s1"}
+
+	g2 := makeSISO(-2, 1, 1, 0)
+	g2.InputName = []string{"x"}
+	g2.OutputName = []string{"y"}
+	g2.StateName = []string{"s2"}
+
+	result, err := Series(g1, g2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(result.InputName, []string{"u"}) {
+		t.Errorf("InputName = %v, want [u]", result.InputName)
+	}
+	if !reflect.DeepEqual(result.OutputName, []string{"y"}) {
+		t.Errorf("OutputName = %v, want [y]", result.OutputName)
+	}
+	if !reflect.DeepEqual(result.StateName, []string{"s1", "s2"}) {
+		t.Errorf("StateName = %v, want [s1 s2]", result.StateName)
+	}
+}
+
+func TestParallel_Names(t *testing.T) {
+	g1 := makeSISO(-1, 1, 1, 0)
+	g1.InputName = []string{"u"}
+	g1.OutputName = []string{"y"}
+	g1.StateName = []string{"s1"}
+
+	g2 := makeSISO(-2, 1, 1, 0)
+	g2.StateName = []string{"s2"}
+
+	result, err := Parallel(g1, g2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(result.InputName, []string{"u"}) {
+		t.Errorf("InputName = %v, want [u]", result.InputName)
+	}
+	if !reflect.DeepEqual(result.OutputName, []string{"y"}) {
+		t.Errorf("OutputName = %v, want [y]", result.OutputName)
+	}
+	if !reflect.DeepEqual(result.StateName, []string{"s1", "s2"}) {
+		t.Errorf("StateName = %v, want [s1 s2]", result.StateName)
+	}
+}
+
+func TestFeedback_Names(t *testing.T) {
+	plant := makeSISO(-1, 1, 1, 0)
+	plant.InputName = []string{"u"}
+	plant.OutputName = []string{"y"}
+	plant.StateName = []string{"p1"}
+
+	ctrl := makeSISO(-3, 1, 2, 0)
+	ctrl.StateName = []string{"k1"}
+
+	result, err := Feedback(plant, ctrl, -1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(result.InputName, []string{"u"}) {
+		t.Errorf("InputName = %v, want [u]", result.InputName)
+	}
+	if !reflect.DeepEqual(result.OutputName, []string{"y"}) {
+		t.Errorf("OutputName = %v, want [y]", result.OutputName)
+	}
+	if !reflect.DeepEqual(result.StateName, []string{"p1", "k1"}) {
+		t.Errorf("StateName = %v, want [p1 k1]", result.StateName)
+	}
+}
+
+func TestAppend_Names(t *testing.T) {
+	g1 := makeSISO(-1, 1, 1, 0)
+	g1.InputName = []string{"u1"}
+	g1.OutputName = []string{"y1"}
+	g1.StateName = []string{"s1"}
+
+	g2 := makeSISO(-2, 1, 1, 0)
+	g2.InputName = []string{"u2"}
+	g2.OutputName = []string{"y2"}
+	g2.StateName = []string{"s2"}
+
+	result, err := Append(g1, g2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(result.InputName, []string{"u1", "u2"}) {
+		t.Errorf("InputName = %v", result.InputName)
+	}
+	if !reflect.DeepEqual(result.OutputName, []string{"y1", "y2"}) {
+		t.Errorf("OutputName = %v", result.OutputName)
+	}
+	if !reflect.DeepEqual(result.StateName, []string{"s1", "s2"}) {
+		t.Errorf("StateName = %v", result.StateName)
+	}
+}
+
+func TestBlkDiag_Names(t *testing.T) {
+	g1 := makeSISO(-1, 1, 1, 0)
+	g1.InputName = []string{"u1"}
+	g1.OutputName = []string{"y1"}
+
+	g2 := makeSISO(-2, 1, 1, 0)
+	g2.InputName = []string{"u2"}
+	g2.OutputName = []string{"y2"}
+
+	g3 := makeSISO(-3, 1, 1, 0)
+	g3.InputName = []string{"u3"}
+	g3.OutputName = []string{"y3"}
+
+	result, err := BlkDiag(g1, g2, g3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(result.InputName, []string{"u1", "u2", "u3"}) {
+		t.Errorf("InputName = %v", result.InputName)
+	}
+	if !reflect.DeepEqual(result.OutputName, []string{"y1", "y2", "y3"}) {
+		t.Errorf("OutputName = %v", result.OutputName)
+	}
+}
+
+func TestConnect_Names(t *testing.T) {
+	g1 := makeSISO(-1, 1, 1, 0)
+	g1.InputName = []string{"u1"}
+	g1.OutputName = []string{"y1"}
+
+	g2 := makeSISO(-2, 1, 1, 0)
+	g2.InputName = []string{"u2"}
+	g2.OutputName = []string{"y2"}
+
+	aug, err := Append(g1, g2)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	Q := mat.NewDense(2, 2, []float64{
+		0, 0,
+		1, 0,
+	})
+	result, err := Connect(aug, Q, []int{0}, []int{1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(result.InputName, []string{"u1"}) {
+		t.Errorf("InputName = %v, want [u1]", result.InputName)
+	}
+	if !reflect.DeepEqual(result.OutputName, []string{"y2"}) {
+		t.Errorf("OutputName = %v, want [y2]", result.OutputName)
+	}
+}
+
+func TestLFT_Names(t *testing.T) {
+	M, _ := New(
+		mat.NewDense(2, 2, []float64{-1, 0.5, 0, -2}),
+		mat.NewDense(2, 2, []float64{1, 0, 0, 1}),
+		mat.NewDense(2, 2, []float64{1, 0, 0, 1}),
+		mat.NewDense(2, 2, nil),
+		0,
+	)
+	M.InputName = []string{"w", "u_delta"}
+	M.OutputName = []string{"z", "y_delta"}
+
+	Delta := makeSISO(-5, 1, 1, 0)
+
+	result, err := LFT(M, Delta, 1, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(result.InputName, []string{"w"}) {
+		t.Errorf("InputName = %v, want [w]", result.InputName)
+	}
+	if !reflect.DeepEqual(result.OutputName, []string{"z"}) {
+		t.Errorf("OutputName = %v, want [z]", result.OutputName)
+	}
+}
+
+func TestDiscretize_Names(t *testing.T) {
+	sys := makeSISO(-1, 1, 1, 0)
+	sys.InputName = []string{"u"}
+	sys.OutputName = []string{"y"}
+	sys.StateName = []string{"x"}
+	sys.Notes = "continuous"
+
+	disc, err := sys.Discretize(0.01)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(disc.InputName, []string{"u"}) {
+		t.Errorf("InputName = %v", disc.InputName)
+	}
+	if !reflect.DeepEqual(disc.OutputName, []string{"y"}) {
+		t.Errorf("OutputName = %v", disc.OutputName)
+	}
+	if !reflect.DeepEqual(disc.StateName, []string{"x"}) {
+		t.Errorf("StateName = %v", disc.StateName)
+	}
+	if disc.Notes != "continuous" {
+		t.Errorf("Notes = %q", disc.Notes)
+	}
+}
+
+func TestSumBlk_Names(t *testing.T) {
+	sys, err := SumBlk("e = r - y")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(sys.OutputName, []string{"e"}) {
+		t.Errorf("OutputName = %v, want [e]", sys.OutputName)
+	}
+	if !reflect.DeepEqual(sys.InputName, []string{"r", "y"}) {
+		t.Errorf("InputName = %v, want [r y]", sys.InputName)
+	}
+
+	_, _, p := sys.Dims()
+	if p != 1 {
+		t.Errorf("outputs = %d, want 1", p)
+	}
+}
+
+func TestSumBlk_Names_Vector(t *testing.T) {
+	sys, err := SumBlk("e = r - y", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantOut := []string{"e(1)", "e(2)"}
+	if !reflect.DeepEqual(sys.OutputName, wantOut) {
+		t.Errorf("OutputName = %v, want %v", sys.OutputName, wantOut)
+	}
+	wantIn := []string{"r(1)", "r(2)", "y(1)", "y(2)"}
+	if !reflect.DeepEqual(sys.InputName, wantIn) {
+		t.Errorf("InputName = %v, want %v", sys.InputName, wantIn)
+	}
+}
+
+func TestSelectByIndex(t *testing.T) {
+	sys, _ := New(
+		mat.NewDense(2, 2, []float64{-1, 0.5, 0, -2}),
+		mat.NewDense(2, 3, []float64{1, 0, 0, 0, 1, 0}),
+		mat.NewDense(2, 2, []float64{1, 0, 0, 1}),
+		mat.NewDense(2, 3, nil),
+		0,
+	)
+	sys.InputName = []string{"u1", "u2", "u3"}
+	sys.OutputName = []string{"y1", "y2"}
+	sys.StateName = []string{"x1", "x2"}
+
+	sub, err := sys.SelectByIndex([]int{0, 2}, []int{1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(sub.InputName, []string{"u1", "u3"}) {
+		t.Errorf("InputName = %v", sub.InputName)
+	}
+	if !reflect.DeepEqual(sub.OutputName, []string{"y2"}) {
+		t.Errorf("OutputName = %v", sub.OutputName)
+	}
+	if !reflect.DeepEqual(sub.StateName, []string{"x1", "x2"}) {
+		t.Errorf("StateName = %v", sub.StateName)
+	}
+}
+
+func TestSelectByName(t *testing.T) {
+	sys, _ := New(
+		mat.NewDense(2, 2, []float64{-1, 0.5, 0, -2}),
+		mat.NewDense(2, 3, []float64{1, 0, 0, 0, 1, 0}),
+		mat.NewDense(2, 2, []float64{1, 0, 0, 1}),
+		mat.NewDense(2, 3, nil),
+		0,
+	)
+	sys.InputName = []string{"u1", "u2", "u3"}
+	sys.OutputName = []string{"y1", "y2"}
+
+	sub, err := sys.SelectByName([]string{"u3", "u1"}, []string{"y2"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(sub.InputName, []string{"u3", "u1"}) {
+		t.Errorf("InputName = %v", sub.InputName)
+	}
+	if !reflect.DeepEqual(sub.OutputName, []string{"y2"}) {
+		t.Errorf("OutputName = %v", sub.OutputName)
+	}
+}
+
+func TestSelectByName_NotFound(t *testing.T) {
+	sys := makeSISO(-1, 1, 1, 0)
+	sys.InputName = []string{"u"}
+	sys.OutputName = []string{"y"}
+
+	_, err := sys.SelectByName([]string{"missing"}, []string{"y"})
+	if !errors.Is(err, ErrSignalNotFound) {
+		t.Errorf("input err=%v, want ErrSignalNotFound", err)
+	}
+
+	_, err = sys.SelectByName([]string{"u"}, []string{"missing"})
+	if !errors.Is(err, ErrSignalNotFound) {
+		t.Errorf("output err=%v, want ErrSignalNotFound", err)
+	}
+}
+
+func TestConnectByName_Feedback(t *testing.T) {
+	P := makeSISO(-1, 1, 1, 0)
+	P.InputName = []string{"u"}
+	P.OutputName = []string{"y"}
+
+	K := makeSISO(-3, 1, 2, 0)
+	K.InputName = []string{"y"}
+	K.OutputName = []string{"v"}
+
+	Sum, err := SumBlk("u = r - v")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := ConnectByName(
+		[]*System{P, K, Sum},
+		[]Connection{
+			{From: "y", To: "y"},
+			{From: "v", To: "v"},
+			{From: "u", To: "u"},
+		},
+		[]string{"r"},
+		[]string{"y"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ref, err := Feedback(P, K, -1)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	s := 1 + 2i
+	hGot := evalTF(result, s)
+	hWant := evalTF(ref, s)
+	if cmplx.Abs(hGot[0][0]-hWant[0][0]) > nameTol {
+		t.Errorf("H(s)=%v, want %v", hGot[0][0], hWant[0][0])
+	}
+}
+
+func TestConnectByName_WithSumBlk(t *testing.T) {
+	P := makeSISO(-2, 1, 3, 0)
+	P.InputName = []string{"u"}
+	P.OutputName = []string{"y"}
+
+	K := makeSISO(-4, 1, 5, 0)
+	K.InputName = []string{"y"}
+	K.OutputName = []string{"v"}
+
+	Sum, err := SumBlk("u = r - v")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := ConnectByName(
+		[]*System{P, K, Sum},
+		[]Connection{
+			{From: "y", To: "y"},
+			{From: "v", To: "v"},
+			{From: "u", To: "u"},
+		},
+		[]string{"r"},
+		[]string{"y"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ref, err := Feedback(P, K, -1)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	s := 0.5 + 3i
+	hGot := evalTF(result, s)
+	hWant := evalTF(ref, s)
+	if cmplx.Abs(hGot[0][0]-hWant[0][0]) > nameTol {
+		t.Errorf("H(s)=%v, want %v", hGot[0][0], hWant[0][0])
+	}
+}
+
+func TestConnectByName_FullWorkflow(t *testing.T) {
+	P, _ := New(
+		mat.NewDense(2, 2, []float64{-1, 0.5, 0, -2}),
+		mat.NewDense(2, 1, []float64{1, 0}),
+		mat.NewDense(1, 2, []float64{1, 1}),
+		mat.NewDense(1, 1, []float64{0}),
+		0,
+	)
+	P.InputName = []string{"u"}
+	P.OutputName = []string{"y"}
+
+	K, _ := New(
+		mat.NewDense(1, 1, []float64{-5}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{10}),
+		mat.NewDense(1, 1, []float64{0}),
+		0,
+	)
+	K.InputName = []string{"y"}
+	K.OutputName = []string{"v"}
+
+	Sum, err := SumBlk("u = r - v")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cl, err := ConnectByName(
+		[]*System{P, K, Sum},
+		[]Connection{
+			{From: "y", To: "y"},
+			{From: "v", To: "v"},
+			{From: "u", To: "u"},
+		},
+		[]string{"r"},
+		[]string{"y"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ref, err := Feedback(P, K, -1)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, s := range []complex128{0.1 + 0.5i, 1 + 2i, 5 + 0i, 0 + 10i} {
+		hCl := evalTF(cl, s)
+		hRef := evalTF(ref, s)
+		diff := cmplx.Abs(hCl[0][0] - hRef[0][0])
+		if diff > nameTol {
+			t.Errorf("s=%v: H=%v, want %v (diff=%v)", s, hCl[0][0], hRef[0][0], diff)
+		}
+	}
+}

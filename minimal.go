@@ -114,6 +114,7 @@ func (sys *System) Reduce(opts *ReduceOpts) (*ReduceResult, error) {
 	dr := denseCopySafe(sys.D, p, m)
 
 	reduced := &System{A: ar, B: br, C: cr, D: dr, Delay: copyDelayOrNil(sys.Delay), Dt: sys.Dt}
+	propagateIONames(reduced, sys)
 
 	return &ReduceResult{
 		Sys:        reduced,
@@ -127,7 +128,7 @@ func (sys *System) MinimalRealization() (*ReduceResult, error) {
 }
 
 func copySys(sys *System, n, m, p int) *System {
-	return &System{
+	cp := &System{
 		A:     denseCopySafe(sys.A, n, n),
 		B:     denseCopySafe(sys.B, n, m),
 		C:     denseCopySafe(sys.C, p, n),
@@ -135,19 +136,23 @@ func copySys(sys *System, n, m, p int) *System {
 		Delay: copyDelayOrNil(sys.Delay),
 		Dt:    sys.Dt,
 	}
+	propagateIONames(cp, sys)
+	return cp
 }
 
 
 func zeroOrderResult(sys *System, m, p int) *ReduceResult {
+	s := &System{
+		A:     &mat.Dense{},
+		B:     &mat.Dense{},
+		C:     &mat.Dense{},
+		D:     denseCopySafe(sys.D, p, m),
+		Delay: copyDelayOrNil(sys.Delay),
+		Dt:    sys.Dt,
+	}
+	propagateIONames(s, sys)
 	return &ReduceResult{
-		Sys: &System{
-			A:     &mat.Dense{},
-			B:     &mat.Dense{},
-			C:     &mat.Dense{},
-			D:     denseCopySafe(sys.D, p, m),
-			Delay: copyDelayOrNil(sys.Delay),
-			Dt:    sys.Dt,
-		},
+		Sys:   s,
 		Order: 0,
 	}
 }

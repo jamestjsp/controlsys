@@ -49,6 +49,7 @@ func (sys *System) Discretize(dt float64) (*System, error) {
 		}
 		out.OutputDelay = od
 	}
+	propagateNames(out, sys)
 	return out, nil
 }
 
@@ -91,6 +92,7 @@ func (sys *System) Undiscretize() (*System, error) {
 		out.D21 = mat.DenseCopyOf(sys.D21)
 		out.D22 = mat.DenseCopyOf(sys.D22)
 	}
+	propagateNames(out, sys)
 	return out, nil
 }
 
@@ -100,12 +102,14 @@ func bilinear(sys *System, palpha, pbeta, alpha, beta float64) (*System, error) 
 	D := denseCopy(sys.D)
 
 	if n == 0 {
-		return &System{
+		out := &System{
 			A: newDense(0, 0),
 			B: denseCopy(sys.B),
 			C: denseCopy(sys.C),
 			D: D,
-		}, nil
+		}
+		propagateNames(out, sys)
+		return out, nil
 	}
 
 	A := mat.NewDense(n, n, nil)
@@ -176,7 +180,9 @@ func bilinear(sys *System, palpha, pbeta, alpha, beta float64) (*System, error) 
 		return nil, fmt.Errorf("bilinear: result contains Inf/NaN: %w", ErrOverflow)
 	}
 
-	return &System{A: Ainv, B: B, C: C, D: D}, nil
+	out := &System{A: Ainv, B: B, C: C, D: D}
+	propagateNames(out, sys)
+	return out, nil
 }
 
 type C2DOptions struct {
@@ -571,13 +577,15 @@ func (sys *System) DiscretizeZOH(dt float64) (*System, error) {
 	C := denseCopy(sys.C)
 
 	if n == 0 {
-		return &System{
+		out := &System{
 			A:  newDense(0, 0),
 			B:  denseCopy(sys.B),
 			C:  C,
 			D:  D,
 			Dt: dt,
-		}, nil
+		}
+		propagateNames(out, sys)
+		return out, nil
 	}
 
 	nm := n + m
@@ -588,7 +596,9 @@ func (sys *System) DiscretizeZOH(dt float64) (*System, error) {
 		eA.Exp(Adt)
 		Ad := mat.NewDense(n, n, nil)
 		Ad.Copy(&eA)
-		return &System{A: Ad, B: denseCopy(sys.B), C: C, D: D, Dt: dt}, nil
+		out := &System{A: Ad, B: denseCopy(sys.B), C: C, D: D, Dt: dt}
+		propagateNames(out, sys)
+		return out, nil
 	}
 
 	M := mat.NewDense(nm, nm, nil)
@@ -642,6 +652,7 @@ func (sys *System) DiscretizeZOH(dt float64) (*System, error) {
 		}
 		out.OutputDelay = od
 	}
+	propagateNames(out, sys)
 	return out, nil
 }
 
@@ -719,6 +730,7 @@ func discretizeWithInternalDelay(sys *System, dt float64, opts C2DOptions) (*Sys
 		disc.OutputDelay = od
 	}
 
+	propagateNames(disc, sys)
 	return disc, nil
 }
 

@@ -506,6 +506,7 @@ func absorbInternalDiscreteDelay(sys *System) (*System, error) {
 		result.OutputDelay = make([]float64, len(sys.OutputDelay))
 		copy(result.OutputDelay, sys.OutputDelay)
 	}
+	propagateIONames(result, sys)
 	return result, nil
 }
 
@@ -769,6 +770,7 @@ func absorbInternalContinuousDelay(sys *System) (*System, error) {
 		result.OutputDelay = make([]float64, len(sys.OutputDelay))
 		copy(result.OutputDelay, sys.OutputDelay)
 	}
+	propagateIONames(result, sys)
 	return result, nil
 }
 
@@ -979,6 +981,7 @@ func absorbInputDelay(sys *System) (*System, error) {
 		augSys.OutputDelay = make([]float64, len(sys.OutputDelay))
 		copy(augSys.OutputDelay, sys.OutputDelay)
 	}
+	propagateIONames(augSys, sys)
 	return augSys, nil
 }
 
@@ -1068,6 +1071,7 @@ func absorbOutputDelay(sys *System) (*System, error) {
 		augSys.InputDelay = make([]float64, len(sys.InputDelay))
 		copy(augSys.InputDelay, sys.InputDelay)
 	}
+	propagateIONames(augSys, sys)
 	return augSys, nil
 }
 
@@ -1628,6 +1632,8 @@ func (sys *System) PullDelaysToLFT() (*System, error) {
 		D21:           d21,
 		D22:           d22,
 	}
+	propagateIONames(res, sys)
+	res.StateName = copyStringSlice(sys.StateName)
 	return res, nil
 }
 
@@ -1785,7 +1791,7 @@ func SetDelayModel(H *System, tau []float64) (*System, error) {
 		dMat = newDense(p, m)
 	}
 
-	sys := &System{
+	result := &System{
 		A:             aMat,
 		B:             bMat,
 		C:             cMat,
@@ -1798,7 +1804,8 @@ func SetDelayModel(H *System, tau []float64) (*System, error) {
 		D21:           mat.NewDense(N, m, d21Data),
 		D22:           mat.NewDense(N, N, d22Data),
 	}
-	return sys, nil
+	propagateIONames(result, H)
+	return result, nil
 }
 
 func copyDelayOrNil(m *mat.Dense) *mat.Dense {
@@ -2273,5 +2280,6 @@ func (sys *System) ZeroDelayApprox() (*System, error) {
 		result.OutputDelay = make([]float64, len(sys.OutputDelay))
 		copy(result.OutputDelay, sys.OutputDelay)
 	}
+	propagateNames(result, sys)
 	return result, nil
 }

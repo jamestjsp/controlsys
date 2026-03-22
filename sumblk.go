@@ -307,5 +307,35 @@ func SumBlk(expr string, widths ...int) (*System, error) {
 		rowOff += w
 	}
 
-	return NewGain(D, 0)
+	sys, err := NewGain(D, 0)
+	if err != nil {
+		return nil, err
+	}
+
+	var expandedOutputs []string
+	for _, o := range outputs {
+		w := sigWidth[o]
+		if w == 1 {
+			expandedOutputs = append(expandedOutputs, o)
+		} else {
+			for k := 1; k <= w; k++ {
+				expandedOutputs = append(expandedOutputs, fmt.Sprintf("%s(%d)", o, k))
+			}
+		}
+	}
+	var expandedInputs []string
+	for _, inp := range allInputs {
+		w := sigWidth[inp]
+		if w == 1 {
+			expandedInputs = append(expandedInputs, inp)
+		} else {
+			for k := 1; k <= w; k++ {
+				expandedInputs = append(expandedInputs, fmt.Sprintf("%s(%d)", inp, k))
+			}
+		}
+	}
+	sys.OutputName = expandedOutputs
+	sys.InputName = expandedInputs
+
+	return sys, nil
 }

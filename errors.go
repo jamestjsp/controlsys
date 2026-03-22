@@ -39,4 +39,5 @@ var (
 	ErrUncontrollable    = errors.New("controlsys: uncontrollable mode cannot be assigned")
 	ErrInsufficientData  = errors.New("controlsys: insufficient data for estimation")
 	ErrInvalidExpression = errors.New("controlsys: invalid sumblk expression")
+	ErrSignalNotFound    = errors.New("controlsys: signal name not found")
 )
