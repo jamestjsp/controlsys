@@ -53,7 +53,8 @@ func (sys *System) FreqResponse(omega []float64) (*FreqResponseMatrix, error) {
 	}
 
 	nw := len(omega)
-	data := make([]complex128, nw*p*m)
+	pm := p * m
+	data := make([]complex128, nw*pm)
 
 	for k, w := range omega {
 		var s complex128
@@ -62,10 +63,7 @@ func (sys *System) FreqResponse(omega []float64) (*FreqResponseMatrix, error) {
 		} else {
 			s = cmplx.Exp(complex(0, w*sys.Dt))
 		}
-		vals := res.TF.Eval(s)
-		for i := 0; i < p; i++ {
-			copy(data[(k*p+i)*m:], vals[i])
-		}
+		res.TF.evalInto(s, data[k*pm:(k+1)*pm])
 	}
 
 	applyIODelayPhase(sys, omega, data, p, m)

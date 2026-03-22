@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 
+	"gonum.org/v1/gonum/blas"
 	"gonum.org/v1/gonum/blas/blas64"
 	"gonum.org/v1/gonum/mat"
 )
@@ -17,8 +18,6 @@ type SimulateOpts struct {
 	Workspace *mat.VecDense
 
 	yBuf  *mat.Dense
-	buk   *mat.VecDense
-	yk    *mat.VecDense
 	duBuf *mat.Dense
 }
 
@@ -89,50 +88,44 @@ func (sys *System) simulateNoDelay(u *mat.Dense, x0 *mat.VecDense, opts *Simulat
 			tmp = mat.NewVecDense(n, nil)
 		}
 
-		var buk *mat.VecDense
-		if opts != nil && opts.buk != nil {
-			buk = opts.buk
-		} else {
-			buk = mat.NewVecDense(n, nil)
-		}
-		var yk *mat.VecDense
-		if opts != nil && opts.yk != nil {
-			yk = opts.yk
-		} else {
-			yk = mat.NewVecDense(p, nil)
-		}
-
 		yRaw := Y.RawMatrix()
-		ykRaw := yk.RawVector()
+		aGen := sys.A.RawMatrix()
+		cGen := sys.C.RawMatrix()
+		xVec := x.RawVector()
+		tmpVec := tmp.RawVector()
+		ykData := make([]float64, p)
+		ykVec := blas64.Vector{N: p, Inc: 1, Data: ykData}
 
 		if m > 0 {
 			uColData := make([]float64, m)
-			uCol := mat.NewVecDense(m, uColData)
 			uRaw := u.RawMatrix()
+			bGen := sys.B.RawMatrix()
+			uColVec := blas64.Vector{N: m, Inc: 1, Data: uColData}
 
 			for k := 0; k < steps; k++ {
-				yk.MulVec(sys.C, x)
+				blas64.Gemv(blas.NoTrans, 1, cGen, xVec, 0, ykVec)
 				for i := 0; i < p; i++ {
-					yRaw.Data[i*yRaw.Stride+k] = ykRaw.Data[i*ykRaw.Inc]
+					yRaw.Data[i*yRaw.Stride+k] = ykData[i]
 				}
 
-				tmp.MulVec(sys.A, x)
 				for j := 0; j < m; j++ {
 					uColData[j] = uRaw.Data[j*uRaw.Stride+k]
 				}
-				buk.MulVec(sys.B, uCol)
-				tmp.AddVec(tmp, buk)
+				blas64.Gemv(blas.NoTrans, 1, aGen, xVec, 0, tmpVec)
+				blas64.Gemv(blas.NoTrans, 1, bGen, uColVec, 1, tmpVec)
 				x, tmp = tmp, x
+				xVec, tmpVec = tmpVec, xVec
 			}
 		} else {
 			for k := 0; k < steps; k++ {
-				yk.MulVec(sys.C, x)
+				blas64.Gemv(blas.NoTrans, 1, cGen, xVec, 0, ykVec)
 				for i := 0; i < p; i++ {
-					yRaw.Data[i*yRaw.Stride+k] = ykRaw.Data[i*ykRaw.Inc]
+					yRaw.Data[i*yRaw.Stride+k] = ykData[i]
 				}
 
-				tmp.MulVec(sys.A, x)
+				blas64.Gemv(blas.NoTrans, 1, aGen, xVec, 0, tmpVec)
 				x, tmp = tmp, x
+				xVec, tmpVec = tmpVec, xVec
 			}
 		}
 	}
@@ -324,16 +317,14 @@ func (sys *System) simulateWithInternalDelay(u *mat.Dense, x0 *mat.VecDense) (*R
 		zBuf = make([]float64, N*(bufSize+1))
 	}
 
-	w := mat.NewVecDense(N, nil)
-	z := mat.NewVecDense(N, nil)
+	wData := make([]float64, N)
+	zData := make([]float64, N)
 
-	var uCol *mat.VecDense
 	var uColData []float64
 	var uData []float64
 	var uStride int
 	if m > 0 {
 		uColData = make([]float64, m)
-		uCol = mat.NewVecDense(m, uColData)
 		if u != nil {
 			uRaw := u.RawMatrix()
 			uData = uRaw.Data
@@ -347,34 +338,51 @@ func (sys *System) simulateWithInternalDelay(u *mat.Dense, x0 *mat.VecDense) (*R
 	}
 
 	yRaw := Y.RawMatrix()
-	wRaw := w.RawVector()
-	zRaw := z.RawVector()
-	yk := mat.NewVecDense(p, nil)
-	ykBuf := mat.NewVecDense(p, nil)
-	zBuf2 := mat.NewVecDense(N, nil)
-	var buk, b2w *mat.VecDense
+	ykData := make([]float64, p)
+
+	var aGen, bGen, b2Gen, cGen, dGen, d12Gen, c2Gen, d21Gen, d22Gen blas64.General
+	var xVec, tmpVec blas64.Vector
 	if n > 0 {
-		b2w = mat.NewVecDense(n, nil)
-		if m > 0 {
-			buk = mat.NewVecDense(n, nil)
-		}
+		aGen = sys.A.RawMatrix()
+		cGen = sys.C.RawMatrix()
+		xVec = x.RawVector()
+		tmpVec = tmp.RawVector()
 	}
+	if m > 0 {
+		if n > 0 {
+			bGen = sys.B.RawMatrix()
+		}
+		dGen = sys.D.RawMatrix()
+	}
+	if N > 0 {
+		if n > 0 {
+			b2Gen = sys.B2.RawMatrix()
+			c2Gen = sys.C2.RawMatrix()
+		}
+		d12Gen = sys.D12.RawMatrix()
+		if m > 0 {
+			d21Gen = sys.D21.RawMatrix()
+		}
+		d22Gen = sys.D22.RawMatrix()
+	}
+	ykVec := blas64.Vector{N: p, Inc: 1, Data: ykData}
+	wVec := blas64.Vector{N: N, Inc: 1, Data: wData}
+	zVec := blas64.Vector{N: N, Inc: 1, Data: zData}
+	uColVec := blas64.Vector{N: m, Inc: 1, Data: uColData}
 
 	for k := 0; k < steps; k++ {
 		for j := 0; j < N; j++ {
 			dj := delays[j]
 			if dj == 0 {
 				if k == 0 {
-					wRaw.Data[j*wRaw.Inc] = 0
+					wData[j] = 0
 				} else {
-					idx := (k - 1) % (bufSize + 1)
-					wRaw.Data[j*wRaw.Inc] = zBuf[j*(bufSize+1)+idx]
+					wData[j] = zBuf[j*(bufSize+1)+(k-1)%(bufSize+1)]
 				}
 			} else if k < dj {
-				wRaw.Data[j*wRaw.Inc] = 0
+				wData[j] = 0
 			} else {
-				idx := (k - dj) % (bufSize + 1)
-				wRaw.Data[j*wRaw.Inc] = zBuf[j*(bufSize+1)+idx]
+				wData[j] = zBuf[j*(bufSize+1)+(k-dj)%(bufSize+1)]
 			}
 		}
 
@@ -384,52 +392,52 @@ func (sys *System) simulateWithInternalDelay(u *mat.Dense, x0 *mat.VecDense) (*R
 			}
 		}
 
-		yk.Zero()
 		if n > 0 {
-			yk.MulVec(sys.C, x)
+			blas64.Gemv(blas.NoTrans, 1, cGen, xVec, 0, ykVec)
+		} else {
+			for i := range ykData {
+				ykData[i] = 0
+			}
 		}
 		if m > 0 {
-			ykBuf.MulVec(sys.D, uCol)
-			yk.AddVec(yk, ykBuf)
+			blas64.Gemv(blas.NoTrans, 1, dGen, uColVec, 1, ykVec)
 		}
 		if N > 0 {
-			ykBuf.MulVec(sys.D12, w)
-			yk.AddVec(yk, ykBuf)
+			blas64.Gemv(blas.NoTrans, 1, d12Gen, wVec, 1, ykVec)
 		}
-		ykRaw := yk.RawVector()
 		for i := 0; i < p; i++ {
-			yRaw.Data[i*yRaw.Stride+k] = ykRaw.Data[i*ykRaw.Inc]
+			yRaw.Data[i*yRaw.Stride+k] = ykData[i]
 		}
 
-		z.Zero()
 		if N > 0 {
 			if n > 0 {
-				z.MulVec(sys.C2, x)
+				blas64.Gemv(blas.NoTrans, 1, c2Gen, xVec, 0, zVec)
+			} else {
+				for i := range zData {
+					zData[i] = 0
+				}
 			}
 			if m > 0 {
-				zBuf2.MulVec(sys.D21, uCol)
-				z.AddVec(z, zBuf2)
+				blas64.Gemv(blas.NoTrans, 1, d21Gen, uColVec, 1, zVec)
 			}
-			zBuf2.MulVec(sys.D22, w)
-			z.AddVec(z, zBuf2)
+			blas64.Gemv(blas.NoTrans, 1, d22Gen, wVec, 1, zVec)
 
 			idx := k % (bufSize + 1)
 			for j := 0; j < N; j++ {
-				zBuf[j*(bufSize+1)+idx] = zRaw.Data[j*zRaw.Inc]
+				zBuf[j*(bufSize+1)+idx] = zData[j]
 			}
 		}
 
 		if n > 0 {
-			tmp.MulVec(sys.A, x)
+			blas64.Gemv(blas.NoTrans, 1, aGen, xVec, 0, tmpVec)
 			if m > 0 {
-				buk.MulVec(sys.B, uCol)
-				tmp.AddVec(tmp, buk)
+				blas64.Gemv(blas.NoTrans, 1, bGen, uColVec, 1, tmpVec)
 			}
 			if N > 0 {
-				b2w.MulVec(sys.B2, w)
-				tmp.AddVec(tmp, b2w)
+				blas64.Gemv(blas.NoTrans, 1, b2Gen, wVec, 1, tmpVec)
 			}
 			x, tmp = tmp, x
+			xVec, tmpVec = tmpVec, xVec
 		}
 	}
 

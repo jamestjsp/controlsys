@@ -596,6 +596,191 @@ func BenchmarkFreqResponseLFT(b *testing.B) {
 	}
 }
 
+// DC motor (MATLAB standard example, L=0 simplification)
+// States: [theta, omega], Input: voltage, Output: angle
+func BenchmarkSimulate_DCMotor(b *testing.B) {
+	sys, _ := New(
+		mat.NewDense(2, 2, []float64{0, 1, 0, -10.01}),
+		mat.NewDense(2, 1, []float64{0, 1}),
+		mat.NewDense(1, 2, []float64{1, 0}),
+		mat.NewDense(1, 1, []float64{0}),
+		0,
+	)
+	disc, _ := sys.DiscretizeZOH(0.001)
+	steps := 1000
+	u := mat.NewDense(1, steps, nil)
+	for k := 0; k < steps; k++ {
+		u.Set(0, k, 1)
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		disc.Simulate(u, nil, nil)
+	}
+}
+
+// Boeing 747 lateral-directional (Franklin, Powell & Emami-Naeini)
+// States: [beta, yaw rate, roll rate, roll angle]
+func BenchmarkFreqResponse_B747Lateral(b *testing.B) {
+	sys, _ := New(
+		mat.NewDense(4, 4, []float64{
+			-0.0558, -0.9968, 0.0802, 0.0415,
+			0.598, -0.115, -0.0318, 0,
+			-3.05, 0.388, -0.4650, 0,
+			0, 0.0805, 1, 0,
+		}),
+		mat.NewDense(4, 2, []float64{
+			0.00729, 0, -0.475, 0.00775,
+			0.153, 0.143, 0, 0,
+		}),
+		mat.NewDense(2, 4, []float64{
+			0, 1, 0, 0,
+			1, 0, 0, 0,
+		}),
+		mat.NewDense(2, 2, nil),
+		0,
+	)
+	omega := logspace(-3, 2, 200)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		sys.FreqResponse(omega)
+	}
+}
+
+// Mass-spring-damper chain (4 masses, k=10, c=0.5, m=1)
+// 8 states, SISO, from Skogestad & Postlethwaite
+func BenchmarkSimulate_MassSpringDamper(b *testing.B) {
+	sys, _ := New(
+		mat.NewDense(8, 8, []float64{
+			0, 0, 0, 0, 1, 0, 0, 0,
+			0, 0, 0, 0, 0, 1, 0, 0,
+			0, 0, 0, 0, 0, 0, 1, 0,
+			0, 0, 0, 0, 0, 0, 0, 1,
+			-20, 10, 0, 0, -1, 0.5, 0, 0,
+			10, -20, 10, 0, 0.5, -1, 0.5, 0,
+			0, 10, -20, 10, 0, 0.5, -1, 0.5,
+			0, 0, 10, -10, 0, 0, 0.5, -0.5,
+		}),
+		mat.NewDense(8, 1, []float64{0, 0, 0, 0, 1, 0, 0, 0}),
+		mat.NewDense(1, 8, []float64{0, 0, 0, 1, 0, 0, 0, 0}),
+		mat.NewDense(1, 1, nil),
+		0,
+	)
+	disc, _ := sys.DiscretizeZOH(0.01)
+	steps := 500
+	u := mat.NewDense(1, steps, nil)
+	for k := 0; k < steps; k++ {
+		u.Set(0, k, math.Sin(float64(k)*0.05))
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		disc.Simulate(u, nil, nil)
+	}
+}
+
+// Boeing 747 longitudinal (Ogata) - discretize + simulate workflow
+func BenchmarkDiscretizeAndSimulate_B747Longitudinal(b *testing.B) {
+	sys, _ := New(
+		mat.NewDense(4, 4, []float64{
+			-0.003, 0.039, 0, -0.322,
+			-0.065, -0.319, 7.74, 0,
+			0.0201, -0.101, -0.429, 0,
+			0, 0, 1, 0,
+		}),
+		mat.NewDense(4, 2, []float64{
+			0.01, 1, -0.18, -0.04,
+			-1.16, 0.598, 0, 0,
+		}),
+		mat.NewDense(2, 4, []float64{
+			1, 0, 0, 0,
+			0, 0, 0, 1,
+		}),
+		mat.NewDense(2, 2, nil),
+		0,
+	)
+	disc, _ := sys.DiscretizeZOH(0.05)
+	steps := 200
+	u := mat.NewDense(2, steps, nil)
+	for k := 0; k < steps; k++ {
+		if k < 50 {
+			u.Set(0, k, -0.01)
+		}
+	}
+	x0 := mat.NewVecDense(4, []float64{0, 0, 0, 0})
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		disc.Simulate(u, x0, nil)
+	}
+}
+
+// Large system simulation (50 states) - scalability test
+func BenchmarkSimulate_Large(b *testing.B) {
+	n, m, p := 50, 5, 5
+	sys := benchSys(n, m, p)
+	sys.Dt = 0.01
+	steps := 1000
+	u := mat.NewDense(m, steps, nil)
+	for j := 0; j < m; j++ {
+		for k := 0; k < steps; k++ {
+			u.Set(j, k, math.Sin(float64(k)*0.02+float64(j)))
+		}
+	}
+	x0 := mat.NewVecDense(n, nil)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		sys.Simulate(u, x0, nil)
+	}
+}
+
+// Feedback + simulate pipeline (typical design workflow)
+func BenchmarkFeedbackAndSimulate(b *testing.B) {
+	plant, _ := New(
+		mat.NewDense(4, 4, []float64{
+			-0.0558, -0.9968, 0.0802, 0.0415,
+			0.598, -0.115, -0.0318, 0,
+			-3.05, 0.388, -0.4650, 0,
+			0, 0.0805, 1, 0,
+		}),
+		mat.NewDense(4, 2, []float64{
+			0.00729, 0, -0.475, 0.00775,
+			0.153, 0.143, 0, 0,
+		}),
+		mat.NewDense(2, 4, []float64{
+			0, 1, 0, 0,
+			1, 0, 0, 0,
+		}),
+		mat.NewDense(2, 2, nil),
+		0,
+	)
+	ctrl, _ := New(
+		mat.NewDense(2, 2, []float64{-1, 0, 0, -2}),
+		mat.NewDense(2, 2, []float64{1, 0, 0, 1}),
+		mat.NewDense(2, 2, []float64{-0.5, 0, 0, -1}),
+		mat.NewDense(2, 2, nil),
+		0,
+	)
+	cl, _ := Feedback(plant, ctrl, -1)
+	disc, _ := cl.DiscretizeZOH(0.05)
+	steps := 200
+	u := mat.NewDense(2, steps, nil)
+	for k := 0; k < 50; k++ {
+		u.Set(0, k, 1)
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		disc.Simulate(u, nil, nil)
+	}
+}
+
+// Bode of large MIMO system (scalability)
+func BenchmarkBode_LargeMIMO(b *testing.B) {
+	sys := benchSys(30, 5, 5)
+	omega := logspace(-2, 3, 200)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		sys.FreqResponse(omega)
+	}
+}
+
 func benchSys(n, m, p int) *System {
 	A := mat.NewDense(n, n, nil)
 	for i := 0; i < n; i++ {

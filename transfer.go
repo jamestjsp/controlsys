@@ -53,6 +53,28 @@ func (tf *TransferFunc) Eval(s complex128) [][]complex128 {
 	return result
 }
 
+func (tf *TransferFunc) evalInto(s complex128, dst []complex128) {
+	p, m := tf.Dims()
+	for i := 0; i < p; i++ {
+		dv := Poly(tf.Den[i]).Eval(s)
+		for j := 0; j < m; j++ {
+			h := Poly(tf.Num[i][j]).Eval(s) / dv
+			if tf.Delay != nil && tf.Delay[i][j] != 0 {
+				tau := tf.Delay[i][j]
+				if tf.Dt == 0 {
+					h *= cmplx.Exp(-s * complex(tau, 0))
+				} else {
+					d := int(math.Round(tau))
+					for k := 0; k < d; k++ {
+						h /= s
+					}
+				}
+			}
+			dst[i*m+j] = h
+		}
+	}
+}
+
 func (tf *TransferFunc) EvalMulti(freqs []complex128) [][][]complex128 {
 	result := make([][][]complex128, len(freqs))
 	for k, s := range freqs {
