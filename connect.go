@@ -1411,18 +1411,18 @@ func connectWithDelay(sys *System, Q *mat.Dense, inputs, outputs []int) (*System
 		return nil, fmt.Errorf("connect: (I-Q*D) singular, algebraic loop: %w", ErrAlgebraicLoop)
 	}
 
+	eyeM := eyeDense(m)
 	E := mat.NewDense(m, m, nil)
-	if err := lu.SolveTo(E, false, eyeDense(m)); err != nil {
+	if err := lu.SolveTo(E, false, eyeM); err != nil {
 		return nil, fmt.Errorf("connect: LU solve failed: %w", ErrSingularTransform)
 	}
 
 	EQ := mat.NewDense(m, p, nil)
 	EQ.Mul(E, Q)
 
-	Er := mat.NewDense(p, p, nil)
 	DEQ := mat.NewDense(p, p, nil)
 	DEQ.Mul(Dcore, EQ)
-	Er = eyeDense(p)
+	Er := eyeDense(p)
 	Er.Add(Er, DEQ)
 
 	Bcore := extractBlock(H.B, 0, 0, nH, m)
@@ -1433,11 +1433,23 @@ func connectWithDelay(sys *System, Q *mat.Dense, inputs, outputs []int) (*System
 	mTotal := mExt + N
 	pTotal := pExt + N
 
+	var BEQ *mat.Dense
+	if nH > 0 {
+		BEQ = mat.NewDense(nH, p, nil)
+		BEQ.Mul(Bcore, EQ)
+	}
+
+	var Dout, Din, DinEQ *mat.Dense
+	if N > 0 {
+		Dout = extractBlock(H.D, 0, m, p, N)
+		Din = extractBlock(H.D, p, 0, N, m)
+		DinEQ = mat.NewDense(N, p, nil)
+		DinEQ.Mul(Din, EQ)
+	}
+
 	Acl := mat.NewDense(max(nH, 1), max(nH, 1), nil)
 	if nH > 0 {
 		setBlock(Acl, 0, 0, H.A)
-		BEQ := mat.NewDense(nH, p, nil)
-		BEQ.Mul(Bcore, EQ)
 		BEQC := mat.NewDense(nH, nH, nil)
 		BEQC.Mul(BEQ, Ccore)
 		addBlock(Acl, 0, 0, BEQC)
@@ -1455,10 +1467,7 @@ func connectWithDelay(sys *System, Q *mat.Dense, inputs, outputs []int) (*System
 		}
 		if N > 0 {
 			Bdelay := extractBlock(H.B, 0, m, nH, N)
-			BEQ := mat.NewDense(nH, p, nil)
-			BEQ.Mul(Bcore, EQ)
 			BEQDout := mat.NewDense(nH, N, nil)
-			Dout := extractBlock(H.D, 0, m, p, N)
 			BEQDout.Mul(BEQ, Dout)
 			b2mod := mat.NewDense(nH, N, nil)
 			b2mod.Add(Bdelay, BEQDout)
@@ -1475,17 +1484,14 @@ func connectWithDelay(sys *System, Q *mat.Dense, inputs, outputs []int) (*System
 
 	Ccl := mat.NewDense(max(pTotal, 1), max(nH, 1), nil)
 	if nH > 0 {
+		cfRaw := Cfull.RawMatrix()
+		ccRaw := Ccl.RawMatrix()
 		for k, i := range outputs {
-			cfRaw := Cfull.RawMatrix()
-			ccRaw := Ccl.RawMatrix()
 			copy(ccRaw.Data[k*ccRaw.Stride:k*ccRaw.Stride+nH],
 				cfRaw.Data[i*cfRaw.Stride:i*cfRaw.Stride+nH])
 		}
 		if N > 0 {
 			Cdelay := extractBlock(H.C, p, 0, N, nH)
-			Din := extractBlock(H.D, p, 0, N, m)
-			DinEQ := mat.NewDense(N, p, nil)
-			DinEQ.Mul(Din, EQ)
 			DinEQC := mat.NewDense(N, nH, nil)
 			DinEQC.Mul(DinEQ, Ccore)
 			c2mod := mat.NewDense(N, nH, nil)
@@ -1502,29 +1508,25 @@ func connectWithDelay(sys *System, Q *mat.Dense, inputs, outputs []int) (*System
 	}
 
 	if N > 0 {
-		Dout := extractBlock(H.D, 0, m, p, N)
 		ErDout := mat.NewDense(p, N, nil)
 		ErDout.Mul(Er, Dout)
+		erRaw := ErDout.RawMatrix()
 		for ki, oi := range outputs {
-			erRaw := ErDout.RawMatrix()
 			for j := 0; j < N; j++ {
 				Dcl.Set(ki, mExt+j, erRaw.Data[oi*erRaw.Stride+j])
 			}
 		}
 
-		Din := extractBlock(H.D, p, 0, N, m)
 		DinE := mat.NewDense(N, m, nil)
 		DinE.Mul(Din, E)
+		deRaw := DinE.RawMatrix()
 		for i := 0; i < N; i++ {
-			deRaw := DinE.RawMatrix()
 			for kj, ij := range inputs {
 				Dcl.Set(pExt+i, kj, deRaw.Data[i*deRaw.Stride+ij])
 			}
 		}
 
 		D22 := extractBlock(H.D, p, m, N, N)
-		DinEQ := mat.NewDense(N, p, nil)
-		DinEQ.Mul(Din, EQ)
 		d22cross := mat.NewDense(N, N, nil)
 		d22cross.Mul(DinEQ, Dout)
 		d22mod := mat.NewDense(N, N, nil)
@@ -1577,10 +1579,7 @@ func connectSimple(sys *System, Q *mat.Dense, inputs, outputs []int, n, m, p int
 
 	QD := mat.NewDense(m, m, nil)
 	QD.Mul(Q, sys.D)
-	IQD := mat.NewDense(m, m, nil)
-	for i := 0; i < m; i++ {
-		IQD.Set(i, i, 1)
-	}
+	IQD := eyeDense(m)
 	IQD.Sub(IQD, QD)
 
 	var lu mat.LU
@@ -1589,9 +1588,9 @@ func connectSimple(sys *System, Q *mat.Dense, inputs, outputs []int, n, m, p int
 		return nil, fmt.Errorf("connect: (I-Q*D) singular, algebraic loop: %w", ErrAlgebraicLoop)
 	}
 
+	eyeM := eyeDense(m)
 	E := mat.NewDense(m, m, nil)
-	eye := eyeDense(m)
-	if err := lu.SolveTo(E, false, eye); err != nil {
+	if err := lu.SolveTo(E, false, eyeM); err != nil {
 		return nil, fmt.Errorf("connect: LU solve failed: %w", ErrSingularTransform)
 	}
 
@@ -1599,12 +1598,9 @@ func connectSimple(sys *System, Q *mat.Dense, inputs, outputs []int, n, m, p int
 	EQ.Mul(E, Q)
 
 	if n == 0 {
-		Er := mat.NewDense(p, p, nil)
 		DEQ := mat.NewDense(p, p, nil)
 		DEQ.Mul(sys.D, EQ)
-		for i := 0; i < p; i++ {
-			Er.Set(i, i, 1)
-		}
+		Er := eyeDense(p)
 		Er.Add(Er, DEQ)
 
 		Dfull := mat.NewDense(p, m, nil)
@@ -1629,12 +1625,9 @@ func connectSimple(sys *System, Q *mat.Dense, inputs, outputs []int, n, m, p int
 	Bfull := mat.NewDense(n, m, nil)
 	Bfull.Mul(sys.B, E)
 
-	Er := mat.NewDense(p, p, nil)
 	DEQ := mat.NewDense(p, p, nil)
 	DEQ.Mul(sys.D, EQ)
-	for i := 0; i < p; i++ {
-		Er.Set(i, i, 1)
-	}
+	Er := eyeDense(p)
 	Er.Add(Er, DEQ)
 
 	Cfull := mat.NewDense(p, n, nil)
