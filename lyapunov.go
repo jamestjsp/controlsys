@@ -80,20 +80,19 @@ func Lyap(A, Q *mat.Dense) (*mat.Dense, error) {
 		}
 	}
 
-	// X = U * Y * U': tmp = Y * U', then X = U * tmp
+	// X = U * Y * U': tmp = Y * U', then w = U * tmp (reuse w buffer)
 	blas64.Gemm(blas.NoTrans, blas.Trans,
 		1, blas64.General{Rows: n, Cols: n, Data: w, Stride: n},
 		blas64.General{Rows: n, Cols: n, Data: vs, Stride: n},
 		0, blas64.General{Rows: n, Cols: n, Data: tmp, Stride: n})
 
-	xData := make([]float64, n*n)
 	blas64.Gemm(blas.NoTrans, blas.NoTrans,
 		1, blas64.General{Rows: n, Cols: n, Data: vs, Stride: n},
 		blas64.General{Rows: n, Cols: n, Data: tmp, Stride: n},
-		0, blas64.General{Rows: n, Cols: n, Data: xData, Stride: n})
+		0, blas64.General{Rows: n, Cols: n, Data: w, Stride: n})
 
-	symmetrize(xData, n, n)
-	return mat.NewDense(n, n, xData), nil
+	symmetrize(w, n, n)
+	return mat.NewDense(n, n, w), nil
 }
 
 // DLyap solves the discrete Lyapunov equation
@@ -166,20 +165,19 @@ func DLyap(A, Q *mat.Dense) (*mat.Dense, error) {
 		}
 	}
 
-	// X = U * Y * U'
+	// X = U * Y * U': tmp = Y * U', then w = U * tmp (reuse w buffer)
 	blas64.Gemm(blas.NoTrans, blas.Trans,
 		1, blas64.General{Rows: n, Cols: n, Data: w, Stride: n},
 		blas64.General{Rows: n, Cols: n, Data: vs, Stride: n},
 		0, blas64.General{Rows: n, Cols: n, Data: tmp, Stride: n})
 
-	xData := make([]float64, n*n)
 	blas64.Gemm(blas.NoTrans, blas.NoTrans,
 		1, blas64.General{Rows: n, Cols: n, Data: vs, Stride: n},
 		blas64.General{Rows: n, Cols: n, Data: tmp, Stride: n},
-		0, blas64.General{Rows: n, Cols: n, Data: xData, Stride: n})
+		0, blas64.General{Rows: n, Cols: n, Data: w, Stride: n})
 
-	symmetrize(xData, n, n)
-	return mat.NewDense(n, n, xData), nil
+	symmetrize(w, n, n)
+	return mat.NewDense(n, n, w), nil
 }
 
 // solveDiscreteSchurLyap solves T*Y*T' - Y = C in-place (C overwritten with Y).
@@ -366,11 +364,10 @@ func solveDiscrLyap2(t11, t12, t21, t22 float64, c []float64, r, ldc int) (float
 	}
 	rhs := [3]float64{c11, c12, c22}
 
-	ipiv := make([]int, 3)
-	jpiv := make([]int, 3)
-	k := impl.Dgetc2(3, m[:], 3, ipiv, jpiv)
+	var ipiv, jpiv [3]int
+	k := impl.Dgetc2(3, m[:], 3, ipiv[:], jpiv[:])
 	_ = k
-	scale := impl.Dgesc2(3, m[:], 3, rhs[:], ipiv, jpiv)
+	scale := impl.Dgesc2(3, m[:], 3, rhs[:], ipiv[:], jpiv[:])
 
 	c[r*ldc+r] = rhs[0]
 	c[r*ldc+r+1] = rhs[1]
@@ -441,8 +438,7 @@ func solveDiscrKron(da, db int, at []float64, aRow, ldat int, bt []float64, bRow
 		}
 	}
 
-	ipiv := make([]int, nn)
-	jpiv := make([]int, nn)
+	var ipiv, jpiv [4]int
 	k := impl.Dgetc2(nn, kron[:nn*nn], nn, ipiv[:nn], jpiv[:nn])
 	_ = k
 	scale := impl.Dgesc2(nn, kron[:nn*nn], nn, rhs[:nn], ipiv[:nn], jpiv[:nn])

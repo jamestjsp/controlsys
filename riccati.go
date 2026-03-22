@@ -173,7 +173,8 @@ func Care(A, B, Q, R *mat.Dense, opts *RiccatiOpts) (*RiccatiResult, error) {
 		copy(u21[i*n:i*n+n], vs[(n+i)*nn:(n+i)*nn+n])
 	}
 
-	// Solve X = U21 * U11⁻¹
+	// X = U21 * U11⁻¹; since X is symmetric: X = (U11')⁻¹ * U21'
+	// Solve via DGETRS(Trans) instead of explicit inverse
 	ipiv := make([]int, n)
 	if !impl.Dgetrf(n, n, u11, n, ipiv) {
 		return nil, ErrNoStabilizing
@@ -182,17 +183,13 @@ func Care(A, B, Q, R *mat.Dense, opts *RiccatiOpts) (*RiccatiResult, error) {
 	anorm := impl.Dlange(lapack.MaxColumnSum, n, n, u11, n, work[:n])
 	rcnd := impl.Dgecon(lapack.MaxColumnSum, n, u11, n, anorm, work[:4*n], make([]int, n))
 
-	iworkQuery := make([]float64, 1)
-	impl.Dgetri(n, u11, n, ipiv, iworkQuery, -1)
-	liwork := int(iworkQuery[0])
-	iworkBuf := make([]float64, liwork)
-	impl.Dgetri(n, u11, n, ipiv, iworkBuf, liwork)
-
 	xData := make([]float64, n*n)
-	blas64.Gemm(blas.NoTrans, blas.NoTrans,
-		1, blas64.General{Rows: n, Cols: n, Data: u21, Stride: n},
-		blas64.General{Rows: n, Cols: n, Data: u11, Stride: n},
-		0, blas64.General{Rows: n, Cols: n, Data: xData, Stride: n})
+	for i := range n {
+		for j := range n {
+			xData[i*n+j] = u21[j*n+i]
+		}
+	}
+	impl.Dgetrs(blas.Trans, n, n, u11, n, ipiv, xData, n)
 
 	symmetrize(xData, n, n)
 	X := mat.NewDense(n, n, xData)
@@ -364,21 +361,19 @@ func Dare(A, B, Q, R *mat.Dense, opts *RiccatiOpts) (*RiccatiResult, error) {
 		blas64.General{Rows: n, Cols: n, Data: ait, Stride: n},
 		0, blas64.General{Rows: n, Cols: n, Data: gait, Stride: n})
 
+	gaitq := make([]float64, n*n)
+	blas64.Gemm(blas.NoTrans, blas.NoTrans,
+		1, blas64.General{Rows: n, Cols: n, Data: gait, Stride: n},
+		blas64.General{Rows: n, Cols: n, Data: qWork, Stride: n},
+		0, blas64.General{Rows: n, Cols: n, Data: gaitq, Stride: n})
+
 	nn := 2 * n
 	z := make([]float64, nn*nn)
 	for i := range n {
 		for j := range n {
-			// Top-left: A + G*Ait*Q
-			gaitq := 0.0
-			for k := range n {
-				gaitq += gait[i*n+k] * qWork[k*n+j]
-			}
-			z[i*nn+j] = aWork[i*n+j] + gaitq
-			// Top-right: -G*Ait
+			z[i*nn+j] = aWork[i*n+j] + gaitq[i*n+j]
 			z[i*nn+n+j] = -gait[i*n+j]
-			// Bottom-left: -Ait*Q
 			z[(n+i)*nn+j] = -aitq[i*n+j]
-			// Bottom-right: Ait
 			z[(n+i)*nn+n+j] = ait[i*n+j]
 		}
 	}
@@ -424,17 +419,13 @@ func Dare(A, B, Q, R *mat.Dense, opts *RiccatiOpts) (*RiccatiResult, error) {
 	anorm := impl.Dlange(lapack.MaxColumnSum, n, n, u11, n, work[:n])
 	rcnd := impl.Dgecon(lapack.MaxColumnSum, n, u11, n, anorm, work[:4*n], make([]int, n))
 
-	iworkQuery := make([]float64, 1)
-	impl.Dgetri(n, u11, n, ipiv, iworkQuery, -1)
-	liwork := int(iworkQuery[0])
-	iworkBuf := make([]float64, liwork)
-	impl.Dgetri(n, u11, n, ipiv, iworkBuf, liwork)
-
 	xData := make([]float64, n*n)
-	blas64.Gemm(blas.NoTrans, blas.NoTrans,
-		1, blas64.General{Rows: n, Cols: n, Data: u21, Stride: n},
-		blas64.General{Rows: n, Cols: n, Data: u11, Stride: n},
-		0, blas64.General{Rows: n, Cols: n, Data: xData, Stride: n})
+	for i := range n {
+		for j := range n {
+			xData[i*n+j] = u21[j*n+i]
+		}
+	}
+	impl.Dgetrs(blas.Trans, n, n, u11, n, ipiv, xData, n)
 
 	symmetrize(xData, n, n)
 	X := mat.NewDense(n, n, xData)
