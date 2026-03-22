@@ -82,17 +82,21 @@ func lftSimple(M, Delta *System, nu, ny int) (*System, error) {
 	}
 
 	Phi := mulDense(Delta.D, F)
-	G := mat.NewDense(z, z, nil)
+	gRaw := make([]float64, z*z)
+	G := mat.NewDense(z, z, gRaw)
 	G.Mul(Phi, D22)
 	for i := 0; i < z; i++ {
-		G.Set(i, i, G.At(i, i)+1)
+		gRaw[i*z+i] += 1
 	}
+
+	PhiC2 := mulDense(Phi, C2)
+	PhiD21 := mulDense(Phi, D21)
 
 	n := nM + nD
 
 	if n == 0 {
 		Dcl := mat.NewDense(ny, nu, nil)
-		Dcl.Add(D11, mulDense(D12, mulDense(Phi, D21)))
+		Dcl.Add(D11, mulDense(D12, PhiD21))
 		return buildSystem(nil, nil, nil, Dcl, M.Dt, nil)
 	}
 
@@ -101,28 +105,37 @@ func lftSimple(M, Delta *System, nu, ny int) (*System, error) {
 	Ccl := mat.NewDense(ny, n, nil)
 	Dcl := mat.NewDense(ny, nu, nil)
 
+	var FC2, FD21, FD22Cd, GCd *mat.Dense
+	if nD > 0 {
+		FC2 = mulDense(F, C2)
+		FD21 = mulDense(F, D21)
+		FD22Cd = mat.NewDense(w, nD, nil)
+		FD22Cd.Mul(F, mulDense(D22, Delta.C))
+		GCd = mulDense(G, Delta.C)
+	}
+
 	if nM > 0 {
 		setBlock(Acl, 0, 0, M.A)
-		addBlock(Acl, 0, 0, mulDense(B2, mulDense(Phi, C2)))
+		addBlock(Acl, 0, 0, mulDense(B2, PhiC2))
 		setBlock(Bcl, 0, 0, B1)
-		addBlock(Bcl, 0, 0, mulDense(B2, mulDense(Phi, D21)))
+		addBlock(Bcl, 0, 0, mulDense(B2, PhiD21))
 		setBlock(Ccl, 0, 0, C1)
-		addBlock(Ccl, 0, 0, mulDense(D12, mulDense(Phi, C2)))
+		addBlock(Ccl, 0, 0, mulDense(D12, PhiC2))
 	}
 	if nD > 0 {
 		setBlock(Acl, nM, nM, Delta.A)
-		addBlock(Acl, nM, nM, mulDense(Delta.B, mulDense(F, mulDense(D22, Delta.C))))
-		setBlock(Bcl, nM, 0, mulDense(Delta.B, mulDense(F, D21)))
+		addBlock(Acl, nM, nM, mulDense(Delta.B, FD22Cd))
+		setBlock(Bcl, nM, 0, mulDense(Delta.B, FD21))
 	}
 	if nM > 0 && nD > 0 {
-		setBlock(Acl, 0, nM, mulDense(B2, mulDense(G, Delta.C)))
-		setBlock(Acl, nM, 0, mulDense(Delta.B, mulDense(F, C2)))
+		setBlock(Acl, 0, nM, mulDense(B2, GCd))
+		setBlock(Acl, nM, 0, mulDense(Delta.B, FC2))
 	}
 	if nD > 0 {
-		setBlock(Ccl, 0, nM, mulDense(D12, mulDense(G, Delta.C)))
+		setBlock(Ccl, 0, nM, mulDense(D12, GCd))
 	}
 
-	Dcl.Add(D11, mulDense(D12, mulDense(Phi, D21)))
+	Dcl.Add(D11, mulDense(D12, PhiD21))
 
 	return newNoCopy(Acl, Bcl, Ccl, Dcl, M.Dt)
 }
@@ -242,10 +255,11 @@ func lftWithDelay(M, Delta *System, nu, ny int) (*System, error) {
 	}
 
 	Phi := mulDense(DDe, F)
-	G := mat.NewDense(z, z, nil)
+	gRaw := make([]float64, z*z)
+	G := mat.NewDense(z, z, gRaw)
 	G.Mul(Phi, D22p)
 	for i := 0; i < z; i++ {
-		G.Set(i, i, G.At(i, i)+1)
+		gRaw[i*z+i] += 1
 	}
 
 	B1 := extractBlock(mH.B, 0, 0, nM, nu)
@@ -256,6 +270,16 @@ func lftWithDelay(M, Delta *System, nu, ny int) (*System, error) {
 	BDe := extractBlock(dH.B, 0, 0, nD, w)
 	CDe := extractBlock(dH.C, 0, 0, z, nD)
 
+	PhiC2p := mulDense(Phi, C2p)
+	PhiD21p := mulDense(Phi, D21p)
+	var FC2p, FD21p, FD22pCDe, GCDe *mat.Dense
+	if nD > 0 || N > 0 {
+		FC2p = mulDense(F, C2p)
+		FD21p = mulDense(F, D21p)
+		FD22pCDe = mulDense(F, mulDense(D22p, CDe))
+		GCDe = mulDense(G, CDe)
+	}
+
 	Acl := mat.NewDense(max(n, 1), max(n, 1), nil)
 	Bcl := mat.NewDense(max(n, 1), max(mTotal, 1), nil)
 	Ccl := mat.NewDense(max(pTotal, 1), max(n, 1), nil)
@@ -263,35 +287,35 @@ func lftWithDelay(M, Delta *System, nu, ny int) (*System, error) {
 
 	if nM > 0 {
 		setBlock(Acl, 0, 0, mH.A)
-		addBlock(Acl, 0, 0, mulDense(B2p, mulDense(Phi, C2p)))
+		addBlock(Acl, 0, 0, mulDense(B2p, PhiC2p))
 	}
 	if nD > 0 {
 		setBlock(Acl, nM, nM, dH.A)
-		addBlock(Acl, nM, nM, mulDense(BDe, mulDense(F, mulDense(D22p, CDe))))
+		addBlock(Acl, nM, nM, mulDense(BDe, FD22pCDe))
 	}
 	if nM > 0 && nD > 0 {
-		setBlock(Acl, 0, nM, mulDense(B2p, mulDense(G, CDe)))
-		setBlock(Acl, nM, 0, mulDense(BDe, mulDense(F, C2p)))
+		setBlock(Acl, 0, nM, mulDense(B2p, GCDe))
+		setBlock(Acl, nM, 0, mulDense(BDe, FC2p))
 	}
 
 	if nM > 0 {
 		setBlock(Bcl, 0, 0, B1)
-		addBlock(Bcl, 0, 0, mulDense(B2p, mulDense(Phi, D21p)))
+		addBlock(Bcl, 0, 0, mulDense(B2p, PhiD21p))
 	}
 	if nD > 0 {
-		setBlock(Bcl, nM, 0, mulDense(BDe, mulDense(F, D21p)))
+		setBlock(Bcl, nM, 0, mulDense(BDe, FD21p))
 	}
 
 	if nM > 0 {
 		setBlock(Ccl, 0, 0, C1)
-		addBlock(Ccl, 0, 0, mulDense(D12p, mulDense(Phi, C2p)))
+		addBlock(Ccl, 0, 0, mulDense(D12p, PhiC2p))
 	}
 	if nD > 0 {
-		setBlock(Ccl, 0, nM, mulDense(D12p, mulDense(G, CDe)))
+		setBlock(Ccl, 0, nM, mulDense(D12p, GCDe))
 	}
 
 	setBlock(Dcl, 0, 0, D11)
-	addBlock(Dcl, 0, 0, mulDense(D12p, mulDense(Phi, D21p)))
+	addBlock(Dcl, 0, 0, mulDense(D12p, PhiD21p))
 
 	if N == 0 {
 		if n == 0 {
@@ -318,17 +342,23 @@ func lftWithDelay(M, Delta *System, nu, ny int) (*System, error) {
 
 	var D12iMu, D12iMw *mat.Dense
 	var D21iMext, D21iMz *mat.Dense
+	var PhiD12iMw *mat.Dense
 	if NM > 0 {
 		D12iMu = extractBlock(mH.D, 0, nu+z, ny, NM)
 		D12iMw = extractBlock(mH.D, ny, nu+z, w, NM)
 		D21iMext = extractBlock(mH.D, ny+w, 0, NM, nu)
 		D21iMz = extractBlock(mH.D, ny+w, nu, NM, z)
+		PhiD12iMw = mulDense(Phi, D12iMw)
 	}
 
 	var D12iD, D21iD *mat.Dense
+	var GD12iD, FD12iMw, FD22pD12iD *mat.Dense
 	if ND > 0 {
 		D12iD = extractBlock(dH.D, 0, w, z, ND)
 		D21iD = extractBlock(dH.D, z, 0, ND, w)
+		GD12iD = mulDense(G, D12iD)
+		FD12iMw = mulDense(F, D12iMw)
+		FD22pD12iD = mulDense(F, mulDense(D22p, D12iD))
 	}
 
 	b2 := mat.NewDense(max(n, 1), N, nil)
@@ -344,37 +374,37 @@ func lftWithDelay(M, Delta *System, nu, ny int) (*System, error) {
 
 		if nM > 0 {
 			t := mat.NewDense(nM, NM, nil)
-			t.Add(B2iM, mulDense(B2p, mulDense(Phi, D12iMw)))
+			t.Add(B2iM, mulDense(B2p, PhiD12iMw))
 			setBlock(b2, 0, 0, t)
 		}
 		if nD > 0 {
-			setBlock(b2, nM, 0, mulDense(BDe, mulDense(F, D12iMw)))
+			setBlock(b2, nM, 0, mulDense(BDe, FD12iMw))
 		}
 
 		if nM > 0 {
 			t := mat.NewDense(NM, nM, nil)
-			t.Add(C2iM, mulDense(D21iMz, mulDense(Phi, C2p)))
+			t.Add(C2iM, mulDense(D21iMz, PhiC2p))
 			setBlock(c2, 0, 0, t)
 		}
 		if nD > 0 {
-			setBlock(c2, 0, nM, mulDense(D21iMz, mulDense(G, CDe)))
+			setBlock(c2, 0, nM, mulDense(D21iMz, GCDe))
 		}
 
 		{
 			t := mat.NewDense(ny, NM, nil)
-			t.Add(D12iMu, mulDense(D12p, mulDense(Phi, D12iMw)))
+			t.Add(D12iMu, mulDense(D12p, PhiD12iMw))
 			setBlock(d12, 0, 0, t)
 		}
 
 		{
 			t := mat.NewDense(NM, nu, nil)
-			t.Add(D21iMext, mulDense(D21iMz, mulDense(Phi, D21p)))
+			t.Add(D21iMext, mulDense(D21iMz, PhiD21p))
 			setBlock(d21, 0, 0, t)
 		}
 
 		{
 			t := mat.NewDense(NM, NM, nil)
-			t.Add(D22iM, mulDense(D21iMz, mulDense(Phi, D12iMw)))
+			t.Add(D22iM, mulDense(D21iMz, PhiD12iMw))
 			setBlock(d22, 0, 0, t)
 		}
 	}
@@ -385,37 +415,37 @@ func lftWithDelay(M, Delta *System, nu, ny int) (*System, error) {
 		D22iD := extractBlock(dH.D, z, w, ND, ND)
 
 		if nM > 0 {
-			setBlock(b2, 0, NM, mulDense(B2p, mulDense(G, D12iD)))
+			setBlock(b2, 0, NM, mulDense(B2p, GD12iD))
 		}
 		if nD > 0 {
 			t := mat.NewDense(nD, ND, nil)
-			t.Add(B2iD, mulDense(BDe, mulDense(F, mulDense(D22p, D12iD))))
+			t.Add(B2iD, mulDense(BDe, FD22pD12iD))
 			setBlock(b2, nM, NM, t)
 		}
 
 		if nM > 0 {
-			setBlock(c2, NM, 0, mulDense(D21iD, mulDense(F, C2p)))
+			setBlock(c2, NM, 0, mulDense(D21iD, FC2p))
 		}
 		if nD > 0 {
 			t := mat.NewDense(ND, nD, nil)
-			t.Add(C2iD, mulDense(D21iD, mulDense(F, mulDense(D22p, CDe))))
+			t.Add(C2iD, mulDense(D21iD, FD22pCDe))
 			setBlock(c2, NM, nM, t)
 		}
 
-		setBlock(d12, 0, NM, mulDense(D12p, mulDense(G, D12iD)))
+		setBlock(d12, 0, NM, mulDense(D12p, GD12iD))
 
-		setBlock(d21, NM, 0, mulDense(D21iD, mulDense(F, D21p)))
+		setBlock(d21, NM, 0, mulDense(D21iD, FD21p))
 
 		{
 			t := mat.NewDense(ND, ND, nil)
-			t.Add(D22iD, mulDense(D21iD, mulDense(F, mulDense(D22p, D12iD))))
+			t.Add(D22iD, mulDense(D21iD, FD22pD12iD))
 			setBlock(d22, NM, NM, t)
 		}
 	}
 
 	if NM > 0 && ND > 0 {
-		setBlock(d22, 0, NM, mulDense(D21iMz, mulDense(G, D12iD)))
-		setBlock(d22, NM, 0, mulDense(D21iD, mulDense(F, D12iMw)))
+		setBlock(d22, 0, NM, mulDense(D21iMz, GD12iD))
+		setBlock(d22, NM, 0, mulDense(D21iD, FD12iMw))
 	}
 
 	if n == 0 {

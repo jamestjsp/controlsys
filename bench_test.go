@@ -1243,3 +1243,48 @@ func benchSys(n, m, p int) *System {
 	sys, _ := New(A, B, C, D, 0)
 	return sys
 }
+
+func BenchmarkBlkDiag(b *testing.B) {
+	s1 := benchSys(10, 3, 4)
+	s2 := benchSys(8, 2, 3)
+	s3 := benchSys(6, 4, 2)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		BlkDiag(s1, s2, s3)
+	}
+}
+
+func BenchmarkConnect(b *testing.B) {
+	s1 := benchSys(10, 3, 4)
+	s2 := benchSys(8, 4, 3)
+	aug, _ := BlkDiag(s1, s2)
+	_, m, p := aug.Dims()
+	Q := mat.NewDense(m, p, nil)
+	for i := 0; i < min(4, min(m, p)); i++ {
+		Q.Set(3+i, i, 1)
+	}
+	inputs := []int{0, 1, 2}
+	outputs := []int{4, 5, 6}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		Connect(aug, Q, inputs, outputs)
+	}
+}
+
+func BenchmarkLFT(b *testing.B) {
+	M := benchSys(10, 6, 6)
+	Delta := benchSys(5, 3, 3)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		LFT(M, Delta, 3, 3)
+	}
+}
+
+func BenchmarkLFT_Large(b *testing.B) {
+	M := benchSys(20, 12, 12)
+	Delta := benchSys(10, 6, 6)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		LFT(M, Delta, 6, 6)
+	}
+}
