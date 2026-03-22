@@ -3986,3 +3986,77 @@ func TestMinimalLFTMergeNonProportionalKept(t *testing.T) {
 		t.Fatalf("expected 2 delays (non-proportional), got %d", len(reduced.InternalDelay))
 	}
 }
+
+func TestSimulateDelay_AllDelaysExceedSteps(t *testing.T) {
+	A := mat.NewDense(2, 2, []float64{0.9, 0.1, 0, 0.8})
+	B := mat.NewDense(2, 1, []float64{1, 0})
+	C := mat.NewDense(1, 2, []float64{1, 0.5})
+	D := mat.NewDense(1, 1, []float64{2})
+	delay := mat.NewDense(1, 1, []float64{10})
+
+	sys, err := NewWithDelay(A, B, C, D, delay, 1.0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	steps := 5
+	u := mat.NewDense(1, steps, nil)
+	for k := 0; k < steps; k++ {
+		u.Set(0, k, 1)
+	}
+	x0 := mat.NewVecDense(2, []float64{3, 1})
+
+	resp, err := sys.Simulate(u, x0, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	autoSys, err := New(A, mat.NewDense(2, 1, nil), C, mat.NewDense(1, 1, nil), 1.0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	zeroU := mat.NewDense(1, steps, nil)
+	autoResp, err := autoSys.Simulate(zeroU, x0, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !matEqual(resp.Y, autoResp.Y, 1e-14) {
+		t.Errorf("delay > steps: forced response should be invisible\n got: %v\nwant: %v",
+			mat.Formatted(resp.Y), mat.Formatted(autoResp.Y))
+	}
+}
+
+func TestSimulateDelay_BoundaryDelay(t *testing.T) {
+	A := mat.NewDense(2, 2, []float64{0.9, 0.1, 0, 0.8})
+	B := mat.NewDense(2, 1, []float64{1, 0})
+	C := mat.NewDense(1, 2, []float64{1, 0})
+	D := mat.NewDense(1, 1, []float64{3})
+
+	steps := 5
+	delay := mat.NewDense(1, 1, []float64{float64(steps - 1)})
+
+	sys, err := NewWithDelay(A, B, C, D, delay, 1.0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	u := mat.NewDense(1, steps, nil)
+	u.Set(0, 0, 1)
+
+	resp, err := sys.Simulate(u, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for k := 0; k < steps-1; k++ {
+		if resp.Y.At(0, k) != 0 {
+			t.Errorf("Y[0,%d] = %f, want 0", k, resp.Y.At(0, k))
+		}
+	}
+	want := D.At(0, 0) * u.At(0, 0)
+	got := resp.Y.At(0, steps-1)
+	if math.Abs(got-want) > 1e-14 {
+		t.Errorf("Y[0,%d] = %f, want %f", steps-1, got, want)
+	}
+}

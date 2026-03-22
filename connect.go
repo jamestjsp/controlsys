@@ -15,6 +15,9 @@ func domainMatch(sys1, sys2 *System) error {
 }
 
 func setBlock(dst *mat.Dense, r0, c0 int, src *mat.Dense) {
+	if src == nil {
+		return
+	}
 	sr, sc := src.Dims()
 	if sr == 0 || sc == 0 {
 		return

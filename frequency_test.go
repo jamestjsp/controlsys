@@ -735,8 +735,88 @@ func TestEvalFr_IODelay_Discrete(t *testing.T) {
 	// Transfer function is 1/(z-0.5) / z^3
 	tf := 1.0 / (s - 0.5)
 	expected := tf / (s * s * s)
-	
+
 	if cmplx.Abs(val[0][0]-expected) > 1e-10 {
 		t.Errorf("EvalFr with I/O delay discrete mismatch. got: %v, want: %v", val[0][0], expected)
+	}
+}
+
+func TestFreqResponse_MixedInternalAndIODelay(t *testing.T) {
+	sys, err := New(
+		mat.NewDense(2, 2, []float64{-1, 0.5, 0, -2}),
+		mat.NewDense(2, 1, []float64{1, 0.5}),
+		mat.NewDense(1, 2, []float64{1, 0.3}),
+		mat.NewDense(1, 1, []float64{0}),
+		0,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = sys.SetInternalDelay(
+		[]float64{0.3},
+		mat.NewDense(2, 1, []float64{0.5, 0}),
+		mat.NewDense(1, 2, []float64{0, 0.4}),
+		mat.NewDense(1, 1, []float64{0}),
+		mat.NewDense(1, 1, []float64{0}),
+		mat.NewDense(1, 1, []float64{0}),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = sys.SetInputDelay([]float64{0.2})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	merged, err := sys.PullDelaysToLFT()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	freqs := []float64{0.1, 0.5, 1.0, 5.0, 10.0}
+	respOrig, err := sys.FreqResponse(freqs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	respMerged, err := merged.FreqResponse(freqs)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for k, w := range freqs {
+		got := respOrig.At(0, 0, k)
+		want := respMerged.At(0, 0, k)
+		if cmplx.Abs(got-want) > 1e-10 {
+			t.Errorf("w=%v: direct=%v, merged=%v, diff=%v", w, got, want, cmplx.Abs(got-want))
+		}
+	}
+}
+
+func TestFreqResponse_SingularLFT(t *testing.T) {
+	sys, err := New(
+		mat.NewDense(1, 1, []float64{-1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{0}),
+		0,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = sys.SetInternalDelay(
+		[]float64{1.0},
+		mat.NewDense(1, 1, []float64{0}),
+		mat.NewDense(1, 1, []float64{0}),
+		mat.NewDense(1, 1, []float64{0}),
+		mat.NewDense(1, 1, []float64{0}),
+		mat.NewDense(1, 1, []float64{1}),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = sys.FreqResponse([]float64{0.0})
+	if err == nil {
+		t.Fatal("expected error for singular (I - H22*Delta) at w=0 with D22=1")
 	}
 }

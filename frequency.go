@@ -546,6 +546,17 @@ func cInvertInto(dst, aug, src []complex128, n int) error {
 		aug[row+n+i] = 1
 	}
 
+	maxAbs := 0.0
+	for _, v := range src[:n*n] {
+		if a := cmplx.Abs(v); a > maxAbs {
+			maxAbs = a
+		}
+	}
+	tol := float64(n) * maxAbs * eps()
+	if tol == 0 {
+		tol = 1e-15
+	}
+
 	for col := 0; col < n; col++ {
 		pivot := -1
 		best := 0.0
@@ -556,7 +567,7 @@ func cInvertInto(dst, aug, src []complex128, n int) error {
 				pivot = row
 			}
 		}
-		if best < 1e-15 {
+		if best < tol {
 			return fmt.Errorf("controlsys: singular complex matrix: %w", ErrSingularTransform)
 		}
 		if pivot != col {

@@ -139,6 +139,9 @@ func bilinear(sys *System, palpha, pbeta, alpha, beta float64) (*System, error) 
 	}
 
 	twoAB := 2.0 * alpha * beta
+	if math.IsInf(twoAB, 0) {
+		return nil, fmt.Errorf("bilinear: 2*alpha*beta overflows: %w", ErrOverflow)
+	}
 	scale := math.Sqrt(math.Abs(twoAB))
 	if palpha < 0 {
 		scale = -scale
@@ -578,7 +581,7 @@ func (sys *System) DiscretizeZOH(dt float64) (*System, error) {
 	}
 
 	nm := n + m
-	if nm == n {
+	if m == 0 {
 		var eA mat.Dense
 		Adt := mat.NewDense(n, n, nil)
 		Adt.Scale(dt, sys.A)

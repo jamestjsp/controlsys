@@ -374,6 +374,44 @@ func TestZeros_StaircaseExample(t *testing.T) {
 	assertZerosMatch(t, res.Zeros, want, 1e-10)
 }
 
+func TestZeros_StaircaseNonSymmetric(t *testing.T) {
+	A := mat.NewDense(6, 6, []float64{
+		1, 0.1, 0, 0, 0, 0,
+		0, 1, 0, 0, 0, 0,
+		0, 0, 3, 0.2, 0, 0,
+		0, 0, 0, -4, 0, 0,
+		0, 0, 0, 0, -1, 0.15,
+		0, 0, 0, 0, 0, 3,
+	})
+	B := mat.NewDense(6, 2, []float64{
+		0, -1,
+		-1, 0,
+		1, -1,
+		0, 0,
+		0, 1,
+		-1, -1,
+	})
+	C := mat.NewDense(3, 6, []float64{
+		1, 0, 0, 1, 0, 0,
+		0, 1, 0, 1, 0, 1,
+		0, 0, 1, 0, 0, 1,
+	})
+	D := mat.NewDense(3, 2, nil)
+
+	sys, err := New(A, B, C, D, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := sys.ZerosDetail()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Rank != 2 {
+		t.Errorf("rank: got %d, want 2", res.Rank)
+	}
+	assertZerosMatch(t, res.Zeros, []complex128{-1}, 1e-10)
+}
+
 func assertZerosMatch(t *testing.T, got, want []complex128, tol float64) {
 	t.Helper()
 	if len(got) != len(want) {
