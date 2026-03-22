@@ -5,6 +5,7 @@ import (
 	"math"
 	"math/cmplx"
 
+	"gonum.org/v1/gonum/blas/blas64"
 	"gonum.org/v1/gonum/mat"
 )
 
@@ -760,12 +761,10 @@ func discretizeZOHAugmented(sys *System, dt float64) (*System, *mat.Dense, error
 	mTotal := m + N
 	nm := n + mTotal
 	if mTotal == 0 {
-		var eA mat.Dense
 		Adt := mat.NewDense(n, n, nil)
 		Adt.Scale(dt, sys.A)
-		eA.Exp(Adt)
 		Ad := mat.NewDense(n, n, nil)
-		Ad.Copy(&eA)
+		Ad.Exp(Adt)
 		out := &System{A: Ad, B: denseCopy(sys.B), C: C, D: D, Dt: dt}
 		return out, mat.DenseCopyOf(sys.B2), nil
 	}
@@ -773,6 +772,13 @@ func discretizeZOHAugmented(sys *System, dt float64) (*System, *mat.Dense, error
 	M := mat.NewDense(nm, nm, nil)
 	mRaw := M.RawMatrix()
 	aRaw := sys.A.RawMatrix()
+	var bRawZ, b2RawZ blas64.General
+	if m > 0 {
+		bRawZ = sys.B.RawMatrix()
+	}
+	if N > 0 {
+		b2RawZ = sys.B2.RawMatrix()
+	}
 
 	for i := 0; i < n; i++ {
 		row := mRaw.Data[i*mRaw.Stride:]
@@ -780,15 +786,13 @@ func discretizeZOHAugmented(sys *System, dt float64) (*System, *mat.Dense, error
 			row[j] = aRaw.Data[i*aRaw.Stride+j] * dt
 		}
 		if m > 0 {
-			bRaw := sys.B.RawMatrix()
 			for j := 0; j < m; j++ {
-				row[n+j] = bRaw.Data[i*bRaw.Stride+j] * dt
+				row[n+j] = bRawZ.Data[i*bRawZ.Stride+j] * dt
 			}
 		}
 		if N > 0 {
-			b2Raw := sys.B2.RawMatrix()
 			for j := 0; j < N; j++ {
-				row[n+m+j] = b2Raw.Data[i*b2Raw.Stride+j] * dt
+				row[n+m+j] = b2RawZ.Data[i*b2RawZ.Stride+j] * dt
 			}
 		}
 	}
@@ -926,10 +930,8 @@ func (sys *System) DiscretizeImpulse(dt float64) (*System, error) {
 
 	Adt := mat.NewDense(n, n, nil)
 	Adt.Scale(dt, sys.A)
-	var eA mat.Dense
-	eA.Exp(Adt)
 	Ad := mat.NewDense(n, n, nil)
-	Ad.Copy(&eA)
+	Ad.Exp(Adt)
 
 	if m == 0 {
 		out := &System{A: Ad, B: denseCopy(sys.B), C: C, D: D, Dt: dt}
@@ -981,10 +983,8 @@ func discretizeImpulseAugmented(sys *System, dt float64) (*System, *mat.Dense, e
 
 	Adt := mat.NewDense(n, n, nil)
 	Adt.Scale(dt, sys.A)
-	var eA mat.Dense
-	eA.Exp(Adt)
 	Ad := mat.NewDense(n, n, nil)
-	Ad.Copy(&eA)
+	Ad.Exp(Adt)
 
 	var Bd *mat.Dense
 	if m > 0 {
@@ -1029,10 +1029,8 @@ func (sys *System) DiscretizeFOH(dt float64) (*System, error) {
 	if m == 0 {
 		Adt := mat.NewDense(n, n, nil)
 		Adt.Scale(dt, sys.A)
-		var eA mat.Dense
-		eA.Exp(Adt)
 		Ad := mat.NewDense(n, n, nil)
-		Ad.Copy(&eA)
+		Ad.Exp(Adt)
 		out := &System{A: Ad, B: denseCopy(sys.B), C: denseCopy(sys.C), D: denseCopy(sys.D), Dt: dt}
 		propagateNames(out, sys)
 		return out, nil
@@ -1207,10 +1205,8 @@ func discretizeFOHAugmented(sys *System, dt float64) (*System, *mat.Dense, error
 	if mTotal == 0 {
 		Adt := mat.NewDense(n, n, nil)
 		Adt.Scale(dt, sys.A)
-		var eA mat.Dense
-		eA.Exp(Adt)
 		Ad := mat.NewDense(n, n, nil)
-		Ad.Copy(&eA)
+		Ad.Exp(Adt)
 		out := &System{A: Ad, B: denseCopy(sys.B), C: C, D: D, Dt: dt}
 		return out, mat.DenseCopyOf(sys.B2), nil
 	}
@@ -1219,6 +1215,13 @@ func discretizeFOHAugmented(sys *System, dt float64) (*System, *mat.Dense, error
 	M := mat.NewDense(sz, sz, nil)
 	mRaw := M.RawMatrix()
 	aRaw := sys.A.RawMatrix()
+	var bRaw, b2Raw blas64.General
+	if m > 0 {
+		bRaw = sys.B.RawMatrix()
+	}
+	if N > 0 {
+		b2Raw = sys.B2.RawMatrix()
+	}
 
 	for i := 0; i < n; i++ {
 		row := mRaw.Data[i*mRaw.Stride:]
@@ -1226,13 +1229,11 @@ func discretizeFOHAugmented(sys *System, dt float64) (*System, *mat.Dense, error
 			row[j] = aRaw.Data[i*aRaw.Stride+j] * dt
 		}
 		if m > 0 {
-			bRaw := sys.B.RawMatrix()
 			for j := 0; j < m; j++ {
 				row[n+j] = bRaw.Data[i*bRaw.Stride+j] * dt
 			}
 		}
 		if N > 0 {
-			b2Raw := sys.B2.RawMatrix()
 			for j := 0; j < N; j++ {
 				row[n+m+j] = b2Raw.Data[i*b2Raw.Stride+j] * dt
 			}
@@ -1250,7 +1251,6 @@ func discretizeFOHAugmented(sys *System, dt float64) (*System, *mat.Dense, error
 	g0BData := make([]float64, n*m)
 	g1BData := make([]float64, n*m)
 	g0B2Data := make([]float64, n*N)
-	g1B2Data := make([]float64, n*N)
 	for i := 0; i < n; i++ {
 		copy(adData[i*n:i*n+n], emRaw.Data[i*emRaw.Stride:i*emRaw.Stride+n])
 		if m > 0 {
@@ -1259,7 +1259,6 @@ func discretizeFOHAugmented(sys *System, dt float64) (*System, *mat.Dense, error
 		}
 		if N > 0 {
 			copy(g0B2Data[i*N:i*N+N], emRaw.Data[i*emRaw.Stride+n+m:i*emRaw.Stride+n+m+N])
-			copy(g1B2Data[i*N:i*N+N], emRaw.Data[i*emRaw.Stride+n+mTotal+m:i*emRaw.Stride+n+mTotal+m+N])
 		}
 	}
 
@@ -1270,12 +1269,7 @@ func discretizeFOHAugmented(sys *System, dt float64) (*System, *mat.Dense, error
 
 	var Bd2 *mat.Dense
 	if N > 0 {
-		b0B2 := make([]float64, n*N)
-		for i := range g0B2Data {
-			b0B2[i] = g0B2Data[i] - g1B2Data[i]
-		}
-		_ = b0B2
-		Bd2 = mat.NewDense(n, N, g1B2Data)
+		Bd2 = mat.NewDense(n, N, g0B2Data)
 	} else {
 		Bd2 = newDense(n, 0)
 	}
