@@ -17,14 +17,18 @@ go get github.com/jamestjsp/controlsys
 
 ## Features
 
-- **State-space & transfer function** representations with bidirectional conversion
-- **System interconnection:** series, parallel, feedback, append
-- **Minimal realization:** controllability/observability staircase reduction
-- **Transmission zeros & poles** via staircase decomposition
-- **Frequency response:** Bode plots, evaluation at arbitrary complex frequencies
-- **Discretization:** bilinear (Tustin) and zero-order hold (ZOH)
-- **Simulation:** discrete-time LTI step response
+- **Three representations:** state-space, transfer function, zero-pole-gain (ZPK) with bidirectional conversion
+- **Frequency response:** Bode, Nyquist, Nichols, singular values
+- **Stability analysis:** gain/phase margins, disk margins, bandwidth, damping
+- **Control design:** LQR, LQE (Kalman), LQI, pole placement, Riccati solvers (CARE/DARE)
+- **Model reduction:** controllability/observability staircase, balanced realization, balanced truncation
+- **System norms:** H2 and H-infinity
+- **Interconnection:** series, parallel, feedback, append, sum blocks
+- **Time-domain:** step, impulse, initial condition, arbitrary input (lsim), discrete simulation
+- **Discretization:** ZOH, FOH, Tustin (bilinear), matched pole-zero, discrete-to-discrete resampling
 - **Transport delays:** input/output/internal delays, Pade and Thiran approximations, LFT representation
+- **Transmission zeros & poles** via staircase decomposition
+- **Gramians:** controllability and observability
 
 ## Quick Start
 
@@ -67,31 +71,86 @@ func main() {
 | `NewWithDelay` | Create with transport delays |
 | `NewGain` | Pure feedthrough (D only) |
 | `NewFromSlices` | Create from row-major flat arrays |
+| `NewZPK` | SISO zero-pole-gain model |
+| `NewZPKMIMO` | MIMO zero-pole-gain model |
 
-### Analysis
+### Frequency Response & Plotting
 
 | Method | Description |
 |--------|-------------|
-| `Poles` | Eigenvalues of A |
-| `Zeros` | Transmission zeros |
-| `IsStable` | Stability check |
 | `FreqResponse` | H(jw) at given frequencies |
-| `Bode` | Magnitude/phase vs frequency |
-| `EvalFr` | Evaluate at arbitrary s |
+| `Bode` | Magnitude (dB) and phase (deg) vs frequency |
+| `Nyquist` | Nyquist plot with encirclement counting |
+| `Nichols` | Nichols chart (magnitude vs phase) |
+| `Sigma` | Singular value frequency response |
+| `EvalFr` | Evaluate at arbitrary complex s |
 
-### Transformation
+### Stability & Margins
 
 | Function/Method | Description |
 |-----------------|-------------|
-| `TransferFunction` | State-space to transfer function |
-| `StateSpace` | Transfer function to state-space |
+| `Poles` | Eigenvalues of A |
+| `Zeros` | Transmission zeros |
+| `IsStable` | Stability check |
+| `DCGain` | Steady-state (DC) gain |
+| `Damp` | Natural frequency, damping ratio, time constant |
+| `Margin` | Gain and phase margins (SISO) |
+| `AllMargin` | All gain/phase crossover points |
+| `DiskMargin` | Disk-based stability margin |
+| `Bandwidth` | -3 dB bandwidth |
+
+### Control Design
+
+| Function | Description |
+|----------|-------------|
+| `Lqr` | Continuous-time LQR regulator |
+| `Dlqr` | Discrete-time LQR regulator |
+| `Lqe` | Kalman filter (observer) gain |
+| `Lqi` | LQR with integral action |
+| `Pole` | Pole placement |
+| `Care` | Continuous algebraic Riccati equation |
+| `Dare` | Discrete algebraic Riccati equation |
+
+### Model Reduction
+
+| Function/Method | Description |
+|-----------------|-------------|
+| `Reduce` | Staircase reduction (controllability/observability) |
+| `MinimalRealization` | Shorthand for full reduction |
+| `Balreal` | Balanced realization |
+| `Balred` | Balanced truncation / singular perturbation |
+| `Ctrb` | Controllability matrix |
+| `Obsv` | Observability matrix |
+| `Gram` | Controllability/observability gramian |
+
+### System Norms
+
+| Function | Description |
+|----------|-------------|
+| `H2Norm` | H2 norm (RMS gain) |
+| `HinfNorm` | H-infinity norm (peak gain) |
+| `Norm` | General norm computation |
+
+### Representation Conversion
+
+| Function/Method | Description |
+|-----------------|-------------|
+| `TransferFunction` | State-space → transfer function |
+| `StateSpace` | Transfer function → state-space |
+| `ZPKModel` | State-space → zero-pole-gain |
+| `(ZPK).TransferFunction` | ZPK → transfer function |
+| `(TransferFunc).ZPK` | Transfer function → ZPK |
+
+### Discretization
+
+| Method | Description |
+|--------|-------------|
 | `Discretize` | Bilinear (Tustin) c2d |
 | `DiscretizeZOH` | Zero-order hold c2d |
+| `DiscretizeFOH` | First-order hold c2d |
+| `DiscretizeMatched` | Matched pole-zero c2d |
+| `DiscretizeD2D` | Discrete-to-discrete resampling |
 | `Undiscretize` | Bilinear d2c |
-| `Reduce` | Remove uncontrollable/unobservable states |
-| `MinimalRealization` | Shorthand for full reduction |
-| `AbsorbDelay` | Augment state to absorb discrete transport delays |
-| `Pade` | Replace delays with Pade rational approximation |
 
 ### Interconnection
 
@@ -100,14 +159,32 @@ func main() {
 | `Series` | Cascade connection |
 | `Parallel` | Sum connection |
 | `Feedback` | Closed-loop with feedback |
-| `Append` | Block diagonal concatenation |
 | `SafeFeedback` | Feedback with automatic delay handling |
+| `Append` | Block diagonal concatenation |
+| `Sumblk` | Sum block from string expression |
 
-### Simulation
+### Time-Domain Simulation
 
-| Method | Description |
-|--------|-------------|
-| `Simulate` | Discrete-time response to input sequence |
+| Function/Method | Description |
+|-----------------|-------------|
+| `Step` | Unit step response |
+| `Impulse` | Unit impulse response |
+| `InitialCondition` | Free response to initial state |
+| `Lsim` | Response to arbitrary input signal |
+| `Simulate` | Discrete-time simulation |
+| `GenSig` | Generate test signals (step, sine, square, pulse) |
+
+### Transport Delays
+
+| Function/Method | Description |
+|-----------------|-------------|
+| `SetDelay` | Set MIMO delay matrix |
+| `SetInputDelay` | Set per-input delays |
+| `SetOutputDelay` | Set per-output delays |
+| `PadeDelay` | Pade rational approximation |
+| `ThiranDelay` | Thiran allpass (fractional discrete delays) |
+| `Pade` | Replace all delays with Pade approximations |
+| `AbsorbDelay` | Augment state for discrete delays |
 
 ## Core Algorithms
 
@@ -117,6 +194,8 @@ func main() {
 | Column-pivoting QR | Rank determination with incremental condition estimation |
 | Row-pivoting RQ | Dual rank-revealing factorization |
 | Controllability staircase | Subspace decomposition for reduction and transfer functions |
+| Balanced realization | Gramian-based state transformation for model reduction |
+| Schur decomposition | Riccati equation solvers (CARE/DARE) |
 
 ## License
 
