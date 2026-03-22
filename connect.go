@@ -1355,9 +1355,223 @@ func Connect(sys *System, Q *mat.Dense, inputs, outputs []int) (*System, error) 
 	}
 
 	if sys.HasDelay() || sys.HasInternalDelay() {
-		return nil, fmt.Errorf("connect: system has delays; absorb delays first: %w", ErrFeedbackDelay)
+		return connectWithDelay(sys, Q, inputs, outputs)
 	}
 
+	return connectSimple(sys, Q, inputs, outputs, n, m, p)
+}
+
+func connectWithDelay(sys *System, Q *mat.Dense, inputs, outputs []int) (*System, error) {
+	_, m, p := sys.Dims()
+
+	savedInputDelay := make([]float64, len(inputs))
+	if sys.InputDelay != nil {
+		for k, j := range inputs {
+			savedInputDelay[k] = sys.InputDelay[j]
+		}
+	}
+	savedOutputDelay := make([]float64, len(outputs))
+	if sys.OutputDelay != nil {
+		for k, i := range outputs {
+			savedOutputDelay[k] = sys.OutputDelay[i]
+		}
+	}
+
+	sCopy := sys.Copy()
+	if sCopy.InputDelay != nil {
+		for _, j := range inputs {
+			sCopy.InputDelay[j] = 0
+		}
+	}
+	if sCopy.OutputDelay != nil {
+		for _, i := range outputs {
+			sCopy.OutputDelay[i] = 0
+		}
+	}
+
+	sLFT, err := sCopy.PullDelaysToLFT()
+	if err != nil {
+		return nil, err
+	}
+
+	N := len(sLFT.InternalDelay)
+	H, tau := sLFT.GetDelayModel()
+
+	nH, _, _ := H.Dims()
+
+	Dcore := extractBlock(H.D, 0, 0, p, m)
+	QD := mat.NewDense(m, m, nil)
+	QD.Mul(Q, Dcore)
+	IQD := eyeDense(m)
+	IQD.Sub(IQD, QD)
+
+	var lu mat.LU
+	lu.Factorize(IQD)
+	if lu.Det() == 0 {
+		return nil, fmt.Errorf("connect: (I-Q*D) singular, algebraic loop: %w", ErrAlgebraicLoop)
+	}
+
+	E := mat.NewDense(m, m, nil)
+	if err := lu.SolveTo(E, false, eyeDense(m)); err != nil {
+		return nil, fmt.Errorf("connect: LU solve failed: %w", ErrSingularTransform)
+	}
+
+	EQ := mat.NewDense(m, p, nil)
+	EQ.Mul(E, Q)
+
+	Er := mat.NewDense(p, p, nil)
+	DEQ := mat.NewDense(p, p, nil)
+	DEQ.Mul(Dcore, EQ)
+	Er = eyeDense(p)
+	Er.Add(Er, DEQ)
+
+	Bcore := extractBlock(H.B, 0, 0, nH, m)
+	Ccore := extractBlock(H.C, 0, 0, p, nH)
+
+	mExt := len(inputs)
+	pExt := len(outputs)
+	mTotal := mExt + N
+	pTotal := pExt + N
+
+	Acl := mat.NewDense(max(nH, 1), max(nH, 1), nil)
+	if nH > 0 {
+		setBlock(Acl, 0, 0, H.A)
+		BEQ := mat.NewDense(nH, p, nil)
+		BEQ.Mul(Bcore, EQ)
+		BEQC := mat.NewDense(nH, nH, nil)
+		BEQC.Mul(BEQ, Ccore)
+		addBlock(Acl, 0, 0, BEQC)
+	}
+
+	Bcl := mat.NewDense(max(nH, 1), max(mTotal, 1), nil)
+	if nH > 0 {
+		Bfull := mat.NewDense(nH, m, nil)
+		Bfull.Mul(Bcore, E)
+		bfRaw := Bfull.RawMatrix()
+		for k, j := range inputs {
+			for i := 0; i < nH; i++ {
+				Bcl.Set(i, k, bfRaw.Data[i*bfRaw.Stride+j])
+			}
+		}
+		if N > 0 {
+			Bdelay := extractBlock(H.B, 0, m, nH, N)
+			BEQ := mat.NewDense(nH, p, nil)
+			BEQ.Mul(Bcore, EQ)
+			BEQDout := mat.NewDense(nH, N, nil)
+			Dout := extractBlock(H.D, 0, m, p, N)
+			BEQDout.Mul(BEQ, Dout)
+			b2mod := mat.NewDense(nH, N, nil)
+			b2mod.Add(Bdelay, BEQDout)
+			setBlock(Bcl, 0, mExt, b2mod)
+		}
+	}
+
+	Cfull := mat.NewDense(p, max(nH, 1), nil)
+	if nH > 0 {
+		Cfull.Mul(Er, Ccore)
+	}
+	Dfull := mat.NewDense(p, m, nil)
+	Dfull.Mul(Er, Dcore)
+
+	Ccl := mat.NewDense(max(pTotal, 1), max(nH, 1), nil)
+	if nH > 0 {
+		for k, i := range outputs {
+			cfRaw := Cfull.RawMatrix()
+			ccRaw := Ccl.RawMatrix()
+			copy(ccRaw.Data[k*ccRaw.Stride:k*ccRaw.Stride+nH],
+				cfRaw.Data[i*cfRaw.Stride:i*cfRaw.Stride+nH])
+		}
+		if N > 0 {
+			Cdelay := extractBlock(H.C, p, 0, N, nH)
+			Din := extractBlock(H.D, p, 0, N, m)
+			DinEQ := mat.NewDense(N, p, nil)
+			DinEQ.Mul(Din, EQ)
+			DinEQC := mat.NewDense(N, nH, nil)
+			DinEQC.Mul(DinEQ, Ccore)
+			c2mod := mat.NewDense(N, nH, nil)
+			c2mod.Add(Cdelay, DinEQC)
+			setBlock(Ccl, pExt, 0, c2mod)
+		}
+	}
+
+	Dcl := mat.NewDense(max(pTotal, 1), max(mTotal, 1), nil)
+	for ki, oi := range outputs {
+		for kj, ij := range inputs {
+			Dcl.Set(ki, kj, Dfull.At(oi, ij))
+		}
+	}
+
+	if N > 0 {
+		Dout := extractBlock(H.D, 0, m, p, N)
+		ErDout := mat.NewDense(p, N, nil)
+		ErDout.Mul(Er, Dout)
+		for ki, oi := range outputs {
+			erRaw := ErDout.RawMatrix()
+			for j := 0; j < N; j++ {
+				Dcl.Set(ki, mExt+j, erRaw.Data[oi*erRaw.Stride+j])
+			}
+		}
+
+		Din := extractBlock(H.D, p, 0, N, m)
+		DinE := mat.NewDense(N, m, nil)
+		DinE.Mul(Din, E)
+		for i := 0; i < N; i++ {
+			deRaw := DinE.RawMatrix()
+			for kj, ij := range inputs {
+				Dcl.Set(pExt+i, kj, deRaw.Data[i*deRaw.Stride+ij])
+			}
+		}
+
+		D22 := extractBlock(H.D, p, m, N, N)
+		DinEQ := mat.NewDense(N, p, nil)
+		DinEQ.Mul(Din, EQ)
+		d22cross := mat.NewDense(N, N, nil)
+		d22cross.Mul(DinEQ, Dout)
+		d22mod := mat.NewDense(N, N, nil)
+		d22mod.Add(D22, d22cross)
+		setBlock(Dcl, pExt, mExt, d22mod)
+	}
+
+	Acl = resizeDense(Acl, nH, nH)
+	Bcl = resizeDense(Bcl, nH, mTotal)
+	Ccl = resizeDense(Ccl, pTotal, nH)
+	Dcl = resizeDense(Dcl, pTotal, mTotal)
+
+	if nH == 0 {
+		Acl = &mat.Dense{}
+	}
+
+	Hresult := &System{A: Acl, B: Bcl, C: Ccl, D: Dcl, Dt: sys.Dt}
+	result, err := SetDelayModel(Hresult, tau)
+	if err != nil {
+		return nil, err
+	}
+
+	hasExtIn := false
+	for _, v := range savedInputDelay {
+		if v != 0 {
+			hasExtIn = true
+			break
+		}
+	}
+	if hasExtIn {
+		result.InputDelay = savedInputDelay
+	}
+	hasExtOut := false
+	for _, v := range savedOutputDelay {
+		if v != 0 {
+			hasExtOut = true
+			break
+		}
+	}
+	if hasExtOut {
+		result.OutputDelay = savedOutputDelay
+	}
+
+	return result, nil
+}
+
+func connectSimple(sys *System, Q *mat.Dense, inputs, outputs []int, n, m, p int) (*System, error) {
 	mExt := len(inputs)
 	pExt := len(outputs)
 

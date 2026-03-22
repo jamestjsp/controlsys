@@ -2339,7 +2339,7 @@ func TestConnect_AllGain(t *testing.T) {
 	}
 }
 
-func TestConnect_WithDelay_Error(t *testing.T) {
+func TestConnect_WithDelay(t *testing.T) {
 	G, _ := New(
 		mat.NewDense(1, 1, []float64{-1}),
 		mat.NewDense(1, 1, []float64{1}),
@@ -2350,12 +2350,46 @@ func TestConnect_WithDelay_Error(t *testing.T) {
 	_ = G.SetDelay(mat.NewDense(1, 1, []float64{0.5}))
 
 	Q := mat.NewDense(1, 1, nil)
-	_, err := Connect(G, Q, []int{0}, []int{0})
-	if err == nil {
-		t.Fatal("expected error for system with delay")
+	result, err := Connect(G, Q, []int{0}, []int{0})
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !errors.Is(err, ErrFeedbackDelay) {
-		t.Errorf("got %v, want ErrFeedbackDelay", err)
+	n, m, p := result.Dims()
+	if m != 1 || p != 1 {
+		t.Fatalf("dims = (%d,%d,%d), want (_,1,1)", n, m, p)
+	}
+	if !result.HasInternalDelay() && !result.HasDelay() {
+		if result.OutputDelay == nil && result.InputDelay == nil {
+			t.Error("expected delay to be preserved")
+		}
+	}
+}
+
+func TestConnect_WithDelay_Feedback(t *testing.T) {
+	P, _ := New(
+		mat.NewDense(2, 2, []float64{-1, 0.5, 0, -2}),
+		mat.NewDense(2, 1, []float64{1, 0}),
+		mat.NewDense(1, 2, []float64{0, 1}),
+		mat.NewDense(1, 1, []float64{0}),
+		0,
+	)
+	_ = P.SetOutputDelay([]float64{0.3})
+
+	K, _ := NewGain(mat.NewDense(1, 1, []float64{2}), 0)
+
+	aug, _ := BlkDiag(P, K)
+	_, m, p := aug.Dims()
+	Q := mat.NewDense(m, p, nil)
+	Q.Set(0, 1, -1)
+	Q.Set(1, 0, 1)
+
+	result, err := Connect(aug, Q, []int{0}, []int{0})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, mr, pr := result.Dims()
+	if mr != 1 || pr != 1 {
+		t.Fatalf("dims = (_,%d,%d), want (_,1,1)", mr, pr)
 	}
 }
 
