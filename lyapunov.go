@@ -1,0 +1,460 @@
+package controlsys
+
+import (
+	"math"
+
+	"gonum.org/v1/gonum/blas"
+	"gonum.org/v1/gonum/blas/blas64"
+	"gonum.org/v1/gonum/lapack"
+	"gonum.org/v1/gonum/mat"
+)
+
+// Lyap solves the continuous Lyapunov equation
+//
+//	A*X + X*A' + Q = 0
+//
+// A is n×n, Q is n×n symmetric. Returns X (n×n symmetric).
+func Lyap(A, Q *mat.Dense) (*mat.Dense, error) {
+	n, nc := A.Dims()
+	if n != nc {
+		return nil, ErrDimensionMismatch
+	}
+	qr, qc := Q.Dims()
+	if qr != n || qc != n {
+		return nil, ErrDimensionMismatch
+	}
+	if n == 0 {
+		return &mat.Dense{}, nil
+	}
+	if !isSymmetric(Q, eps()*denseNorm(Q)) {
+		return nil, ErrNotSymmetric
+	}
+
+	aData := make([]float64, n*n)
+	aRaw := A.RawMatrix()
+	for i := range n {
+		copy(aData[i*n:i*n+n], aRaw.Data[i*aRaw.Stride:i*aRaw.Stride+n])
+	}
+
+	wr := make([]float64, n)
+	wi := make([]float64, n)
+	vs := make([]float64, n*n)
+
+	workQuery := make([]float64, 1)
+	impl.Dgees(lapack.SchurHess, lapack.SortNone, nil,
+		n, aData, n, wr, wi, vs, n, workQuery, -1, nil)
+	lwork := int(workQuery[0])
+	work := make([]float64, lwork)
+
+	_, ok := impl.Dgees(lapack.SchurHess, lapack.SortNone, nil,
+		n, aData, n, wr, wi, vs, n, work, lwork, nil)
+	if !ok {
+		return nil, ErrSchurFailed
+	}
+
+	// W = U' * (-Q) * U: tmp = (-Q) * U, then W = U' * tmp
+	tmp := make([]float64, n*n)
+	w := make([]float64, n*n)
+	qRaw := Q.RawMatrix()
+
+	blas64.Gemm(blas.NoTrans, blas.NoTrans,
+		-1, blas64.General{Rows: n, Cols: n, Data: qRaw.Data, Stride: qRaw.Stride},
+		blas64.General{Rows: n, Cols: n, Data: vs, Stride: n},
+		0, blas64.General{Rows: n, Cols: n, Data: tmp, Stride: n})
+
+	blas64.Gemm(blas.Trans, blas.NoTrans,
+		1, blas64.General{Rows: n, Cols: n, Data: vs, Stride: n},
+		blas64.General{Rows: n, Cols: n, Data: tmp, Stride: n},
+		0, blas64.General{Rows: n, Cols: n, Data: w, Stride: n})
+
+	// Solve T*Y + Y*T' = scale*W via Dtrsyl
+	scale, sylOk := impl.Dtrsyl(blas.NoTrans, blas.Trans, 1,
+		n, n, aData, n, aData, n, w, n)
+	if !sylOk {
+		return nil, ErrSingularEquation
+	}
+	if scale != 1 {
+		invScale := 1.0 / scale
+		for i := range w {
+			w[i] *= invScale
+		}
+	}
+
+	// X = U * Y * U': tmp = Y * U', then X = U * tmp
+	blas64.Gemm(blas.NoTrans, blas.Trans,
+		1, blas64.General{Rows: n, Cols: n, Data: w, Stride: n},
+		blas64.General{Rows: n, Cols: n, Data: vs, Stride: n},
+		0, blas64.General{Rows: n, Cols: n, Data: tmp, Stride: n})
+
+	xData := make([]float64, n*n)
+	blas64.Gemm(blas.NoTrans, blas.NoTrans,
+		1, blas64.General{Rows: n, Cols: n, Data: vs, Stride: n},
+		blas64.General{Rows: n, Cols: n, Data: tmp, Stride: n},
+		0, blas64.General{Rows: n, Cols: n, Data: xData, Stride: n})
+
+	symmetrize(xData, n, n)
+	return mat.NewDense(n, n, xData), nil
+}
+
+// DLyap solves the discrete Lyapunov equation
+//
+//	A*X*A' - X + Q = 0
+//
+// A is n×n, Q is n×n symmetric. Returns X (n×n symmetric).
+func DLyap(A, Q *mat.Dense) (*mat.Dense, error) {
+	n, nc := A.Dims()
+	if n != nc {
+		return nil, ErrDimensionMismatch
+	}
+	qr, qc := Q.Dims()
+	if qr != n || qc != n {
+		return nil, ErrDimensionMismatch
+	}
+	if n == 0 {
+		return &mat.Dense{}, nil
+	}
+	if !isSymmetric(Q, eps()*denseNorm(Q)) {
+		return nil, ErrNotSymmetric
+	}
+
+	aData := make([]float64, n*n)
+	aRaw := A.RawMatrix()
+	for i := range n {
+		copy(aData[i*n:i*n+n], aRaw.Data[i*aRaw.Stride:i*aRaw.Stride+n])
+	}
+
+	wr := make([]float64, n)
+	wi := make([]float64, n)
+	vs := make([]float64, n*n)
+
+	workQuery := make([]float64, 1)
+	impl.Dgees(lapack.SchurHess, lapack.SortNone, nil,
+		n, aData, n, wr, wi, vs, n, workQuery, -1, nil)
+	lwork := int(workQuery[0])
+	work := make([]float64, lwork)
+
+	_, ok := impl.Dgees(lapack.SchurHess, lapack.SortNone, nil,
+		n, aData, n, wr, wi, vs, n, work, lwork, nil)
+	if !ok {
+		return nil, ErrSchurFailed
+	}
+
+	// W = U' * (-Q) * U
+	tmp := make([]float64, n*n)
+	w := make([]float64, n*n)
+	qRaw := Q.RawMatrix()
+
+	blas64.Gemm(blas.NoTrans, blas.NoTrans,
+		-1, blas64.General{Rows: n, Cols: n, Data: qRaw.Data, Stride: qRaw.Stride},
+		blas64.General{Rows: n, Cols: n, Data: vs, Stride: n},
+		0, blas64.General{Rows: n, Cols: n, Data: tmp, Stride: n})
+
+	blas64.Gemm(blas.Trans, blas.NoTrans,
+		1, blas64.General{Rows: n, Cols: n, Data: vs, Stride: n},
+		blas64.General{Rows: n, Cols: n, Data: tmp, Stride: n},
+		0, blas64.General{Rows: n, Cols: n, Data: w, Stride: n})
+
+	// Solve T*Y*T' - Y = W via discrete block solver
+	scale, err := solveDiscreteSchurLyap(n, aData, n, w, n)
+	if err != nil {
+		return nil, err
+	}
+	if scale != 1 {
+		invScale := 1.0 / scale
+		for i := range w {
+			w[i] *= invScale
+		}
+	}
+
+	// X = U * Y * U'
+	blas64.Gemm(blas.NoTrans, blas.Trans,
+		1, blas64.General{Rows: n, Cols: n, Data: w, Stride: n},
+		blas64.General{Rows: n, Cols: n, Data: vs, Stride: n},
+		0, blas64.General{Rows: n, Cols: n, Data: tmp, Stride: n})
+
+	xData := make([]float64, n*n)
+	blas64.Gemm(blas.NoTrans, blas.NoTrans,
+		1, blas64.General{Rows: n, Cols: n, Data: vs, Stride: n},
+		blas64.General{Rows: n, Cols: n, Data: tmp, Stride: n},
+		0, blas64.General{Rows: n, Cols: n, Data: xData, Stride: n})
+
+	symmetrize(xData, n, n)
+	return mat.NewDense(n, n, xData), nil
+}
+
+// solveDiscreteSchurLyap solves T*Y*T' - Y = C in-place (C overwritten with Y).
+// T is n×n upper quasi-triangular (real Schur form). Returns scale factor.
+// Only the upper triangle of C is used/written; the lower triangle is ignored.
+func solveDiscreteSchurLyap(n int, t []float64, ldt int, c []float64, ldc int) (float64, error) {
+	if n == 0 {
+		return 1, nil
+	}
+
+	blocks := make([]int, 0, n)
+	blockStart := make([]int, 0, n)
+	i := 0
+	for i < n {
+		if i+1 < n && t[(i+1)*ldt+i] != 0 {
+			blocks = append(blocks, 2)
+			blockStart = append(blockStart, i)
+			i += 2
+		} else {
+			blocks = append(blocks, 1)
+			blockStart = append(blockStart, i)
+			i++
+		}
+	}
+	nblk := len(blocks)
+
+	scale := 1.0
+	smin := math.Abs(t[0])
+	for i := 1; i < n; i++ {
+		if v := math.Abs(t[i*ldt+i]); v > smin {
+			smin = v
+		}
+	}
+	smin = math.Max(smin*eps(), math.SmallestNonzeroFloat64)
+
+	// yRead reads Y[i,k] from the upper triangle of c (Y is symmetric).
+	yRead := func(i, k int) float64 {
+		if i <= k {
+			return c[i*ldc+k]
+		}
+		return c[k*ldc+i]
+	}
+
+	buf := make([]float64, n*2)
+
+	for lb := nblk - 1; lb >= 0; lb-- {
+		j1 := blockStart[lb]
+		dl := blocks[lb]
+		j2 := j1 + dl
+
+		// Step 1: Subtract contribution from solved columns (q >= j2).
+		// C[:j2, j1:j2] -= (T[:j2,:] * Y[:, j2:n] * T[j1:j2, j2:n]')[:j2, :]
+		// Compute v[i,jj] = sum_{k>=j2} Y[i,k]*T[j1+jj,k], then C[:j2, j1:j2] -= T[:j2,:]*v
+		if j2 < n {
+			for i := range n {
+				for jj := range dl {
+					sum := 0.0
+					for k := j2; k < n; k++ {
+						sum += yRead(i, k) * t[(j1+jj)*ldt+k]
+					}
+					buf[i*dl+jj] = sum
+				}
+			}
+			for i := 0; i < j2; i++ {
+				for jj := range dl {
+					sum := 0.0
+					for p := range n {
+						sum += t[i*ldt+p] * buf[p*dl+jj]
+					}
+					c[i*ldc+j1+jj] -= sum
+				}
+			}
+		}
+
+		// Step 2: Subtract contribution from lower-triangle rows (p >= j2) within current column.
+		// These are Y[p, j1:j2] = Y[j1:j2, p]' for p >= j2, known from symmetry.
+		// C[:j2, j1:j2] -= T[:j2, j2:n] * Y[j2:n, j1:j2] * T_ll'
+		if j2 < n {
+			for i := 0; i < j2; i++ {
+				for jj := range dl {
+					sum := 0.0
+					for p := j2; p < n; p++ {
+						sum += t[i*ldt+p] * yRead(p, j1+jj)
+					}
+					buf[i*dl+jj] = sum
+				}
+			}
+			for i := 0; i < j2; i++ {
+				for jj := range dl {
+					val := 0.0
+					for pp := range dl {
+						val += buf[i*dl+pp] * t[(j1+jj)*ldt+j1+pp]
+					}
+					c[i*ldc+j1+jj] -= val
+				}
+			}
+		}
+
+		// Step 3: Solve diagonal block T_ll * Y_ll * T_ll' - Y_ll = C_ll
+		if dl == 1 {
+			denom := t[j1*ldt+j1]*t[j1*ldt+j1] - 1
+			if math.Abs(denom) <= smin {
+				return scale, ErrSingularEquation
+			}
+			c[j1*ldc+j1] /= denom
+		} else {
+			s, err := solveDiscrLyap2(
+				t[j1*ldt+j1], t[j1*ldt+j1+1],
+				t[(j1+1)*ldt+j1], t[(j1+1)*ldt+j1+1],
+				c, j1, ldc)
+			if err != nil {
+				return scale, err
+			}
+			scale *= s
+		}
+
+		// Step 4: Back-substitute off-diagonal rows (k < l) within column block.
+		for kb := lb - 1; kb >= 0; kb-- {
+			i1 := blockStart[kb]
+			dk := blocks[kb]
+
+			// Update: C[i1:i2, j1:j2] -= (sum_{p=kb+1..lb} T[i1:i2, p_rows] * Y[p_rows, j1:j2]) * T_ll'
+			var s [4]float64
+			for mb := kb + 1; mb <= lb; mb++ {
+				m1 := blockStart[mb]
+				dm := blocks[mb]
+				for ii := range dk {
+					for jj := range dl {
+						for mm := range dm {
+							s[ii*dl+jj] += t[(i1+ii)*ldt+m1+mm] * c[(m1+mm)*ldc+j1+jj]
+						}
+					}
+				}
+			}
+			for ii := range dk {
+				for jj := range dl {
+					val := 0.0
+					for pp := range dl {
+						val += s[ii*dl+pp] * t[(j1+jj)*ldt+j1+pp]
+					}
+					c[(i1+ii)*ldc+j1+jj] -= val
+				}
+			}
+
+			sc, err := solveDiscrKron(dk, dl,
+				t, i1, ldt,
+				t, j1, ldt,
+				c, i1, j1, ldc)
+			if err != nil {
+				return scale, err
+			}
+			scale *= sc
+		}
+	}
+
+	// Copy upper triangle to lower for symmetry
+	for i := range n {
+		for j := i + 1; j < n; j++ {
+			c[j*ldc+i] = c[i*ldc+j]
+		}
+	}
+
+	return scale, nil
+}
+
+// solveDiscrLyap2 solves T*Y*T' - Y = C for 2×2 symmetric T,C,Y.
+// C is stored in the matrix c at position (r,r) with stride ldc.
+// Exploits symmetry: 3 unknowns (y11, y12, y22) → 3×3 system.
+func solveDiscrLyap2(t11, t12, t21, t22 float64, c []float64, r, ldc int) (float64, error) {
+	// Extract C (symmetric)
+	c11 := c[r*ldc+r]
+	c12 := c[r*ldc+r+1]
+	c22 := c[(r+1)*ldc+r+1]
+
+	// Build 3×3 system M*[y11, y12, y22]' = [c11, c12, c22]'
+	// From T*Y*T' - Y = C, with Y symmetric (3 unknowns):
+	// Row for (1,1): t11*t11*y11 + 2*t11*t12*y12 + t12*t12*y22 - y11 = c11
+	// Row for (1,2): t11*t21*y11 + (t11*t22+t12*t21)*y12 + t12*t22*y22 - y12 = c12
+	// Row for (2,2): t21*t21*y11 + 2*t21*t22*y12 + t22*t22*y22 - y22 = c22
+	m := [9]float64{
+		t11*t11 - 1, 2 * t11 * t12, t12 * t12,
+		t11 * t21, t11*t22 + t12*t21 - 1, t12 * t22,
+		t21 * t21, 2 * t21 * t22, t22*t22 - 1,
+	}
+	rhs := [3]float64{c11, c12, c22}
+
+	ipiv := make([]int, 3)
+	jpiv := make([]int, 3)
+	k := impl.Dgetc2(3, m[:], 3, ipiv, jpiv)
+	_ = k
+	scale := impl.Dgesc2(3, m[:], 3, rhs[:], ipiv, jpiv)
+
+	c[r*ldc+r] = rhs[0]
+	c[r*ldc+r+1] = rhs[1]
+	c[(r+1)*ldc+r] = rhs[1]
+	c[(r+1)*ldc+r+1] = rhs[2]
+
+	if scale == 0 {
+		return 1, ErrSingularEquation
+	}
+	return scale, nil
+}
+
+// solveDiscrKron solves T_kk * X * T_ll' - X = C_kl for small blocks.
+// A block starts at t[aRow, aRow] with size da, B block at t[bRow, bRow] with size db.
+// C/X block at c[aRow, bCol] with size da×db.
+// Vectorizes to (da*db)×(da*db) system: (T_ll ⊗ T_kk - I)*vec(X) = vec(C).
+func solveDiscrKron(da, db int, at []float64, aRow, ldat int, bt []float64, bRow, ldbt int,
+	c []float64, cRow, cCol, ldc int) (float64, error) {
+
+	nn := da * db
+	if nn == 1 {
+		denom := at[aRow*ldat+aRow]*bt[bRow*ldbt+bRow] - 1
+		smin := math.Max(math.Abs(at[aRow*ldat+aRow])*eps(), math.SmallestNonzeroFloat64)
+		if math.Abs(denom) <= smin {
+			return 1, ErrSingularEquation
+		}
+		c[cRow*ldc+cCol] /= denom
+		return 1, nil
+	}
+
+	// Extract small A block (da×da) and B block (db×db)
+	var aBlk [4]float64
+	for i := range da {
+		for j := range da {
+			aBlk[i*da+j] = at[(aRow+i)*ldat+aRow+j]
+		}
+	}
+	var bBlk [4]float64
+	for i := range db {
+		for j := range db {
+			bBlk[i*db+j] = bt[(bRow+i)*ldbt+bRow+j]
+		}
+	}
+
+	// Build Kronecker product (B ⊗ A) - I of size nn×nn
+	// vec(A*X*B') = (B ⊗ A) * vec(X), so (T_ll ⊗ T_kk - I)*vec(X) = vec(C)
+	var kron [16]float64
+	for i := range db {
+		for j := range db {
+			for k := range da {
+				for l := range da {
+					row := i*da + k
+					col := j*da + l
+					kron[row*nn+col] = bBlk[i*db+j] * aBlk[k*da+l]
+				}
+			}
+		}
+	}
+	for i := range nn {
+		kron[i*nn+i] -= 1
+	}
+
+	// Extract RHS
+	var rhs [4]float64
+	for i := range da {
+		for j := range db {
+			rhs[j*da+i] = c[(cRow+i)*ldc+cCol+j]
+		}
+	}
+
+	ipiv := make([]int, nn)
+	jpiv := make([]int, nn)
+	k := impl.Dgetc2(nn, kron[:nn*nn], nn, ipiv[:nn], jpiv[:nn])
+	_ = k
+	scale := impl.Dgesc2(nn, kron[:nn*nn], nn, rhs[:nn], ipiv[:nn], jpiv[:nn])
+
+	for i := range da {
+		for j := range db {
+			c[(cRow+i)*ldc+cCol+j] = rhs[j*da+i]
+		}
+	}
+
+	if scale == 0 {
+		return 1, ErrSingularEquation
+	}
+	return scale, nil
+}

@@ -67,3 +67,29 @@ func denseNorm(m *mat.Dense) float64 {
 func eps() float64 {
 	return math.Nextafter(1.0, 2.0) - 1.0
 }
+
+func isSymmetric(m *mat.Dense, tol float64) bool {
+	r, c := m.Dims()
+	if r != c {
+		return false
+	}
+	raw := m.RawMatrix()
+	for i := 0; i < r; i++ {
+		for j := i + 1; j < c; j++ {
+			if math.Abs(raw.Data[i*raw.Stride+j]-raw.Data[j*raw.Stride+i]) > tol {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func symmetrize(data []float64, n, stride int) {
+	for i := 0; i < n; i++ {
+		for j := i + 1; j < n; j++ {
+			avg := 0.5 * (data[i*stride+j] + data[j*stride+i])
+			data[i*stride+j] = avg
+			data[j*stride+i] = avg
+		}
+	}
+}

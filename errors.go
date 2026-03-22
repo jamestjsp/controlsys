@@ -21,4 +21,10 @@ var (
 	ErrDomainMismatch  = errors.New("controlsys: systems must share the same time domain")
 	ErrFeedbackDelay   = errors.New("controlsys: feedback with delays not supported")
 	ErrMixedDelayTypes = errors.New("controlsys: InternalDelay and IODelay cannot coexist")
+
+	ErrNotSymmetric     = errors.New("controlsys: matrix must be symmetric")
+	ErrSchurFailed      = errors.New("controlsys: Schur decomposition failed to converge")
+	ErrSingularEquation = errors.New("controlsys: matrix equation is singular or nearly singular")
+	ErrNoStabilizing    = errors.New("controlsys: no stabilizing solution exists")
+	ErrSingularR        = errors.New("controlsys: R matrix is singular or not positive definite")
 )

@@ -781,6 +781,118 @@ func BenchmarkBode_LargeMIMO(b *testing.B) {
 	}
 }
 
+// Lyapunov & Riccati benchmarks
+
+func benchStableA(n int) *mat.Dense {
+	A := mat.NewDense(n, n, nil)
+	for i := range n {
+		A.Set(i, i, -float64(i+1)*0.3)
+		if i > 0 {
+			A.Set(i, i-1, 0.2)
+		}
+		if i < n-1 {
+			A.Set(i, i+1, 0.1)
+		}
+	}
+	return A
+}
+
+func benchDiscreteA(n int) *mat.Dense {
+	A := mat.NewDense(n, n, nil)
+	for i := range n {
+		A.Set(i, i, 0.5+0.3*float64(i)/float64(n))
+		if i > 0 {
+			A.Set(i, i-1, 0.05)
+		}
+		if i < n-1 {
+			A.Set(i, i+1, 0.03)
+		}
+	}
+	return A
+}
+
+func benchSymPD(n int) *mat.Dense {
+	Q := mat.NewDense(n, n, nil)
+	for i := range n {
+		Q.Set(i, i, 2+0.1*float64(i))
+		if i > 0 {
+			Q.Set(i, i-1, 0.1)
+			Q.Set(i-1, i, 0.1)
+		}
+	}
+	return Q
+}
+
+func benchB(n, m int) *mat.Dense {
+	B := mat.NewDense(n, m, nil)
+	for i := range min(n, m) {
+		B.Set(i, i, 1)
+	}
+	return B
+}
+
+func benchLyap(b *testing.B, n int) {
+	A := benchStableA(n)
+	Q := benchSymPD(n)
+	b.ResetTimer()
+	for range b.N {
+		Lyap(A, Q)
+	}
+}
+
+func BenchmarkLyap_N10(b *testing.B)  { benchLyap(b, 10) }
+func BenchmarkLyap_N50(b *testing.B)  { benchLyap(b, 50) }
+func BenchmarkLyap_N100(b *testing.B) { benchLyap(b, 100) }
+
+func benchDLyap(b *testing.B, n int) {
+	A := benchDiscreteA(n)
+	Q := benchSymPD(n)
+	b.ResetTimer()
+	for range b.N {
+		DLyap(A, Q)
+	}
+}
+
+func BenchmarkDLyap_N10(b *testing.B)  { benchDLyap(b, 10) }
+func BenchmarkDLyap_N50(b *testing.B)  { benchDLyap(b, 50) }
+func BenchmarkDLyap_N100(b *testing.B) { benchDLyap(b, 100) }
+
+func benchCare(b *testing.B, n, m int) {
+	A := benchStableA(n)
+	B := benchB(n, m)
+	Q := benchSymPD(n)
+	R := mat.NewDense(m, m, nil)
+	for i := range m {
+		R.Set(i, i, 1)
+	}
+	b.ResetTimer()
+	for range b.N {
+		Care(A, B, Q, R, nil)
+	}
+}
+
+func BenchmarkCare_N10_M2(b *testing.B)  { benchCare(b, 10, 2) }
+func BenchmarkCare_N50_M5(b *testing.B)  { benchCare(b, 50, 5) }
+func BenchmarkCare_N100_M5(b *testing.B) { benchCare(b, 100, 5) }
+
+func benchDare(b *testing.B, n, m int) {
+	A := benchDiscreteA(n)
+	B := benchB(n, m)
+	Q := benchSymPD(n)
+	R := mat.NewDense(m, m, nil)
+	for i := range m {
+		R.Set(i, i, 1)
+	}
+	b.ResetTimer()
+	for range b.N {
+		Dare(A, B, Q, R, nil)
+	}
+}
+
+func BenchmarkDare_N10_M2(b *testing.B)  { benchDare(b, 10, 2) }
+func BenchmarkDare_N50_M5(b *testing.B)  { benchDare(b, 50, 5) }
+func BenchmarkDare_N100_M5(b *testing.B) { benchDare(b, 100, 5) }
+
 func benchSys(n, m, p int) *System {
 	A := mat.NewDense(n, n, nil)
 	for i := 0; i < n; i++ {
