@@ -1168,3 +1168,758 @@ func TestC2DDelayModelingInternalMIMO(t *testing.T) {
 		t.Errorf("InputDelay[1] = %v, want 2", disc.InputDelay[1])
 	}
 }
+
+// --- DiscretizeImpulse tests ---
+
+func TestImpulse_WrongDomain(t *testing.T) {
+	sys, _ := New(
+		mat.NewDense(1, 1, []float64{-1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{0}),
+		0.1,
+	)
+	_, err := sys.DiscretizeImpulse(0.1)
+	if err == nil {
+		t.Fatal("expected ErrWrongDomain")
+	}
+}
+
+func TestImpulse_InvalidDt(t *testing.T) {
+	sys := makeTestSystem()
+	_, err := sys.DiscretizeImpulse(0)
+	if err == nil {
+		t.Fatal("expected error for dt=0")
+	}
+	_, err = sys.DiscretizeImpulse(-1)
+	if err == nil {
+		t.Fatal("expected error for dt<0")
+	}
+}
+
+func TestImpulse_PureGain(t *testing.T) {
+	D := mat.NewDense(2, 3, []float64{1, 2, 3, 4, 5, 6})
+	sys, _ := NewGain(D, 0)
+	disc, err := sys.DiscretizeImpulse(0.1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n, m, p := disc.Dims()
+	if n != 0 || m != 3 || p != 2 {
+		t.Fatalf("dims = %d,%d,%d, want 0,3,2", n, m, p)
+	}
+	assertMatClose(t, "D", disc.D, D, 1e-14)
+}
+
+func TestImpulse_Scalar(t *testing.T) {
+	a, b, c := -2.0, 3.0, 1.0
+	dt := 0.1
+	sys, _ := New(
+		mat.NewDense(1, 1, []float64{a}),
+		mat.NewDense(1, 1, []float64{b}),
+		mat.NewDense(1, 1, []float64{c}),
+		mat.NewDense(1, 1, []float64{0}),
+		0,
+	)
+	disc, err := sys.DiscretizeImpulse(dt)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	adExpected := math.Exp(a * dt)
+	bdExpected := dt * adExpected * b
+	tol := 1e-12
+	if diff := math.Abs(disc.A.At(0, 0) - adExpected); diff > tol {
+		t.Errorf("Ad = %v, want %v", disc.A.At(0, 0), adExpected)
+	}
+	if diff := math.Abs(disc.B.At(0, 0) - bdExpected); diff > tol {
+		t.Errorf("Bd = %v, want %v", disc.B.At(0, 0), bdExpected)
+	}
+	if disc.C.At(0, 0) != c {
+		t.Errorf("Cd = %v, want %v", disc.C.At(0, 0), c)
+	}
+	if disc.D.At(0, 0) != 0 {
+		t.Errorf("Dd = %v, want 0", disc.D.At(0, 0))
+	}
+}
+
+func TestImpulse_ImpulseResponseMatch(t *testing.T) {
+	sys := makeTestSystem()
+	dt := 0.05
+	disc, err := sys.DiscretizeImpulse(dt)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	n, _, _ := sys.Dims()
+	Adt := mat.NewDense(n, n, nil)
+	Adt.Scale(dt, sys.A)
+	var eA mat.Dense
+	eA.Exp(Adt)
+
+	AkT := mat.NewDense(n, n, nil)
+	for i := 0; i < n; i++ {
+		AkT.Set(i, i, 1)
+	}
+
+	AdPow := mat.NewDense(n, n, nil)
+	for i := 0; i < n; i++ {
+		AdPow.Set(i, i, 1)
+	}
+
+	for k := 1; k <= 20; k++ {
+		AkT.Mul(AkT, &eA)
+
+		var contH mat.Dense
+		var tmp mat.Dense
+		tmp.Mul(sys.C, AkT)
+		contH.Mul(&tmp, sys.B)
+		expected := dt * contH.At(0, 0)
+
+		var discH mat.Dense
+		var tmp2 mat.Dense
+		tmp2.Mul(disc.C, AdPow)
+		discH.Mul(&tmp2, disc.B)
+		got := discH.At(0, 0)
+
+		AdPow.Mul(AdPow, disc.A)
+
+		if diff := math.Abs(got - expected); diff > 1e-10 {
+			t.Errorf("k=%d: h_d=%v, want %v (diff %v)", k, got, expected, diff)
+		}
+	}
+}
+
+func TestImpulse_Stability(t *testing.T) {
+	sys := makeTestSystem()
+	disc, err := sys.DiscretizeImpulse(0.01)
+	if err != nil {
+		t.Fatal(err)
+	}
+	poles, err := disc.Poles()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, p := range poles {
+		if cmplx.Abs(p) >= 1 {
+			t.Errorf("pole[%d] = %v, magnitude %v >= 1", i, p, cmplx.Abs(p))
+		}
+	}
+}
+
+func TestImpulse_MIMO(t *testing.T) {
+	A := mat.NewDense(2, 2, []float64{0, 1, -2, -3})
+	B := mat.NewDense(2, 2, []float64{1, 0, 0, 1})
+	C := mat.NewDense(2, 2, []float64{1, 0, 0, 1})
+	D := mat.NewDense(2, 2, []float64{0, 0, 0, 0})
+	sys, _ := New(A, B, C, D, 0)
+	disc, err := sys.DiscretizeImpulse(0.1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n, m, p := disc.Dims()
+	if n != 2 || m != 2 || p != 2 {
+		t.Fatalf("dims = %d,%d,%d, want 2,2,2", n, m, p)
+	}
+}
+
+func TestImpulse_ViaOpts(t *testing.T) {
+	sys := makeTestSystem()
+	dt := 0.1
+	direct, err := sys.DiscretizeImpulse(dt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	viaOpts, err := sys.DiscretizeWithOpts(dt, C2DOptions{Method: "impulse"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tol := 1e-12
+	assertMatClose(t, "A", viaOpts.A, direct.A, tol)
+	assertMatClose(t, "B", viaOpts.B, direct.B, tol)
+	assertMatClose(t, "C", viaOpts.C, direct.C, tol)
+	assertMatClose(t, "D", viaOpts.D, direct.D, tol)
+}
+
+// --- DiscretizeFOH tests ---
+
+func TestFOH_WrongDomain(t *testing.T) {
+	sys, _ := New(
+		mat.NewDense(1, 1, []float64{-1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{0}),
+		0.1,
+	)
+	_, err := sys.DiscretizeFOH(0.1)
+	if err == nil {
+		t.Fatal("expected ErrWrongDomain")
+	}
+}
+
+func TestFOH_InvalidDt(t *testing.T) {
+	sys := makeTestSystem()
+	_, err := sys.DiscretizeFOH(0)
+	if err == nil {
+		t.Fatal("expected error for dt=0")
+	}
+}
+
+func TestFOH_PureGain(t *testing.T) {
+	D := mat.NewDense(2, 3, []float64{1, 2, 3, 4, 5, 6})
+	sys, _ := NewGain(D, 0)
+	disc, err := sys.DiscretizeFOH(0.1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n, m, p := disc.Dims()
+	if n != 3 || m != 3 || p != 2 {
+		t.Fatalf("dims = %d,%d,%d, want 3,3,2", n, m, p)
+	}
+	for i := 0; i < n; i++ {
+		for j := 0; j < n; j++ {
+			if disc.A.At(i, j) != 0 {
+				t.Errorf("A[%d,%d] = %v, want 0", i, j, disc.A.At(i, j))
+			}
+		}
+	}
+	for j := 0; j < m; j++ {
+		if disc.B.At(j, j) != 1 {
+			t.Errorf("B[%d,%d] = %v, want 1", j, j, disc.B.At(j, j))
+		}
+	}
+	assertMatClose(t, "C", disc.C, D, 1e-14)
+	for i := 0; i < p; i++ {
+		for j := 0; j < m; j++ {
+			if disc.D.At(i, j) != 0 {
+				t.Errorf("D[%d,%d] = %v, want 0", i, j, disc.D.At(i, j))
+			}
+		}
+	}
+}
+
+func TestFOH_Scalar(t *testing.T) {
+	a, b, c := -2.0, 3.0, 1.0
+	dt := 0.1
+	sys, _ := New(
+		mat.NewDense(1, 1, []float64{a}),
+		mat.NewDense(1, 1, []float64{b}),
+		mat.NewDense(1, 1, []float64{c}),
+		mat.NewDense(1, 1, []float64{0}),
+		0,
+	)
+	disc, err := sys.DiscretizeFOH(dt)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	n, m, p := disc.Dims()
+	if n != 2 || m != 1 || p != 1 {
+		t.Fatalf("dims = %d,%d,%d, want 2,1,1", n, m, p)
+	}
+
+	ad := math.Exp(a * dt)
+	g0 := (ad - 1) / a * b
+	g1Integral := -b/a + (ad-1)/(a*a*dt)*b
+	b0 := g0 - g1Integral
+	b1 := g1Integral
+
+	tol := 1e-10
+	if diff := math.Abs(disc.A.At(0, 0) - ad); diff > tol {
+		t.Errorf("A[0,0] = %v, want %v", disc.A.At(0, 0), ad)
+	}
+	if diff := math.Abs(disc.A.At(0, 1) - b0); diff > tol {
+		t.Errorf("A[0,1] = %v, want %v (B0)", disc.A.At(0, 1), b0)
+	}
+	if diff := math.Abs(disc.B.At(0, 0) - b1); diff > tol {
+		t.Errorf("B[0,0] = %v, want %v (B1)", disc.B.At(0, 0), b1)
+	}
+	if disc.B.At(1, 0) != 1 {
+		t.Errorf("B[1,0] = %v, want 1", disc.B.At(1, 0))
+	}
+	if diff := math.Abs(disc.C.At(0, 0) - c); diff > tol {
+		t.Errorf("C[0,0] = %v, want %v", disc.C.At(0, 0), c)
+	}
+}
+
+func TestFOH_DoubleIntegrator(t *testing.T) {
+	A := mat.NewDense(2, 2, []float64{0, 1, 0, 0})
+	B := mat.NewDense(2, 1, []float64{0, 1})
+	C := mat.NewDense(1, 2, []float64{1, 0})
+	D := mat.NewDense(1, 1, []float64{0})
+	sys, _ := New(A, B, C, D, 0)
+	dt := 0.1
+	disc, err := sys.DiscretizeFOH(dt)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	n, m, p := disc.Dims()
+	if n != 3 || m != 1 || p != 1 {
+		t.Fatalf("dims = %d,%d,%d, want 3,1,1", n, m, p)
+	}
+
+	tol := 1e-10
+	if diff := math.Abs(disc.A.At(0, 0) - 1); diff > tol {
+		t.Errorf("A[0,0] = %v, want 1", disc.A.At(0, 0))
+	}
+	if diff := math.Abs(disc.A.At(0, 1) - dt); diff > tol {
+		t.Errorf("A[0,1] = %v, want %v", disc.A.At(0, 1), dt)
+	}
+	if diff := math.Abs(disc.A.At(1, 1) - 1); diff > tol {
+		t.Errorf("A[1,1] = %v, want 1", disc.A.At(1, 1))
+	}
+}
+
+func TestFOH_SingularA(t *testing.T) {
+	A := mat.NewDense(2, 2, []float64{0, 1, 0, -1})
+	B := mat.NewDense(2, 1, []float64{0, 1})
+	C := mat.NewDense(1, 2, []float64{1, 0})
+	D := mat.NewDense(1, 1, []float64{0})
+	sys, _ := New(A, B, C, D, 0)
+	disc, err := sys.DiscretizeFOH(0.1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n, m, p := disc.Dims()
+	if n != 3 || m != 1 || p != 1 {
+		t.Fatalf("dims = %d,%d,%d, want 3,1,1", n, m, p)
+	}
+}
+
+func TestFOH_MIMO(t *testing.T) {
+	A := mat.NewDense(2, 2, []float64{0, 1, -2, -3})
+	B := mat.NewDense(2, 2, []float64{1, 0, 0, 1})
+	C := mat.NewDense(2, 2, []float64{1, 0, 0, 1})
+	D := mat.NewDense(2, 2, []float64{0, 0, 0, 0})
+	sys, _ := New(A, B, C, D, 0)
+	disc, err := sys.DiscretizeFOH(0.1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n, m, p := disc.Dims()
+	if n != 4 || m != 2 || p != 2 {
+		t.Fatalf("dims = %d,%d,%d, want 4,2,2", n, m, p)
+	}
+}
+
+func TestFOH_Stability(t *testing.T) {
+	sys := makeTestSystem()
+	disc, err := sys.DiscretizeFOH(0.01)
+	if err != nil {
+		t.Fatal(err)
+	}
+	poles, err := disc.Poles()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, p := range poles {
+		if cmplx.Abs(p) >= 1+1e-10 {
+			t.Errorf("pole[%d] = %v, magnitude %v >= 1", i, p, cmplx.Abs(p))
+		}
+	}
+}
+
+func TestFOH_ViaOpts(t *testing.T) {
+	sys := makeTestSystem()
+	dt := 0.1
+	direct, err := sys.DiscretizeFOH(dt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	viaOpts, err := sys.DiscretizeWithOpts(dt, C2DOptions{Method: "foh"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tol := 1e-12
+	assertMatClose(t, "A", viaOpts.A, direct.A, tol)
+	assertMatClose(t, "B", viaOpts.B, direct.B, tol)
+	assertMatClose(t, "C", viaOpts.C, direct.C, tol)
+	assertMatClose(t, "D", viaOpts.D, direct.D, tol)
+}
+
+// --- DiscretizeMatched tests ---
+
+func TestMatched_WrongDomain(t *testing.T) {
+	sys, _ := New(
+		mat.NewDense(1, 1, []float64{-1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{0}),
+		0.1,
+	)
+	_, err := sys.DiscretizeMatched(0.1)
+	if err == nil {
+		t.Fatal("expected ErrWrongDomain")
+	}
+}
+
+func TestMatched_InvalidDt(t *testing.T) {
+	sys := makeTestSystem()
+	_, err := sys.DiscretizeMatched(0)
+	if err == nil {
+		t.Fatal("expected error for dt=0")
+	}
+}
+
+func TestMatched_NotSISO(t *testing.T) {
+	A := mat.NewDense(2, 2, []float64{0, 1, -2, -3})
+	B := mat.NewDense(2, 2, []float64{1, 0, 0, 1})
+	C := mat.NewDense(2, 2, []float64{1, 0, 0, 1})
+	D := mat.NewDense(2, 2, []float64{0, 0, 0, 0})
+	sys, _ := New(A, B, C, D, 0)
+	_, err := sys.DiscretizeMatched(0.1)
+	if err == nil {
+		t.Fatal("expected ErrNotSISO")
+	}
+}
+
+func TestMatched_PureGain(t *testing.T) {
+	D := mat.NewDense(1, 1, []float64{5})
+	sys, _ := NewGain(D, 0)
+	disc, err := sys.DiscretizeMatched(0.1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n, _, _ := disc.Dims()
+	if n != 0 {
+		t.Fatalf("n = %d, want 0", n)
+	}
+	if diff := math.Abs(disc.D.At(0, 0) - 5); diff > 1e-14 {
+		t.Errorf("D = %v, want 5", disc.D.At(0, 0))
+	}
+}
+
+func TestMatched_FirstOrder(t *testing.T) {
+	sys, _ := New(
+		mat.NewDense(1, 1, []float64{-1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{0}),
+		0,
+	)
+	dt := 0.1
+	disc, err := sys.DiscretizeMatched(dt)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	poles, err := disc.Poles()
+	if err != nil {
+		t.Fatal(err)
+	}
+	expectedPole := math.Exp(-dt)
+	if len(poles) != 1 {
+		t.Fatalf("got %d poles, want 1", len(poles))
+	}
+	if diff := cmplx.Abs(poles[0] - complex(expectedPole, 0)); diff > 1e-10 {
+		t.Errorf("pole = %v, want %v", poles[0], expectedPole)
+	}
+
+	tfr, err := disc.TransferFunction(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dcGain := Poly(tfr.TF.Num[0][0]).Eval(complex(1, 0)) / Poly(tfr.TF.Den[0]).Eval(complex(1, 0))
+	if diff := math.Abs(real(dcGain) - 1.0); diff > 1e-6 {
+		t.Errorf("DC gain = %v, want 1.0", dcGain)
+	}
+}
+
+func TestMatched_SecondOrderComplex(t *testing.T) {
+	sys, _ := New(
+		mat.NewDense(2, 2, []float64{0, 1, -5, -2}),
+		mat.NewDense(2, 1, []float64{0, 1}),
+		mat.NewDense(1, 2, []float64{1, 0}),
+		mat.NewDense(1, 1, []float64{0}),
+		0,
+	)
+	dt := 0.1
+	disc, err := sys.DiscretizeMatched(dt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	discPoles, err := disc.Poles()
+	if err != nil {
+		t.Fatal(err)
+	}
+	contPoles, _ := sys.Poles()
+	for _, cp := range contPoles {
+		expectedZ := cmplx.Exp(cp * complex(dt, 0))
+		found := false
+		for _, dp := range discPoles {
+			if cmplx.Abs(dp-expectedZ) < 1e-6 {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected discrete pole near %v (from cont pole %v), not found", expectedZ, cp)
+		}
+	}
+}
+
+func TestMatched_WithZeros(t *testing.T) {
+	sys, _ := New(
+		mat.NewDense(1, 1, []float64{-3}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{-2}),
+		mat.NewDense(1, 1, []float64{1}),
+		0,
+	)
+	dt := 0.1
+	disc, err := sys.DiscretizeMatched(dt)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	contZeros, _ := sys.Zeros()
+	discZeros, err := disc.Zeros()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, cz := range contZeros {
+		expectedZ := cmplx.Exp(cz * complex(dt, 0))
+		found := false
+		for _, dz := range discZeros {
+			if cmplx.Abs(dz-expectedZ) < 1e-6 {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected discrete zero near %v, not found in %v", expectedZ, discZeros)
+		}
+	}
+}
+
+func TestMatched_Integrator(t *testing.T) {
+	sys, _ := New(
+		mat.NewDense(1, 1, []float64{0}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{0}),
+		0,
+	)
+	dt := 0.1
+	disc, err := sys.DiscretizeMatched(dt)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	poles, err := disc.Poles()
+	if err != nil {
+		t.Fatal(err)
+	}
+	foundUnit := false
+	for _, p := range poles {
+		if cmplx.Abs(p-1) < 1e-10 {
+			foundUnit = true
+		}
+	}
+	if !foundUnit {
+		t.Errorf("expected pole at z=1 for integrator, got %v", poles)
+	}
+
+	w := 0.5
+	s := complex(0, w)
+	z := cmplx.Exp(complex(0, w*dt))
+	contH := complex(1, 0) / s
+	tfr, err := disc.TransferFunction(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	discH := Poly(tfr.TF.Num[0][0]).Eval(z) / Poly(tfr.TF.Den[0]).Eval(z)
+	ratio := cmplx.Abs(discH) / cmplx.Abs(contH)
+	if ratio < 0.5 || ratio > 2.0 {
+		t.Errorf("frequency response magnitude ratio at w=%v: %v (too far from 1)", w, ratio)
+	}
+}
+
+func TestMatched_DCGain(t *testing.T) {
+	sys, _ := New(
+		mat.NewDense(2, 2, []float64{0, 1, -2, -3}),
+		mat.NewDense(2, 1, []float64{0, 1}),
+		mat.NewDense(1, 2, []float64{1, 0}),
+		mat.NewDense(1, 1, []float64{0}),
+		0,
+	)
+	dt := 0.05
+	disc, err := sys.DiscretizeMatched(dt)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	contTF, _ := sys.TransferFunction(nil)
+	contDC := real(Poly(contTF.TF.Num[0][0]).Eval(0) / Poly(contTF.TF.Den[0]).Eval(0))
+
+	discTF, _ := disc.TransferFunction(nil)
+	discDC := real(Poly(discTF.TF.Num[0][0]).Eval(complex(1, 0)) / Poly(discTF.TF.Den[0]).Eval(complex(1, 0)))
+
+	if diff := math.Abs(discDC - contDC); diff > 1e-6 {
+		t.Errorf("DC gain: disc=%v, cont=%v, diff=%v", discDC, contDC, diff)
+	}
+}
+
+func TestMatched_Stability(t *testing.T) {
+	sys := makeTestSystem()
+	disc, err := sys.DiscretizeMatched(0.01)
+	if err != nil {
+		t.Fatal(err)
+	}
+	poles, err := disc.Poles()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, p := range poles {
+		if cmplx.Abs(p) >= 1 {
+			t.Errorf("pole[%d] = %v, magnitude %v >= 1", i, p, cmplx.Abs(p))
+		}
+	}
+}
+
+func TestMatched_ViaOpts(t *testing.T) {
+	sys, _ := New(
+		mat.NewDense(1, 1, []float64{-1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{0}),
+		0,
+	)
+	dt := 0.1
+	direct, err := sys.DiscretizeMatched(dt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	viaOpts, err := sys.DiscretizeWithOpts(dt, C2DOptions{Method: "matched"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tol := 1e-10
+	assertMatClose(t, "A", viaOpts.A, direct.A, tol)
+	assertMatClose(t, "B", viaOpts.B, direct.B, tol)
+	assertMatClose(t, "C", viaOpts.C, direct.C, tol)
+	assertMatClose(t, "D", viaOpts.D, direct.D, tol)
+}
+
+// --- D2D tests ---
+
+func TestD2D_Continuous(t *testing.T) {
+	sys := makeTestSystem()
+	_, err := sys.D2D(0.1, C2DOptions{})
+	if err == nil {
+		t.Fatal("expected error for continuous system")
+	}
+}
+
+func TestD2D_InvalidDt(t *testing.T) {
+	sys := makeTestSystem()
+	disc, _ := sys.DiscretizeZOH(0.1)
+	_, err := disc.D2D(0, C2DOptions{})
+	if err == nil {
+		t.Fatal("expected error for newDt=0")
+	}
+	_, err = disc.D2D(-1, C2DOptions{})
+	if err == nil {
+		t.Fatal("expected error for newDt<0")
+	}
+}
+
+func TestD2D_SameDt(t *testing.T) {
+	sys := makeTestSystem()
+	disc, _ := sys.DiscretizeZOH(0.1)
+	result, err := disc.D2D(0.1, C2DOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tol := 1e-12
+	assertMatClose(t, "A", result.A, disc.A, tol)
+	assertMatClose(t, "B", result.B, disc.B, tol)
+	assertMatClose(t, "C", result.C, disc.C, tol)
+	assertMatClose(t, "D", result.D, disc.D, tol)
+}
+
+func TestD2D_Downsample(t *testing.T) {
+	sys := makeTestSystem()
+	disc1, _ := sys.DiscretizeZOH(0.05)
+	disc2, err := disc1.D2D(0.1, C2DOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if disc2.Dt != 0.1 {
+		t.Errorf("Dt = %v, want 0.1", disc2.Dt)
+	}
+
+	w := 0.3
+	z1 := cmplx.Exp(complex(0, w*disc1.Dt))
+	z2 := cmplx.Exp(complex(0, w*disc2.Dt))
+	tf1, _ := disc1.TransferFunction(nil)
+	tf2, _ := disc2.TransferFunction(nil)
+	h1 := Poly(tf1.TF.Num[0][0]).Eval(z1) / Poly(tf1.TF.Den[0]).Eval(z1)
+	h2 := Poly(tf2.TF.Num[0][0]).Eval(z2) / Poly(tf2.TF.Den[0]).Eval(z2)
+	if diff := cmplx.Abs(h1 - h2); diff > 0.05 {
+		t.Errorf("freq response mismatch at w=%v: h1=%v, h2=%v, diff=%v", w, h1, h2, diff)
+	}
+}
+
+func TestD2D_Upsample(t *testing.T) {
+	sys := makeTestSystem()
+	disc1, _ := sys.DiscretizeZOH(0.2)
+	disc2, err := disc1.D2D(0.1, C2DOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if disc2.Dt != 0.1 {
+		t.Errorf("Dt = %v, want 0.1", disc2.Dt)
+	}
+	n, m, p := disc2.Dims()
+	if n != 2 || m != 1 || p != 1 {
+		t.Fatalf("dims = %d,%d,%d, want 2,1,1", n, m, p)
+	}
+}
+
+func TestD2D_MIMO(t *testing.T) {
+	A := mat.NewDense(2, 2, []float64{0, 1, -2, -3})
+	B := mat.NewDense(2, 2, []float64{1, 0, 0, 1})
+	C := mat.NewDense(2, 2, []float64{1, 0, 0, 1})
+	D := mat.NewDense(2, 2, []float64{0, 0, 0, 0})
+	sys, _ := New(A, B, C, D, 0)
+	disc, _ := sys.DiscretizeZOH(0.1)
+	result, err := disc.D2D(0.2, C2DOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	n, m, p := result.Dims()
+	if n != 2 || m != 2 || p != 2 {
+		t.Fatalf("dims = %d,%d,%d, want 2,2,2", n, m, p)
+	}
+}
+
+func TestD2D_DefaultMethod(t *testing.T) {
+	sys := makeTestSystem()
+	disc, _ := sys.DiscretizeZOH(0.1)
+	result, err := disc.D2D(0.2, C2DOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Dt != 0.2 {
+		t.Errorf("Dt = %v, want 0.2", result.Dt)
+	}
+}
+
+func TestD2D_Names(t *testing.T) {
+	sys := makeTestSystem()
+	sys.InputName = []string{"force"}
+	sys.OutputName = []string{"position"}
+	disc, _ := sys.DiscretizeZOH(0.1)
+	result, err := disc.D2D(0.2, C2DOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.InputName) == 0 || result.InputName[0] != "force" {
+		t.Errorf("InputName = %v, want [force]", result.InputName)
+	}
+	if len(result.OutputName) == 0 || result.OutputName[0] != "position" {
+		t.Errorf("OutputName = %v, want [position]", result.OutputName)
+	}
+}

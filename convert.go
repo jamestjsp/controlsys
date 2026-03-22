@@ -3,6 +3,7 @@ package controlsys
 import (
 	"fmt"
 	"math"
+	"math/cmplx"
 
 	"gonum.org/v1/gonum/mat"
 )
@@ -268,6 +269,12 @@ func (sys *System) DiscretizeWithOpts(dt float64, opts C2DOptions) (*System, err
 		disc, err = workSys.DiscretizeZOH(dt)
 	case "tustin":
 		disc, err = workSys.Discretize(dt)
+	case "foh":
+		disc, err = workSys.DiscretizeFOH(dt)
+	case "impulse":
+		disc, err = workSys.DiscretizeImpulse(dt)
+	case "matched":
+		disc, err = workSys.DiscretizeMatched(dt)
 	default:
 		return nil, fmt.Errorf("DiscretizeWithOpts: unknown method %q", method)
 	}
@@ -690,6 +697,10 @@ func discretizeWithInternalDelay(sys *System, dt float64, opts C2DOptions) (*Sys
 		disc, Bd2, err = discretizeZOHAugmented(sys, dt)
 	case "tustin":
 		disc, Bd2, err = discretizeTustinAugmented(sys, dt)
+	case "foh":
+		disc, Bd2, err = discretizeFOHAugmented(sys, dt)
+	case "impulse":
+		disc, Bd2, err = discretizeImpulseAugmented(sys, dt)
 	default:
 		return nil, fmt.Errorf("DiscretizeWithOpts: unknown method %q", method)
 	}
@@ -882,4 +893,547 @@ func isStrictlyUpperTriangular(m *mat.Dense) bool {
 		}
 	}
 	return true
+}
+
+func (sys *System) DiscretizeImpulse(dt float64) (*System, error) {
+	if sys.IsDiscrete() {
+		return nil, fmt.Errorf("DiscretizeImpulse: system already discrete: %w", ErrWrongDomain)
+	}
+	if dt <= 0 {
+		return nil, ErrInvalidSampleTime
+	}
+
+	if sys.HasInternalDelay() {
+		return discretizeWithInternalDelay(sys, dt, C2DOptions{Method: "impulse"})
+	}
+
+	n, m, _ := sys.Dims()
+
+	C := denseCopy(sys.C)
+	D := denseCopy(sys.D)
+
+	if n == 0 {
+		out := &System{
+			A:  newDense(0, 0),
+			B:  denseCopy(sys.B),
+			C:  C,
+			D:  D,
+			Dt: dt,
+		}
+		propagateNames(out, sys)
+		return out, nil
+	}
+
+	Adt := mat.NewDense(n, n, nil)
+	Adt.Scale(dt, sys.A)
+	var eA mat.Dense
+	eA.Exp(Adt)
+	Ad := mat.NewDense(n, n, nil)
+	Ad.Copy(&eA)
+
+	if m == 0 {
+		out := &System{A: Ad, B: denseCopy(sys.B), C: C, D: D, Dt: dt}
+		propagateNames(out, sys)
+		return out, nil
+	}
+
+	Bd := mat.NewDense(n, m, nil)
+	Bd.Mul(Ad, sys.B)
+	Bd.Scale(dt, Bd)
+
+	out := &System{A: Ad, B: Bd, C: C, D: D, Dt: dt}
+	if sys.Delay != nil {
+		d, err := convertDelayToDiscrete(sys.Delay, dt)
+		if err != nil {
+			return nil, err
+		}
+		out.Delay = d
+	}
+	if sys.InputDelay != nil {
+		id, err := convertSliceDelayToDiscrete(sys.InputDelay, dt, 0)
+		if err != nil {
+			return nil, err
+		}
+		out.InputDelay = id
+	}
+	if sys.OutputDelay != nil {
+		od, err := convertSliceDelayToDiscrete(sys.OutputDelay, dt, 0)
+		if err != nil {
+			return nil, err
+		}
+		out.OutputDelay = od
+	}
+	propagateNames(out, sys)
+	return out, nil
+}
+
+func discretizeImpulseAugmented(sys *System, dt float64) (*System, *mat.Dense, error) {
+	n, m, _ := sys.Dims()
+	N := len(sys.InternalDelay)
+
+	C := denseCopy(sys.C)
+	D := denseCopy(sys.D)
+
+	if n == 0 {
+		out := &System{A: newDense(0, 0), B: denseCopy(sys.B), C: C, D: D, Dt: dt}
+		return out, mat.DenseCopyOf(sys.B2), nil
+	}
+
+	Adt := mat.NewDense(n, n, nil)
+	Adt.Scale(dt, sys.A)
+	var eA mat.Dense
+	eA.Exp(Adt)
+	Ad := mat.NewDense(n, n, nil)
+	Ad.Copy(&eA)
+
+	var Bd *mat.Dense
+	if m > 0 {
+		Bd = mat.NewDense(n, m, nil)
+		Bd.Mul(Ad, sys.B)
+		Bd.Scale(dt, Bd)
+	} else {
+		Bd = newDense(n, 0)
+	}
+
+	var Bd2 *mat.Dense
+	if N > 0 {
+		Bd2 = mat.NewDense(n, N, nil)
+		Bd2.Mul(Ad, sys.B2)
+		Bd2.Scale(dt, Bd2)
+	} else {
+		Bd2 = newDense(n, 0)
+	}
+
+	out := &System{A: Ad, B: Bd, C: C, D: D, Dt: dt}
+	return out, Bd2, nil
+}
+
+func (sys *System) DiscretizeFOH(dt float64) (*System, error) {
+	if sys.IsDiscrete() {
+		return nil, fmt.Errorf("DiscretizeFOH: system already discrete: %w", ErrWrongDomain)
+	}
+	if dt <= 0 {
+		return nil, ErrInvalidSampleTime
+	}
+
+	if sys.HasInternalDelay() {
+		return discretizeWithInternalDelay(sys, dt, C2DOptions{Method: "foh"})
+	}
+
+	n, m, p := sys.Dims()
+
+	if n == 0 {
+		return fohPureGain(sys, m, p, dt)
+	}
+
+	if m == 0 {
+		Adt := mat.NewDense(n, n, nil)
+		Adt.Scale(dt, sys.A)
+		var eA mat.Dense
+		eA.Exp(Adt)
+		Ad := mat.NewDense(n, n, nil)
+		Ad.Copy(&eA)
+		out := &System{A: Ad, B: denseCopy(sys.B), C: denseCopy(sys.C), D: denseCopy(sys.D), Dt: dt}
+		propagateNames(out, sys)
+		return out, nil
+	}
+
+	nm := n + 2*m
+	M := mat.NewDense(nm, nm, nil)
+	mRaw := M.RawMatrix()
+	aRaw := sys.A.RawMatrix()
+	bRaw := sys.B.RawMatrix()
+
+	for i := 0; i < n; i++ {
+		row := mRaw.Data[i*mRaw.Stride:]
+		for j := 0; j < n; j++ {
+			row[j] = aRaw.Data[i*aRaw.Stride+j] * dt
+		}
+		for j := 0; j < m; j++ {
+			row[n+j] = bRaw.Data[i*bRaw.Stride+j] * dt
+		}
+	}
+	for i := 0; i < m; i++ {
+		mRaw.Data[(n+i)*mRaw.Stride+n+m+i] = 1
+	}
+
+	var eM mat.Dense
+	eM.Exp(M)
+	emRaw := eM.RawMatrix()
+
+	adData := make([]float64, n*n)
+	g0Data := make([]float64, n*m)
+	g1Data := make([]float64, n*m)
+	for i := 0; i < n; i++ {
+		copy(adData[i*n:i*n+n], emRaw.Data[i*emRaw.Stride:i*emRaw.Stride+n])
+		copy(g0Data[i*m:i*m+m], emRaw.Data[i*emRaw.Stride+n:i*emRaw.Stride+n+m])
+		copy(g1Data[i*m:i*m+m], emRaw.Data[i*emRaw.Stride+n+m:i*emRaw.Stride+n+2*m])
+	}
+
+	return buildFOHSystem(sys, n, m, p, dt, adData, g0Data, g1Data)
+}
+
+func fohPureGain(sys *System, m, p int, dt float64) (*System, error) {
+	nNew := m
+	aData := make([]float64, nNew*nNew)
+	bData := make([]float64, nNew*m)
+	for j := 0; j < m; j++ {
+		bData[j*m+j] = 1
+	}
+	cData := make([]float64, p*nNew)
+	if sys.D != nil {
+		dRaw := sys.D.RawMatrix()
+		for i := 0; i < p; i++ {
+			copy(cData[i*nNew:i*nNew+m], dRaw.Data[i*dRaw.Stride:i*dRaw.Stride+m])
+		}
+	}
+	dData := make([]float64, p*m)
+
+	out := &System{
+		A:  mat.NewDense(nNew, nNew, aData),
+		B:  mat.NewDense(nNew, m, bData),
+		C:  mat.NewDense(p, nNew, cData),
+		D:  mat.NewDense(p, m, dData),
+		Dt: dt,
+	}
+	propagateNames(out, sys)
+	fohAugmentStateNames(out, sys, 0, m)
+	return out, nil
+}
+
+func buildFOHSystem(sys *System, n, m, p int, dt float64, adData, g0Data, g1Data []float64) (*System, error) {
+	b0Data := make([]float64, n*m)
+	for i := range g0Data {
+		b0Data[i] = g0Data[i] - g1Data[i]
+	}
+
+	nNew := n + m
+	aFoh := make([]float64, nNew*nNew)
+	for i := 0; i < n; i++ {
+		copy(aFoh[i*nNew:i*nNew+n], adData[i*n:i*n+n])
+		copy(aFoh[i*nNew+n:i*nNew+n+m], b0Data[i*m:i*m+m])
+	}
+
+	bFoh := make([]float64, nNew*m)
+	for i := 0; i < n; i++ {
+		copy(bFoh[i*m:i*m+m], g1Data[i*m:i*m+m])
+	}
+	for j := 0; j < m; j++ {
+		bFoh[(n+j)*m+j] = 1
+	}
+
+	cFoh := make([]float64, p*nNew)
+	if sys.C != nil {
+		cRaw := sys.C.RawMatrix()
+		for i := 0; i < p; i++ {
+			copy(cFoh[i*nNew:i*nNew+n], cRaw.Data[i*cRaw.Stride:i*cRaw.Stride+n])
+		}
+	}
+	if sys.D != nil {
+		dRaw := sys.D.RawMatrix()
+		for i := 0; i < p; i++ {
+			copy(cFoh[i*nNew+n:i*nNew+n+m], dRaw.Data[i*dRaw.Stride:i*dRaw.Stride+m])
+		}
+	}
+
+	dFoh := make([]float64, p*m)
+
+	out := &System{
+		A:  mat.NewDense(nNew, nNew, aFoh),
+		B:  mat.NewDense(nNew, m, bFoh),
+		C:  mat.NewDense(p, nNew, cFoh),
+		D:  mat.NewDense(p, m, dFoh),
+		Dt: dt,
+	}
+
+	if sys.Delay != nil {
+		d, err := convertDelayToDiscrete(sys.Delay, dt)
+		if err != nil {
+			return nil, err
+		}
+		out.Delay = d
+	}
+	if sys.InputDelay != nil {
+		id, err := convertSliceDelayToDiscrete(sys.InputDelay, dt, 0)
+		if err != nil {
+			return nil, err
+		}
+		out.InputDelay = id
+	}
+	if sys.OutputDelay != nil {
+		od, err := convertSliceDelayToDiscrete(sys.OutputDelay, dt, 0)
+		if err != nil {
+			return nil, err
+		}
+		out.OutputDelay = od
+	}
+	propagateNames(out, sys)
+	fohAugmentStateNames(out, sys, n, m)
+	return out, nil
+}
+
+func fohAugmentStateNames(out, src *System, n, m int) {
+	if src.StateName == nil && src.InputName == nil {
+		return
+	}
+	names := make([]string, n+m)
+	if src.StateName != nil {
+		copy(names, src.StateName)
+	}
+	for j := 0; j < m; j++ {
+		if src.InputName != nil && j < len(src.InputName) {
+			names[n+j] = src.InputName[j] + "_prev"
+		}
+	}
+	out.StateName = names
+}
+
+func discretizeFOHAugmented(sys *System, dt float64) (*System, *mat.Dense, error) {
+	n, m, p := sys.Dims()
+	N := len(sys.InternalDelay)
+	mTotal := m + N
+
+	C := denseCopy(sys.C)
+	D := denseCopy(sys.D)
+
+	if n == 0 {
+		out, err := fohPureGain(sys, m, p, dt)
+		if err != nil {
+			return nil, nil, err
+		}
+		return out, mat.DenseCopyOf(sys.B2), nil
+	}
+
+	if mTotal == 0 {
+		Adt := mat.NewDense(n, n, nil)
+		Adt.Scale(dt, sys.A)
+		var eA mat.Dense
+		eA.Exp(Adt)
+		Ad := mat.NewDense(n, n, nil)
+		Ad.Copy(&eA)
+		out := &System{A: Ad, B: denseCopy(sys.B), C: C, D: D, Dt: dt}
+		return out, mat.DenseCopyOf(sys.B2), nil
+	}
+
+	sz := n + 2*mTotal
+	M := mat.NewDense(sz, sz, nil)
+	mRaw := M.RawMatrix()
+	aRaw := sys.A.RawMatrix()
+
+	for i := 0; i < n; i++ {
+		row := mRaw.Data[i*mRaw.Stride:]
+		for j := 0; j < n; j++ {
+			row[j] = aRaw.Data[i*aRaw.Stride+j] * dt
+		}
+		if m > 0 {
+			bRaw := sys.B.RawMatrix()
+			for j := 0; j < m; j++ {
+				row[n+j] = bRaw.Data[i*bRaw.Stride+j] * dt
+			}
+		}
+		if N > 0 {
+			b2Raw := sys.B2.RawMatrix()
+			for j := 0; j < N; j++ {
+				row[n+m+j] = b2Raw.Data[i*b2Raw.Stride+j] * dt
+			}
+		}
+	}
+	for i := 0; i < mTotal; i++ {
+		mRaw.Data[(n+i)*mRaw.Stride+n+mTotal+i] = 1
+	}
+
+	var eM mat.Dense
+	eM.Exp(M)
+	emRaw := eM.RawMatrix()
+
+	adData := make([]float64, n*n)
+	g0BData := make([]float64, n*m)
+	g1BData := make([]float64, n*m)
+	g0B2Data := make([]float64, n*N)
+	g1B2Data := make([]float64, n*N)
+	for i := 0; i < n; i++ {
+		copy(adData[i*n:i*n+n], emRaw.Data[i*emRaw.Stride:i*emRaw.Stride+n])
+		if m > 0 {
+			copy(g0BData[i*m:i*m+m], emRaw.Data[i*emRaw.Stride+n:i*emRaw.Stride+n+m])
+			copy(g1BData[i*m:i*m+m], emRaw.Data[i*emRaw.Stride+n+mTotal:i*emRaw.Stride+n+mTotal+m])
+		}
+		if N > 0 {
+			copy(g0B2Data[i*N:i*N+N], emRaw.Data[i*emRaw.Stride+n+m:i*emRaw.Stride+n+m+N])
+			copy(g1B2Data[i*N:i*N+N], emRaw.Data[i*emRaw.Stride+n+mTotal+m:i*emRaw.Stride+n+mTotal+m+N])
+		}
+	}
+
+	out, err := buildFOHSystem(sys, n, m, p, dt, adData, g0BData, g1BData)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	var Bd2 *mat.Dense
+	if N > 0 {
+		b0B2 := make([]float64, n*N)
+		for i := range g0B2Data {
+			b0B2[i] = g0B2Data[i] - g1B2Data[i]
+		}
+		_ = b0B2
+		Bd2 = mat.NewDense(n, N, g1B2Data)
+	} else {
+		Bd2 = newDense(n, 0)
+	}
+
+	return out, Bd2, nil
+}
+
+func (sys *System) DiscretizeMatched(dt float64) (*System, error) {
+	if sys.IsDiscrete() {
+		return nil, fmt.Errorf("DiscretizeMatched: system already discrete: %w", ErrWrongDomain)
+	}
+	if dt <= 0 {
+		return nil, ErrInvalidSampleTime
+	}
+
+	n, m, p := sys.Dims()
+	if m != 1 || p != 1 {
+		return nil, fmt.Errorf("DiscretizeMatched: %w", ErrNotSISO)
+	}
+
+	if sys.HasInternalDelay() {
+		return nil, fmt.Errorf("DiscretizeMatched: internal delays not supported: %w", ErrFeedbackDelay)
+	}
+
+	if n == 0 {
+		out := &System{
+			A:  newDense(0, 0),
+			B:  denseCopy(sys.B),
+			C:  denseCopy(sys.C),
+			D:  denseCopy(sys.D),
+			Dt: dt,
+		}
+		propagateNames(out, sys)
+		return out, nil
+	}
+
+	contPoles, err := sys.Poles()
+	if err != nil {
+		return nil, fmt.Errorf("DiscretizeMatched: %w", err)
+	}
+	contZeros, err := sys.Zeros()
+	if err != nil {
+		return nil, fmt.Errorf("DiscretizeMatched: %w", err)
+	}
+
+	discPoles := make([]complex128, len(contPoles))
+	for i, p := range contPoles {
+		discPoles[i] = cmplx.Exp(p * complex(dt, 0))
+	}
+	discZeros := make([]complex128, len(contZeros), len(contZeros)+len(contPoles))
+	for i, z := range contZeros {
+		discZeros[i] = cmplx.Exp(z * complex(dt, 0))
+	}
+	excess := len(contPoles) - len(contZeros)
+	for i := 0; i < excess; i++ {
+		discZeros = append(discZeros, complex(-1, 0))
+	}
+
+	gain, err := matchedGain(sys, discZeros, discPoles, dt)
+	if err != nil {
+		return nil, err
+	}
+
+	zpk, err := NewZPK(discZeros, discPoles, gain, dt)
+	if err != nil {
+		return nil, fmt.Errorf("DiscretizeMatched: %w", err)
+	}
+	ssResult, err := zpk.StateSpace(nil)
+	if err != nil {
+		return nil, fmt.Errorf("DiscretizeMatched: %w", err)
+	}
+	result := ssResult.Sys
+
+	if sys.Delay != nil {
+		d, err := convertDelayToDiscrete(sys.Delay, dt)
+		if err != nil {
+			return nil, err
+		}
+		result.Delay = d
+	}
+	if sys.InputDelay != nil {
+		id, err := convertSliceDelayToDiscrete(sys.InputDelay, dt, 0)
+		if err != nil {
+			return nil, err
+		}
+		result.InputDelay = id
+	}
+	if sys.OutputDelay != nil {
+		od, err := convertSliceDelayToDiscrete(sys.OutputDelay, dt, 0)
+		if err != nil {
+			return nil, err
+		}
+		result.OutputDelay = od
+	}
+	propagateNames(result, sys)
+	return result, nil
+}
+
+func matchedGain(sys *System, discZeros, discPoles []complex128, dt float64) (float64, error) {
+	tfr, err := sys.TransferFunction(nil)
+	if err != nil {
+		return 0, fmt.Errorf("DiscretizeMatched: %w", err)
+	}
+	num := Poly(tfr.TF.Num[0][0])
+	den := Poly(tfr.TF.Den[0])
+
+	denAt0 := den.Eval(0)
+	if cmplx.Abs(denAt0) > 1e-10 {
+		contDC := num.Eval(0) / denAt0
+		discDC := zpkEvalChannel(complex(1, 0), discZeros, discPoles, 1.0)
+		if cmplx.Abs(discDC) < 1e-14 {
+			return matchedGainFallback(num, den, discZeros, discPoles, dt)
+		}
+		return real(contDC / discDC), nil
+	}
+
+	return matchedGainFallback(num, den, discZeros, discPoles, dt)
+}
+
+func matchedGainFallback(num, den Poly, discZeros, discPoles []complex128, dt float64) (float64, error) {
+	sMatch := complex(0, math.Pi/(2*dt))
+	zMatch := complex(0, 1)
+
+	contVal := num.Eval(sMatch) / den.Eval(sMatch)
+	discVal := zpkEvalChannel(zMatch, discZeros, discPoles, 1.0)
+
+	if cmplx.Abs(discVal) < 1e-14 {
+		sMatch = complex(0, math.Pi/(4*dt))
+		zMatch = cmplx.Exp(complex(0, math.Pi/4))
+		contVal = num.Eval(sMatch) / den.Eval(sMatch)
+		discVal = zpkEvalChannel(zMatch, discZeros, discPoles, 1.0)
+	}
+	if cmplx.Abs(discVal) < 1e-14 {
+		return 0, fmt.Errorf("DiscretizeMatched: cannot determine gain: %w", ErrSingularTransform)
+	}
+	return cmplx.Abs(contVal) / cmplx.Abs(discVal), nil
+}
+
+func (sys *System) D2D(newDt float64, opts C2DOptions) (*System, error) {
+	if sys.IsContinuous() {
+		return nil, fmt.Errorf("D2D: system is continuous: %w", ErrWrongDomain)
+	}
+	if newDt <= 0 {
+		return nil, ErrInvalidSampleTime
+	}
+	if math.Abs(newDt-sys.Dt) < 1e-14*math.Max(newDt, sys.Dt) {
+		return sys.Copy(), nil
+	}
+
+	contSys, err := sys.Undiscretize()
+	if err != nil {
+		return nil, fmt.Errorf("D2D: %w", err)
+	}
+
+	result, err := contSys.DiscretizeWithOpts(newDt, opts)
+	if err != nil {
+		return nil, fmt.Errorf("D2D: %w", err)
+	}
+	propagateNames(result, sys)
+	return result, nil
 }
