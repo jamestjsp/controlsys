@@ -110,8 +110,11 @@ func HSV(sys *System) ([]float64, error) {
 		return nil, ErrUnstable
 	}
 
-	bbt := make([]float64, n*n)
+	aRaw := sys.A.RawMatrix()
 	bRaw := sys.B.RawMatrix()
+	cRaw := sys.C.RawMatrix()
+
+	bbt := make([]float64, n*n)
 	blas64.Gemm(blas.NoTrans, blas.Trans, 1,
 		blas64.General{Rows: n, Cols: m, Stride: bRaw.Stride, Data: bRaw.Data},
 		blas64.General{Rows: n, Cols: m, Stride: bRaw.Stride, Data: bRaw.Data},
@@ -119,46 +122,47 @@ func HSV(sys *System) ([]float64, error) {
 	symmetrize(bbt, n, n)
 
 	ctc := make([]float64, n*n)
-	cRaw := sys.C.RawMatrix()
 	blas64.Gemm(blas.Trans, blas.NoTrans, 1,
 		blas64.General{Rows: p, Cols: n, Stride: cRaw.Stride, Data: cRaw.Data},
 		blas64.General{Rows: p, Cols: n, Stride: cRaw.Stride, Data: cRaw.Data},
 		0, blas64.General{Rows: n, Cols: n, Stride: n, Data: ctc})
 	symmetrize(ctc, n, n)
 
-	aRaw := sys.A.RawMatrix()
 	aData := make([]float64, n*n)
-	at := make([]float64, n*n)
+	at := aData[:0:0]
+	at = make([]float64, n*n)
 	for i := range n {
+		copy(aData[i*n:i*n+n], aRaw.Data[i*aRaw.Stride:i*aRaw.Stride+n])
 		for j := range n {
-			aData[i*n+j] = aRaw.Data[i*aRaw.Stride+j]
 			at[i*n+j] = aRaw.Data[j*aRaw.Stride+i]
 		}
 	}
 
 	A := mat.NewDense(n, n, aData)
 	At := mat.NewDense(n, n, at)
-	BBt := mat.NewDense(n, n, bbt)
-	CtC := mat.NewDense(n, n, ctc)
 
 	var Wc, Wo *mat.Dense
 	if sys.IsContinuous() {
-		Wc, err = Lyap(A, BBt)
+		Wc, err = Lyap(A, mat.NewDense(n, n, bbt))
 		if err != nil {
 			return nil, err
 		}
-		Wo, err = Lyap(At, CtC)
+		Wo, err = Lyap(At, mat.NewDense(n, n, ctc))
 	} else {
-		Wc, err = DLyap(A, BBt)
+		Wc, err = DLyap(A, mat.NewDense(n, n, bbt))
 		if err != nil {
 			return nil, err
 		}
-		Wo, err = DLyap(At, CtC)
+		Wo, err = DLyap(At, mat.NewDense(n, n, ctc))
 	}
 	if err != nil {
 		return nil, err
 	}
 
+	return hsvFromGramians(Wc, Wo, n)
+}
+
+func hsvFromGramians(Wc, Wo *mat.Dense, n int) ([]float64, error) {
 	wcRaw := Wc.RawMatrix()
 	lc := make([]float64, n*n)
 	for i := range n {
@@ -205,11 +209,16 @@ func HSV(sys *System) ([]float64, error) {
 }
 
 func eigenvalueHSV(Wc, Wo *mat.Dense, n int) []float64 {
-	prod := mat.NewDense(n, n, nil)
-	prod.Mul(Wc, Wo)
+	wcRaw := Wc.RawMatrix()
+	woRaw := Wo.RawMatrix()
+	prod := make([]float64, n*n)
+	blas64.Gemm(blas.NoTrans, blas.NoTrans, 1,
+		blas64.General{Rows: n, Cols: n, Stride: wcRaw.Stride, Data: wcRaw.Data},
+		blas64.General{Rows: n, Cols: n, Stride: woRaw.Stride, Data: woRaw.Data},
+		0, blas64.General{Rows: n, Cols: n, Stride: n, Data: prod})
 
 	var eig mat.Eigen
-	ok := eig.Factorize(prod, mat.EigenNone)
+	ok := eig.Factorize(mat.NewDense(n, n, prod), mat.EigenNone)
 	if !ok {
 		return make([]float64, n)
 	}
@@ -255,9 +264,11 @@ func HinfNorm(sys *System) (norm float64, omega float64, err error) {
 
 	gammaLow, omegaPeak := hinfLowerBound(sys, m, p)
 
+	ws := newHamiltonianWS(sys, n, m, p)
+
 	gammaHigh := math.Max(gammaLow*2, 1e-10)
 	for range 50 {
-		if !hamiltonianHasImagEigs(sys, gammaHigh, n, m, p) {
+		if !ws.hasImagEigs(gammaHigh) {
 			break
 		}
 		gammaHigh *= 2
@@ -269,7 +280,7 @@ func HinfNorm(sys *System) (norm float64, omega float64, err error) {
 			break
 		}
 		mid := (gammaLow + gammaHigh) / 2
-		if hamiltonianHasImagEigs(sys, mid, n, m, p) {
+		if ws.hasImagEigs(mid) {
 			gammaLow = mid
 		} else {
 			gammaHigh = mid
@@ -277,6 +288,218 @@ func HinfNorm(sys *System) (norm float64, omega float64, err error) {
 	}
 
 	return gammaHigh, omegaPeak, nil
+}
+
+// hamiltonianWS holds pre-allocated buffers for the Hamiltonian eigenvalue test
+// used across bisection iterations in HinfNorm.
+type hamiltonianWS struct {
+	n, m, p int
+	nn      int
+	dIsZero bool
+
+	aData []float64
+	aStr  int
+	bData []float64
+	bStr  int
+	cData []float64
+	cStr  int
+	dData []float64
+	dStr  int
+
+	bbt []float64
+	ctc []float64
+
+	h    []float64
+	wr   []float64
+	wi   []float64
+	vs   []float64
+	work []float64
+
+	r       []float64
+	dtc     []float64
+	bt      []float64
+	rinvBt  []float64
+	h11     []float64
+	h12     []float64
+	h21     []float64
+	dRinvDt []float64
+}
+
+func newHamiltonianWS(sys *System, n, m, p int) *hamiltonianWS {
+	nn := 2 * n
+	aRaw := sys.A.RawMatrix()
+	bRaw := sys.B.RawMatrix()
+	cRaw := sys.C.RawMatrix()
+	dRaw := sys.D.RawMatrix()
+
+	ws := &hamiltonianWS{
+		n: n, m: m, p: p, nn: nn,
+		dIsZero: allZeroDense(sys.D),
+		aData:   aRaw.Data, aStr: aRaw.Stride,
+		bData:   bRaw.Data, bStr: bRaw.Stride,
+		cData:   cRaw.Data, cStr: cRaw.Stride,
+		dData:   dRaw.Data, dStr: dRaw.Stride,
+		h:       make([]float64, nn*nn),
+		wr:      make([]float64, nn),
+		wi:      make([]float64, nn),
+		vs:      make([]float64, nn*nn),
+	}
+
+	ws.bbt = make([]float64, n*n)
+	blas64.Gemm(blas.NoTrans, blas.Trans, 1,
+		blas64.General{Rows: n, Cols: m, Stride: bRaw.Stride, Data: bRaw.Data},
+		blas64.General{Rows: n, Cols: m, Stride: bRaw.Stride, Data: bRaw.Data},
+		0, blas64.General{Rows: n, Cols: n, Stride: n, Data: ws.bbt})
+
+	ws.ctc = make([]float64, n*n)
+	blas64.Gemm(blas.Trans, blas.NoTrans, 1,
+		blas64.General{Rows: p, Cols: n, Stride: cRaw.Stride, Data: cRaw.Data},
+		blas64.General{Rows: p, Cols: n, Stride: cRaw.Stride, Data: cRaw.Data},
+		0, blas64.General{Rows: n, Cols: n, Stride: n, Data: ws.ctc})
+
+	if !ws.dIsZero {
+		ws.r = make([]float64, m*m)
+		ws.dtc = make([]float64, m*n)
+		ws.bt = make([]float64, m*n)
+		ws.rinvBt = make([]float64, m*n)
+		ws.h11 = make([]float64, n*n)
+		ws.h12 = make([]float64, n*n)
+		ws.h21 = make([]float64, n*n)
+		ws.dRinvDt = make([]float64, p*n)
+
+		for i := range n {
+			for j := range m {
+				ws.bt[j*n+i] = bRaw.Data[i*bRaw.Stride+j]
+			}
+		}
+	}
+
+	wq := make([]float64, 1)
+	impl.Dgees(lapack.SchurHess, lapack.SortNone, nil,
+		nn, ws.h, nn, ws.wr, ws.wi, ws.vs, nn, wq, -1, nil)
+	ws.work = make([]float64, int(wq[0]))
+
+	return ws
+}
+
+func (ws *hamiltonianWS) hasImagEigs(gamma float64) bool {
+	n, m, p := ws.n, ws.m, ws.p
+	nn := ws.nn
+	g2 := gamma * gamma
+
+	h := ws.h
+	for i := range len(h) {
+		h[i] = 0
+	}
+
+	if ws.dIsZero {
+		for i := range n {
+			for j := range n {
+				h[i*nn+j] = ws.aData[i*ws.aStr+j]
+			}
+		}
+
+		scale := 1.0 / g2
+		for i := range n {
+			for j := range n {
+				h[i*nn+(n+j)] = scale * ws.bbt[i*n+j]
+			}
+		}
+
+		for i := range n {
+			for j := range n {
+				h[(n+i)*nn+j] = -ws.ctc[i*n+j]
+			}
+		}
+
+		for i := range n {
+			for j := range n {
+				h[(n+i)*nn+(n+j)] = -ws.aData[j*ws.aStr+i]
+			}
+		}
+	} else {
+		r := ws.r
+		for i := range m * m {
+			r[i] = 0
+		}
+		for i := range m {
+			r[i*m+i] = g2
+		}
+		blas64.Gemm(blas.Trans, blas.NoTrans, -1,
+			blas64.General{Rows: p, Cols: m, Stride: ws.dStr, Data: ws.dData},
+			blas64.General{Rows: p, Cols: m, Stride: ws.dStr, Data: ws.dData},
+			1, blas64.General{Rows: m, Cols: m, Stride: m, Data: r})
+
+		if !impl.Dpotrf(blas.Upper, m, r, m) {
+			return true
+		}
+
+		dtc := ws.dtc
+		blas64.Gemm(blas.Trans, blas.NoTrans, 1,
+			blas64.General{Rows: p, Cols: m, Stride: ws.dStr, Data: ws.dData},
+			blas64.General{Rows: p, Cols: n, Stride: ws.cStr, Data: ws.cData},
+			0, blas64.General{Rows: m, Cols: n, Stride: n, Data: dtc})
+		impl.Dpotrs(blas.Upper, m, n, r, m, dtc, n)
+
+		rinvBt := ws.rinvBt
+		copy(rinvBt, ws.bt)
+		impl.Dpotrs(blas.Upper, m, n, r, m, rinvBt, n)
+
+		h11 := ws.h11
+		for i := range n {
+			copy(h11[i*n:i*n+n], ws.aData[i*ws.aStr:i*ws.aStr+n])
+		}
+		blas64.Gemm(blas.NoTrans, blas.NoTrans, 1,
+			blas64.General{Rows: n, Cols: m, Stride: ws.bStr, Data: ws.bData},
+			blas64.General{Rows: m, Cols: n, Stride: n, Data: dtc},
+			1, blas64.General{Rows: n, Cols: n, Stride: n, Data: h11})
+
+		h12 := ws.h12
+		blas64.Gemm(blas.NoTrans, blas.NoTrans, 1,
+			blas64.General{Rows: n, Cols: m, Stride: ws.bStr, Data: ws.bData},
+			blas64.General{Rows: m, Cols: n, Stride: n, Data: rinvBt},
+			0, blas64.General{Rows: n, Cols: n, Stride: n, Data: h12})
+
+		h21 := ws.h21
+		blas64.Gemm(blas.Trans, blas.NoTrans, -1,
+			blas64.General{Rows: p, Cols: n, Stride: ws.cStr, Data: ws.cData},
+			blas64.General{Rows: p, Cols: n, Stride: ws.cStr, Data: ws.cData},
+			0, blas64.General{Rows: n, Cols: n, Stride: n, Data: h21})
+
+		dRinvDt := ws.dRinvDt
+		blas64.Gemm(blas.NoTrans, blas.NoTrans, 1,
+			blas64.General{Rows: p, Cols: m, Stride: ws.dStr, Data: ws.dData},
+			blas64.General{Rows: m, Cols: n, Stride: n, Data: dtc},
+			0, blas64.General{Rows: p, Cols: n, Stride: n, Data: dRinvDt})
+		blas64.Gemm(blas.Trans, blas.NoTrans, -1,
+			blas64.General{Rows: p, Cols: n, Stride: ws.cStr, Data: ws.cData},
+			blas64.General{Rows: p, Cols: n, Stride: n, Data: dRinvDt},
+			1, blas64.General{Rows: n, Cols: n, Stride: n, Data: h21})
+
+		for i := range n {
+			for j := range n {
+				h[i*nn+j] = h11[i*n+j]
+				h[i*nn+(n+j)] = h12[i*n+j]
+				h[(n+i)*nn+j] = h21[i*n+j]
+				h[(n+i)*nn+(n+j)] = -h11[j*n+i]
+			}
+		}
+	}
+
+	_, ok := impl.Dgees(lapack.SchurHess, lapack.SortNone, nil,
+		nn, h, nn, ws.wr, ws.wi, ws.vs, nn, ws.work, len(ws.work), nil)
+	if !ok {
+		return true
+	}
+
+	threshold := math.Sqrt(eps()) * gamma
+	for i := range nn {
+		absLam := math.Sqrt(ws.wr[i]*ws.wr[i] + ws.wi[i]*ws.wi[i])
+		if absLam > 0 && math.Abs(ws.wr[i]) < threshold*math.Max(1, absLam/gamma) {
+			return true
+		}
+	}
+	return false
 }
 
 func hinfLowerBound(sys *System, m, p int) (gammaLow, omegaPeak float64) {
@@ -351,148 +574,6 @@ func evalMaxSV(sys *System, w float64, p, m int) float64 {
 		return 0
 	}
 	return sv[0]
-}
-
-func hamiltonianHasImagEigs(sys *System, gamma float64, n, m, p int) bool {
-	aRaw := sys.A.RawMatrix()
-	bRaw := sys.B.RawMatrix()
-	cRaw := sys.C.RawMatrix()
-	dRaw := sys.D.RawMatrix()
-
-	dIsZero := allZeroDense(sys.D)
-	g2 := gamma * gamma
-	nn := 2 * n
-
-	h := make([]float64, nn*nn)
-
-	if dIsZero {
-		for i := range n {
-			for j := range n {
-				h[i*nn+j] = aRaw.Data[i*aRaw.Stride+j]
-			}
-		}
-
-		bbt := make([]float64, n*n)
-		blas64.Gemm(blas.NoTrans, blas.Trans, 1,
-			blas64.General{Rows: n, Cols: m, Stride: bRaw.Stride, Data: bRaw.Data},
-			blas64.General{Rows: n, Cols: m, Stride: bRaw.Stride, Data: bRaw.Data},
-			0, blas64.General{Rows: n, Cols: n, Stride: n, Data: bbt})
-		scale := 1.0 / g2
-		for i := range n {
-			for j := range n {
-				h[i*nn+(n+j)] = scale * bbt[i*n+j]
-			}
-		}
-
-		ctc := make([]float64, n*n)
-		blas64.Gemm(blas.Trans, blas.NoTrans, 1,
-			blas64.General{Rows: p, Cols: n, Stride: cRaw.Stride, Data: cRaw.Data},
-			blas64.General{Rows: p, Cols: n, Stride: cRaw.Stride, Data: cRaw.Data},
-			0, blas64.General{Rows: n, Cols: n, Stride: n, Data: ctc})
-		for i := range n {
-			for j := range n {
-				h[(n+i)*nn+j] = -ctc[i*n+j]
-			}
-		}
-
-		for i := range n {
-			for j := range n {
-				h[(n+i)*nn+(n+j)] = -aRaw.Data[j*aRaw.Stride+i]
-			}
-		}
-	} else {
-		r := make([]float64, m*m)
-		for i := range m {
-			r[i*m+i] = g2
-		}
-		blas64.Gemm(blas.Trans, blas.NoTrans, -1,
-			blas64.General{Rows: p, Cols: m, Stride: dRaw.Stride, Data: dRaw.Data},
-			blas64.General{Rows: p, Cols: m, Stride: dRaw.Stride, Data: dRaw.Data},
-			1, blas64.General{Rows: m, Cols: m, Stride: m, Data: r})
-
-		if !impl.Dpotrf(blas.Upper, m, r, m) {
-			return true
-		}
-
-		dtc := make([]float64, m*n)
-		blas64.Gemm(blas.Trans, blas.NoTrans, 1,
-			blas64.General{Rows: p, Cols: m, Stride: dRaw.Stride, Data: dRaw.Data},
-			blas64.General{Rows: p, Cols: n, Stride: cRaw.Stride, Data: cRaw.Data},
-			0, blas64.General{Rows: m, Cols: n, Stride: n, Data: dtc})
-		impl.Dpotrs(blas.Upper, m, n, r, m, dtc, n)
-
-		bt := make([]float64, m*n)
-		for i := range n {
-			for j := range m {
-				bt[j*n+i] = bRaw.Data[i*bRaw.Stride+j]
-			}
-		}
-		rinvBt := make([]float64, m*n)
-		copy(rinvBt, bt)
-		impl.Dpotrs(blas.Upper, m, n, r, m, rinvBt, n)
-
-		h11 := make([]float64, n*n)
-		for i := range n {
-			copy(h11[i*n:i*n+n], aRaw.Data[i*aRaw.Stride:i*aRaw.Stride+n])
-		}
-		blas64.Gemm(blas.NoTrans, blas.NoTrans, 1,
-			blas64.General{Rows: n, Cols: m, Stride: bRaw.Stride, Data: bRaw.Data},
-			blas64.General{Rows: m, Cols: n, Stride: n, Data: dtc},
-			1, blas64.General{Rows: n, Cols: n, Stride: n, Data: h11})
-
-		h12 := make([]float64, n*n)
-		blas64.Gemm(blas.NoTrans, blas.NoTrans, 1,
-			blas64.General{Rows: n, Cols: m, Stride: bRaw.Stride, Data: bRaw.Data},
-			blas64.General{Rows: m, Cols: n, Stride: n, Data: rinvBt},
-			0, blas64.General{Rows: n, Cols: n, Stride: n, Data: h12})
-
-		h21 := make([]float64, n*n)
-		blas64.Gemm(blas.Trans, blas.NoTrans, -1,
-			blas64.General{Rows: p, Cols: n, Stride: cRaw.Stride, Data: cRaw.Data},
-			blas64.General{Rows: p, Cols: n, Stride: cRaw.Stride, Data: cRaw.Data},
-			0, blas64.General{Rows: n, Cols: n, Stride: n, Data: h21})
-
-		dRinvDtC := make([]float64, p*n)
-		blas64.Gemm(blas.NoTrans, blas.NoTrans, 1,
-			blas64.General{Rows: p, Cols: m, Stride: dRaw.Stride, Data: dRaw.Data},
-			blas64.General{Rows: m, Cols: n, Stride: n, Data: dtc},
-			0, blas64.General{Rows: p, Cols: n, Stride: n, Data: dRinvDtC})
-		blas64.Gemm(blas.Trans, blas.NoTrans, -1,
-			blas64.General{Rows: p, Cols: n, Stride: cRaw.Stride, Data: cRaw.Data},
-			blas64.General{Rows: p, Cols: n, Stride: n, Data: dRinvDtC},
-			1, blas64.General{Rows: n, Cols: n, Stride: n, Data: h21})
-
-		for i := range n {
-			for j := range n {
-				h[i*nn+j] = h11[i*n+j]
-				h[i*nn+(n+j)] = h12[i*n+j]
-				h[(n+i)*nn+j] = h21[i*n+j]
-				h[(n+i)*nn+(n+j)] = -h11[j*n+i]
-			}
-		}
-	}
-
-	wr := make([]float64, nn)
-	wi := make([]float64, nn)
-	vs := make([]float64, nn*nn)
-	wq := make([]float64, 1)
-	impl.Dgees(lapack.SchurHess, lapack.SortNone, nil,
-		nn, h, nn, wr, wi, vs, nn, wq, -1, nil)
-	work := make([]float64, int(wq[0]))
-	_, ok := impl.Dgees(lapack.SchurHess, lapack.SortNone, nil,
-		nn, h, nn, wr, wi, vs, nn, work, len(work), nil)
-	if !ok {
-		return true
-	}
-
-	threshold := math.Sqrt(eps()) * gamma
-	for i := range nn {
-		absLam := math.Sqrt(wr[i]*wr[i] + wi[i]*wi[i])
-		if absLam > 0 && math.Abs(wr[i]) < threshold*math.Max(1, absLam/gamma) {
-			return true
-		}
-	}
-	return false
 }
 
 func allZeroDense(m *mat.Dense) bool {

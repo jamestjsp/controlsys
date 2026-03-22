@@ -27,11 +27,7 @@ func Ctrb(A, B *mat.Dense) (*mat.Dense, error) {
 		copy(data[i*cols:i*cols+m], bRaw.Data[i*bRaw.Stride:i*bRaw.Stride+m])
 	}
 
-	aGen := blas64.General{Rows: n, Cols: n, Stride: n, Data: make([]float64, n*n)}
-	aRaw := A.RawMatrix()
-	for i := range n {
-		copy(aGen.Data[i*n:i*n+n], aRaw.Data[i*aRaw.Stride:i*aRaw.Stride+n])
-	}
+	aGen := rawToGen(A)
 
 	for k := 1; k < n; k++ {
 		prev := blas64.General{Rows: n, Cols: m, Stride: cols, Data: data[(k-1)*m:]}
@@ -63,11 +59,7 @@ func Obsv(A, C *mat.Dense) (*mat.Dense, error) {
 		copy(data[i*n:i*n+n], cRaw.Data[i*cRaw.Stride:i*cRaw.Stride+n])
 	}
 
-	aGen := blas64.General{Rows: n, Cols: n, Stride: n, Data: make([]float64, n*n)}
-	aRaw := A.RawMatrix()
-	for i := range n {
-		copy(aGen.Data[i*n:i*n+n], aRaw.Data[i*aRaw.Stride:i*aRaw.Stride+n])
-	}
+	aGen := rawToGen(A)
 
 	for k := 1; k < n; k++ {
 		prev := blas64.General{Rows: p, Cols: n, Stride: n, Data: data[(k-1)*p*n:]}
@@ -76,6 +68,20 @@ func Obsv(A, C *mat.Dense) (*mat.Dense, error) {
 	}
 
 	return mat.NewDense(rows, n, data), nil
+}
+
+// rawToGen returns a blas64.General for m, copying only if stride != cols.
+func rawToGen(m *mat.Dense) blas64.General {
+	raw := m.RawMatrix()
+	if raw.Stride == raw.Cols {
+		return blas64.General{Rows: raw.Rows, Cols: raw.Cols, Stride: raw.Stride, Data: raw.Data}
+	}
+	n := raw.Rows
+	data := make([]float64, n*raw.Cols)
+	for i := range n {
+		copy(data[i*raw.Cols:i*raw.Cols+raw.Cols], raw.Data[i*raw.Stride:i*raw.Stride+raw.Cols])
+	}
+	return blas64.General{Rows: n, Cols: raw.Cols, Stride: raw.Cols, Data: data}
 }
 
 // CtrbF computes the controllability staircase form.

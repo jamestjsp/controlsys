@@ -5,6 +5,7 @@ import (
 
 	"gonum.org/v1/gonum/blas"
 	"gonum.org/v1/gonum/blas/blas64"
+	"gonum.org/v1/gonum/lapack"
 	"gonum.org/v1/gonum/mat"
 )
 
@@ -42,17 +43,19 @@ func Balreal(sys *System) (*BalrealResult, error) {
 	}
 
 	aRaw := sys.A.RawMatrix()
+	bRaw := sys.B.RawMatrix()
+	cRaw := sys.C.RawMatrix()
+
 	aData := make([]float64, n*n)
 	at := make([]float64, n*n)
 	for i := range n {
+		copy(aData[i*n:i*n+n], aRaw.Data[i*aRaw.Stride:i*aRaw.Stride+n])
 		for j := range n {
-			aData[i*n+j] = aRaw.Data[i*aRaw.Stride+j]
 			at[i*n+j] = aRaw.Data[j*aRaw.Stride+i]
 		}
 	}
 
 	bbt := make([]float64, n*n)
-	bRaw := sys.B.RawMatrix()
 	blas64.Gemm(blas.NoTrans, blas.Trans, 1,
 		blas64.General{Rows: n, Cols: m, Stride: bRaw.Stride, Data: bRaw.Data},
 		blas64.General{Rows: n, Cols: m, Stride: bRaw.Stride, Data: bRaw.Data},
@@ -60,7 +63,6 @@ func Balreal(sys *System) (*BalrealResult, error) {
 	symmetrize(bbt, n, n)
 
 	ctc := make([]float64, n*n)
-	cRaw := sys.C.RawMatrix()
 	blas64.Gemm(blas.Trans, blas.NoTrans, 1,
 		blas64.General{Rows: p, Cols: n, Stride: cRaw.Stride, Data: cRaw.Data},
 		blas64.General{Rows: p, Cols: n, Stride: cRaw.Stride, Data: cRaw.Data},
@@ -117,65 +119,90 @@ func Balreal(sys *System) (*BalrealResult, error) {
 	}
 
 	mData := make([]float64, n*n)
-	blas64.Gemm(blas.Trans, blas.NoTrans, 1,
-		blas64.General{Rows: n, Cols: n, Stride: n, Data: lo},
-		blas64.General{Rows: n, Cols: n, Stride: n, Data: lc},
+	lcGen := blas64.General{Rows: n, Cols: n, Stride: n, Data: lc}
+	loGen := blas64.General{Rows: n, Cols: n, Stride: n, Data: lo}
+	blas64.Gemm(blas.Trans, blas.NoTrans, 1, loGen, lcGen,
 		0, blas64.General{Rows: n, Cols: n, Stride: n, Data: mData})
 
-	M := mat.NewDense(n, n, mData)
-	var svd mat.SVD
-	if !svd.Factorize(M, mat.SVDFull) {
-		return nil, ErrSchurFailed
-	}
-	hsv := svd.Values(nil)
-	var U, V mat.Dense
-	svd.UTo(&U)
-	svd.VTo(&V)
+	s := make([]float64, n)
+	uData := make([]float64, n*n)
+	vtData := make([]float64, n*n)
+	wq := make([]float64, 1)
+	impl.Dgesvd(lapack.SVDAll, lapack.SVDAll, n, n, mData, n, s,
+		uData, n, vtData, n, wq, -1)
+	svdWork := make([]float64, int(wq[0]))
+	impl.Dgesvd(lapack.SVDAll, lapack.SVDAll, n, n, mData, n, s,
+		uData, n, vtData, n, svdWork, len(svdWork))
 
-	vScaled := mat.DenseCopyOf(&V)
-	vRaw := vScaled.RawMatrix()
-	for j := range n {
-		s := 1.0 / math.Sqrt(hsv[j])
-		for i := range n {
-			vRaw.Data[i*vRaw.Stride+j] *= s
+	// V = Vt' — scale columns of Vt' by 1/sqrt(σ) → vScaled
+	// T = Lc * vScaled
+	vScaled := make([]float64, n*n)
+	for i := range n {
+		invSqrt := 1.0 / math.Sqrt(s[i])
+		for j := range n {
+			vScaled[j*n+i] = vtData[i*n+j] * invSqrt
 		}
 	}
 
-	T := mat.NewDense(n, n, nil)
-	lcDense := mat.NewDense(n, n, lc)
-	T.Mul(lcDense, vScaled)
+	tData := make([]float64, n*n)
+	blas64.Gemm(blas.NoTrans, blas.NoTrans, 1, lcGen,
+		blas64.General{Rows: n, Cols: n, Stride: n, Data: vScaled},
+		0, blas64.General{Rows: n, Cols: n, Stride: n, Data: tData})
+	T := mat.NewDense(n, n, tData)
 
-	uScaled := mat.DenseCopyOf(&U)
-	uRaw := uScaled.RawMatrix()
+	// Tinv = Σ^{-1/2} * U' * Lo'
+	// Scale columns of U by 1/sqrt(σ) → uScaled, then Tinv = uScaled' * Lo'
 	for j := range n {
-		s := 1.0 / math.Sqrt(hsv[j])
+		invSqrt := 1.0 / math.Sqrt(s[j])
 		for i := range n {
-			uRaw.Data[i*uRaw.Stride+j] *= s
+			uData[i*n+j] *= invSqrt
 		}
 	}
 
-	Tinv := mat.NewDense(n, n, nil)
-	loDense := mat.NewDense(n, n, lo)
-	Tinv.Mul(uScaled.T(), loDense.T())
+	tinvData := make([]float64, n*n)
+	blas64.Gemm(blas.Trans, blas.Trans, 1,
+		blas64.General{Rows: n, Cols: n, Stride: n, Data: uData},
+		loGen,
+		0, blas64.General{Rows: n, Cols: n, Stride: n, Data: tinvData})
+	Tinv := mat.NewDense(n, n, tinvData)
 
-	tmp := mat.NewDense(n, n, nil)
-	tmp.Mul(Tinv, sys.A)
-	Ab := mat.NewDense(n, n, nil)
-	Ab.Mul(tmp, T)
+	tGen := blas64.General{Rows: n, Cols: n, Stride: n, Data: tData}
+	tiGen := blas64.General{Rows: n, Cols: n, Stride: n, Data: tinvData}
 
-	Bb := mat.NewDense(n, m, nil)
-	Bb.Mul(Tinv, sys.B)
+	// Ab = Tinv * A * T
+	tmp := make([]float64, n*n)
+	blas64.Gemm(blas.NoTrans, blas.NoTrans, 1, tiGen,
+		blas64.General{Rows: n, Cols: n, Stride: aRaw.Stride, Data: aRaw.Data},
+		0, blas64.General{Rows: n, Cols: n, Stride: n, Data: tmp})
+	abData := make([]float64, n*n)
+	blas64.Gemm(blas.NoTrans, blas.NoTrans, 1,
+		blas64.General{Rows: n, Cols: n, Stride: n, Data: tmp},
+		tGen,
+		0, blas64.General{Rows: n, Cols: n, Stride: n, Data: abData})
 
-	Cb := mat.NewDense(p, n, nil)
-	Cb.Mul(sys.C, T)
+	// Bb = Tinv * B
+	bbData := make([]float64, n*m)
+	blas64.Gemm(blas.NoTrans, blas.NoTrans, 1, tiGen,
+		blas64.General{Rows: n, Cols: m, Stride: bRaw.Stride, Data: bRaw.Data},
+		0, blas64.General{Rows: n, Cols: m, Stride: m, Data: bbData})
 
+	// Cb = C * T
+	cbData := make([]float64, p*n)
+	blas64.Gemm(blas.NoTrans, blas.NoTrans, 1,
+		blas64.General{Rows: p, Cols: n, Stride: cRaw.Stride, Data: cRaw.Data},
+		tGen,
+		0, blas64.General{Rows: p, Cols: n, Stride: n, Data: cbData})
+
+	Ab := mat.NewDense(n, n, abData)
+	Bb := mat.NewDense(n, m, bbData)
+	Cb := mat.NewDense(p, n, cbData)
 	Db := denseCopy(sys.D)
 
 	balSys, _ := newNoCopy(Ab, Bb, Cb, Db, sys.Dt)
 
 	return &BalrealResult{
 		Sys:  balSys,
-		HSV:  hsv,
+		HSV:  s,
 		T:    T,
 		Tinv: Tinv,
 	}, nil
@@ -218,83 +245,7 @@ func Balred(sys *System, order int, method BalredMethod) (*System, []float64, er
 		return red, hsv, err
 	}
 
-	A12 := extractSubmatrix(Ab, 0, r, r, n)
-	A21 := extractSubmatrix(Ab, r, n, 0, r)
-	A22 := extractSubmatrix(Ab, r, n, r, n)
-	B2 := extractSubmatrix(Bb, r, n, 0, m)
-	C2 := extractSubmatrix(Cb, 0, p, r, n)
-
-	n2 := n - r
-	a22Data := make([]float64, n2*n2)
-	a22Raw := A22.RawMatrix()
-	for i := range n2 {
-		copy(a22Data[i*n2:i*n2+n2], a22Raw.Data[i*a22Raw.Stride:i*a22Raw.Stride+n2])
-	}
-
-	ipiv := make([]int, n2)
-	if !impl.Dgetrf(n2, n2, a22Data, n2, ipiv) {
-		return nil, hsv, ErrSingularA22
-	}
-
-	rhs1 := make([]float64, n2*r)
-	a21Raw := A21.RawMatrix()
-	for i := range n2 {
-		copy(rhs1[i*r:i*r+r], a21Raw.Data[i*a21Raw.Stride:i*a21Raw.Stride+r])
-	}
-	impl.Dgetrs(blas.NoTrans, n2, r, a22Data, n2, ipiv, rhs1, r)
-
-	rhs2 := make([]float64, n2*m)
-	b2Raw := B2.RawMatrix()
-	for i := range n2 {
-		copy(rhs2[i*m:i*m+m], b2Raw.Data[i*b2Raw.Stride:i*b2Raw.Stride+m])
-	}
-	impl.Dgetrs(blas.NoTrans, n2, m, a22Data, n2, ipiv, rhs2, m)
-
-	invA22_A21 := mat.NewDense(n2, r, rhs1)
-	invA22_B2 := mat.NewDense(n2, m, rhs2)
-
-	Ar := mat.NewDense(r, r, nil)
-	Ar.Mul(A12, invA22_A21)
-	arRaw := Ar.RawMatrix()
-	a11Raw := A11.RawMatrix()
-	for i := range r {
-		for j := range r {
-			arRaw.Data[i*arRaw.Stride+j] = a11Raw.Data[i*a11Raw.Stride+j] - arRaw.Data[i*arRaw.Stride+j]
-		}
-	}
-
-	Br := mat.NewDense(r, m, nil)
-	Br.Mul(A12, invA22_B2)
-	brRaw := Br.RawMatrix()
-	b1Raw := B1.RawMatrix()
-	for i := range r {
-		for j := range m {
-			brRaw.Data[i*brRaw.Stride+j] = b1Raw.Data[i*b1Raw.Stride+j] - brRaw.Data[i*brRaw.Stride+j]
-		}
-	}
-
-	Cr := mat.NewDense(p, r, nil)
-	Cr.Mul(C2, invA22_A21)
-	crRaw := Cr.RawMatrix()
-	c1Raw := C1.RawMatrix()
-	for i := range p {
-		for j := range r {
-			crRaw.Data[i*crRaw.Stride+j] = c1Raw.Data[i*c1Raw.Stride+j] - crRaw.Data[i*crRaw.Stride+j]
-		}
-	}
-
-	Dr := mat.NewDense(p, m, nil)
-	Dr.Mul(C2, invA22_B2)
-	drRaw := Dr.RawMatrix()
-	dRaw := Db.RawMatrix()
-	for i := range p {
-		for j := range m {
-			drRaw.Data[i*drRaw.Stride+j] = dRaw.Data[i*dRaw.Stride+j] - drRaw.Data[i*drRaw.Stride+j]
-		}
-	}
-
-	red, err := newNoCopy(Ar, Br, Cr, Dr, sys.Dt)
-	return red, hsv, err
+	return singularPerturbation(Ab, Bb, Cb, Db, A11, B1, C1, n, m, p, r, hsv, sys.Dt)
 }
 
 // Modred reduces a system by eliminating specified states.
@@ -379,11 +330,23 @@ func Modred(sys *System, elim []int, method BalredMethod) (*System, error) {
 		return newNoCopy(A11, B1, C1, denseCopy(sys.D), sys.Dt)
 	}
 
-	A12 := extractSubmatrix(Ap, 0, r, r, n)
-	A21 := extractSubmatrix(Ap, r, n, 0, r)
-	A22 := extractSubmatrix(Ap, r, n, r, n)
-	B2 := extractSubmatrix(Bp, r, n, 0, m)
-	C2 := extractSubmatrix(Cp, 0, p, r, n)
+	red, _, err := singularPerturbation(Ap, Bp, Cp, sys.D, A11, B1, C1, n, m, p, r, nil, sys.Dt)
+	return red, err
+}
+
+// singularPerturbation computes the reduced system via residualization.
+// Ar = A11 - A12*inv(A22)*A21, etc. Uses Gemm beta=-1 to fuse multiply-subtract.
+func singularPerturbation(
+	Ab, Bb, Cb, Db *mat.Dense,
+	A11, B1, C1 *mat.Dense,
+	n, m, p, r int,
+	hsv []float64, dt float64,
+) (*System, []float64, error) {
+	A12 := extractSubmatrix(Ab, 0, r, r, n)
+	A21 := extractSubmatrix(Ab, r, n, 0, r)
+	A22 := extractSubmatrix(Ab, r, n, r, n)
+	B2 := extractSubmatrix(Bb, r, n, 0, m)
+	C2 := extractSubmatrix(Cb, 0, p, r, n)
 
 	n2 := n - r
 	a22Data := make([]float64, n2*n2)
@@ -391,11 +354,13 @@ func Modred(sys *System, elim []int, method BalredMethod) (*System, error) {
 	for i := range n2 {
 		copy(a22Data[i*n2:i*n2+n2], a22Raw.Data[i*a22Raw.Stride:i*a22Raw.Stride+n2])
 	}
+
 	ipiv := make([]int, n2)
 	if !impl.Dgetrf(n2, n2, a22Data, n2, ipiv) {
-		return nil, ErrSingularA22
+		return nil, hsv, ErrSingularA22
 	}
 
+	// Solve A22 * X = A21  and  A22 * Y = B2
 	rhs1 := make([]float64, n2*r)
 	a21Raw := A21.RawMatrix()
 	for i := range n2 {
@@ -410,50 +375,57 @@ func Modred(sys *System, elim []int, method BalredMethod) (*System, error) {
 	}
 	impl.Dgetrs(blas.NoTrans, n2, m, a22Data, n2, ipiv, rhs2, m)
 
-	inv22_21 := mat.NewDense(n2, r, rhs1)
-	inv22_B2 := mat.NewDense(n2, m, rhs2)
+	invA22_A21 := blas64.General{Rows: n2, Cols: r, Stride: r, Data: rhs1}
+	invA22_B2 := blas64.General{Rows: n2, Cols: m, Stride: m, Data: rhs2}
+	a12Raw := A12.RawMatrix()
+	a12Gen := blas64.General{Rows: r, Cols: n2, Stride: a12Raw.Stride, Data: a12Raw.Data}
+	c2Raw := C2.RawMatrix()
+	c2Gen := blas64.General{Rows: p, Cols: n2, Stride: c2Raw.Stride, Data: c2Raw.Data}
 
-	Ar := mat.NewDense(r, r, nil)
-	Ar.Mul(A12, inv22_21)
-	arRaw := Ar.RawMatrix()
+	// Ar = A11 - A12 * inv(A22) * A21 → copy A11, then Gemm with beta=1, alpha=-1
+	arData := make([]float64, r*r)
 	a11Raw := A11.RawMatrix()
 	for i := range r {
-		for j := range r {
-			arRaw.Data[i*arRaw.Stride+j] = a11Raw.Data[i*a11Raw.Stride+j] - arRaw.Data[i*arRaw.Stride+j]
-		}
+		copy(arData[i*r:i*r+r], a11Raw.Data[i*a11Raw.Stride:i*a11Raw.Stride+r])
 	}
+	blas64.Gemm(blas.NoTrans, blas.NoTrans, -1, a12Gen, invA22_A21,
+		1, blas64.General{Rows: r, Cols: r, Stride: r, Data: arData})
 
-	Br := mat.NewDense(r, m, nil)
-	Br.Mul(A12, inv22_B2)
-	brRed := Br.RawMatrix()
+	// Br = B1 - A12 * inv(A22) * B2
+	brData := make([]float64, r*m)
 	b1Raw := B1.RawMatrix()
 	for i := range r {
-		for j := range m {
-			brRed.Data[i*brRed.Stride+j] = b1Raw.Data[i*b1Raw.Stride+j] - brRed.Data[i*brRed.Stride+j]
-		}
+		copy(brData[i*m:i*m+m], b1Raw.Data[i*b1Raw.Stride:i*b1Raw.Stride+m])
 	}
+	blas64.Gemm(blas.NoTrans, blas.NoTrans, -1, a12Gen, invA22_B2,
+		1, blas64.General{Rows: r, Cols: m, Stride: m, Data: brData})
 
-	Cr := mat.NewDense(p, r, nil)
-	Cr.Mul(C2, inv22_21)
-	crRaw := Cr.RawMatrix()
+	// Cr = C1 - C2 * inv(A22) * A21
+	crData := make([]float64, p*r)
 	c1Raw := C1.RawMatrix()
 	for i := range p {
-		for j := range r {
-			crRaw.Data[i*crRaw.Stride+j] = c1Raw.Data[i*c1Raw.Stride+j] - crRaw.Data[i*crRaw.Stride+j]
-		}
+		copy(crData[i*r:i*r+r], c1Raw.Data[i*c1Raw.Stride:i*c1Raw.Stride+r])
 	}
+	blas64.Gemm(blas.NoTrans, blas.NoTrans, -1, c2Gen, invA22_A21,
+		1, blas64.General{Rows: p, Cols: r, Stride: r, Data: crData})
 
-	Dr := mat.NewDense(p, m, nil)
-	Dr.Mul(C2, inv22_B2)
-	drRaw := Dr.RawMatrix()
-	dRaw := sys.D.RawMatrix()
+	// Dr = D - C2 * inv(A22) * B2
+	drData := make([]float64, p*m)
+	dRaw := Db.RawMatrix()
 	for i := range p {
-		for j := range m {
-			drRaw.Data[i*drRaw.Stride+j] = dRaw.Data[i*dRaw.Stride+j] - drRaw.Data[i*drRaw.Stride+j]
-		}
+		copy(drData[i*m:i*m+m], dRaw.Data[i*dRaw.Stride:i*dRaw.Stride+m])
 	}
+	blas64.Gemm(blas.NoTrans, blas.NoTrans, -1, c2Gen, invA22_B2,
+		1, blas64.General{Rows: p, Cols: m, Stride: m, Data: drData})
 
-	return newNoCopy(Ar, Br, Cr, Dr, sys.Dt)
+	red, err := newNoCopy(
+		mat.NewDense(r, r, arData),
+		mat.NewDense(r, m, brData),
+		mat.NewDense(p, r, crData),
+		mat.NewDense(p, m, drData),
+		dt,
+	)
+	return red, hsv, err
 }
 
 func autoSelectOrder(hsv []float64) int {
@@ -476,4 +448,3 @@ func autoSelectOrder(hsv []float64) int {
 	}
 	return bestIdx + 1
 }
-
