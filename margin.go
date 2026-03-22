@@ -32,10 +32,72 @@ type DiskMarginResult struct {
 	PeakFreq        float64    // omega where sensitivity peaks
 }
 
-// crossing records a detected zero-crossing between adjacent frequency points.
 type crossing struct {
 	idx int
 	w   float64
+}
+
+// sisoEval caches the TF and reuses a single-element buffer for evalInto,
+// eliminating repeated TransferFunction calls in refinement loops.
+type sisoEval struct {
+	sys  *System
+	tf   *TransferFunc
+	lft  bool
+	cont bool
+	dt   float64
+	tau  float64 // combined InputDelay[0] + OutputDelay[0]
+	dst  []complex128
+}
+
+func newSISOEval(sys *System) (*sisoEval, error) {
+	e := &sisoEval{
+		sys:  sys,
+		cont: sys.IsContinuous(),
+		dt:   sys.Dt,
+		dst:  make([]complex128, 1),
+	}
+	if sys.HasInternalDelay() {
+		e.lft = true
+	} else {
+		res, err := sys.TransferFunction(nil)
+		if err != nil {
+			return nil, err
+		}
+		e.tf = res.TF
+	}
+	if sys.InputDelay != nil {
+		e.tau += sys.InputDelay[0]
+	}
+	if sys.OutputDelay != nil {
+		e.tau += sys.OutputDelay[0]
+	}
+	return e, nil
+}
+
+func (e *sisoEval) at(w float64) complex128 {
+	if e.lft {
+		h, _ := evalSISOFreqResponse(e.sys, w)
+		return h
+	}
+	var s complex128
+	if e.cont {
+		s = complex(0, w)
+	} else {
+		s = cmplx.Exp(complex(0, w*e.dt))
+	}
+	e.tf.evalInto(s, e.dst)
+	h := e.dst[0]
+	if e.tau != 0 {
+		if e.cont {
+			h *= cmplx.Exp(-s * complex(e.tau, 0))
+		} else {
+			d := int(math.Round(e.tau))
+			for k := 0; k < d; k++ {
+				h /= s
+			}
+		}
+	}
+	return h
 }
 
 func marginFreqs(sys *System, nPoints int) ([]float64, error) {
@@ -57,8 +119,6 @@ func marginFreqs(sys *System, nPoints int) ([]float64, error) {
 	return omega, nil
 }
 
-// findCrossings detects sign changes of vals[k]-level between adjacent points.
-// Interpolates in log-frequency space.
 func findCrossings(omega, vals []float64, level float64) []crossing {
 	var result []crossing
 	for k := 0; k < len(vals)-1; k++ {
@@ -79,8 +139,6 @@ func findCrossings(omega, vals []float64, level float64) []crossing {
 	return result
 }
 
-// phaseCrossings finds frequencies where unwrapped phase crosses target (e.g. -180).
-// Uses modular arithmetic to handle phase wrapping and multiple revolutions.
 func phaseCrossings(omega, phase []float64, target float64) []crossing {
 	shifted := make([]float64, len(phase))
 	for k := range phase {
@@ -93,7 +151,6 @@ func phaseCrossings(omega, phase []float64, target float64) []crossing {
 	return findCrossings(omega, shifted, 0)
 }
 
-// refineCrossing bisects in log-frequency space to find the root of evalFn.
 func refineCrossing(wLo, wHi float64, evalFn func(float64) float64) float64 {
 	fLo := evalFn(wLo)
 	for range 60 {
@@ -110,6 +167,18 @@ func refineCrossing(wLo, wHi float64, evalFn func(float64) float64) float64 {
 		}
 	}
 	return math.Sqrt(wLo * wHi)
+}
+
+func unwrapPhase(phase []float64) {
+	for k := 1; k < len(phase); k++ {
+		diff := phase[k] - phase[k-1]
+		if diff > 180 {
+			phase[k] -= 360
+		}
+		if diff < -180 {
+			phase[k] += 360
+		}
+	}
 }
 
 func evalSISOFreqResponse(sys *System, w float64) (complex128, error) {
@@ -134,40 +203,35 @@ func AllMargin(sys *System) (*AllMarginResult, error) {
 		return &AllMarginResult{}, nil
 	}
 
-	bode, err := sys.Bode(omega, 0)
+	eval, err := newSISOEval(sys)
 	if err != nil {
 		return nil, err
 	}
 
-	nw := len(bode.Omega)
+	nw := len(omega)
 	magDB := make([]float64, nw)
 	phase := make([]float64, nw)
-	for k := range nw {
-		magDB[k] = bode.magDB[k]
-		phase[k] = bode.phase[k]
+	for k, w := range omega {
+		h := eval.at(w)
+		magDB[k] = 20 * math.Log10(cmplx.Abs(h))
+		phase[k] = cmplx.Phase(h) * 180 / math.Pi
 	}
+	unwrapPhase(phase)
 
-	gainCross := findCrossings(bode.Omega, magDB, 0.0)
-	phaseCross := phaseCrossings(bode.Omega, phase, -180.0)
+	gainCross := findCrossings(omega, magDB, 0.0)
+	phaseCross := phaseCrossings(omega, phase, -180.0)
 
 	gcFreqs := make([]float64, len(gainCross))
 	phaseMargins := make([]float64, len(gainCross))
 	for i, c := range gainCross {
-		w := refineCrossing(bode.Omega[c.idx], bode.Omega[c.idx+1], func(w float64) float64 {
-			h, err := evalSISOFreqResponse(sys, w)
-			if err != nil {
-				return 0
-			}
-			return 20 * math.Log10(cmplx.Abs(h))
+		w := refineCrossing(omega[c.idx], omega[c.idx+1], func(w float64) float64 {
+			return 20 * math.Log10(cmplx.Abs(eval.at(w)))
 		})
 		gcFreqs[i] = w
 
-		h, err := evalSISOFreqResponse(sys, w)
-		if err != nil {
-			continue
-		}
+		h := eval.at(w)
 		ph := cmplx.Phase(h) * 180 / math.Pi
-		bodeRef := bode.phase[c.idx]
+		bodeRef := phase[c.idx]
 		k := math.Round((bodeRef - ph) / 360)
 		phaseMargins[i] = 180 + ph + k*360
 	}
@@ -175,12 +239,8 @@ func AllMargin(sys *System) (*AllMarginResult, error) {
 	pcFreqs := make([]float64, len(phaseCross))
 	gainMargins := make([]float64, len(phaseCross))
 	for i, c := range phaseCross {
-		w := refineCrossing(bode.Omega[c.idx], bode.Omega[c.idx+1], func(w float64) float64 {
-			h, err := evalSISOFreqResponse(sys, w)
-			if err != nil {
-				return 0
-			}
-			ph := cmplx.Phase(h) * 180 / math.Pi
+		w := refineCrossing(omega[c.idx], omega[c.idx+1], func(w float64) float64 {
+			ph := cmplx.Phase(eval.at(w)) * 180 / math.Pi
 			s := math.Mod(ph+180+180, 360)
 			if s < 0 {
 				s += 360
@@ -188,12 +248,7 @@ func AllMargin(sys *System) (*AllMarginResult, error) {
 			return s - 180
 		})
 		pcFreqs[i] = w
-
-		h, err := evalSISOFreqResponse(sys, w)
-		if err != nil {
-			continue
-		}
-		gainMargins[i] = -20 * math.Log10(cmplx.Abs(h))
+		gainMargins[i] = -20 * math.Log10(cmplx.Abs(eval.at(w)))
 	}
 
 	return &AllMarginResult{
@@ -285,12 +340,20 @@ func Bandwidth(sys *System, dbDrop float64) (float64, error) {
 	nw := len(omega)
 	magDB := make([]float64, nw)
 
+	var eval *sisoEval
 	if siso {
-		bode, err := sys.Bode(omega, 0)
+		eval, err = newSISOEval(sys)
 		if err != nil {
 			return 0, err
 		}
-		copy(magDB, bode.magDB[:nw])
+		for k, w := range omega {
+			mag := cmplx.Abs(eval.at(w))
+			if mag > 0 {
+				magDB[k] = 20 * math.Log10(mag)
+			} else {
+				magDB[k] = -1000
+			}
+		}
 	} else {
 		sigma, err := sys.Sigma(omega, 0)
 		if err != nil {
@@ -318,11 +381,7 @@ func Bandwidth(sys *System, dbDrop float64) (float64, error) {
 	c := crossings[0]
 	w := refineCrossing(omega[c.idx], omega[c.idx+1], func(w float64) float64 {
 		if siso {
-			h, err := evalSISOFreqResponse(sys, w)
-			if err != nil {
-				return 0
-			}
-			mag := cmplx.Abs(h)
+			mag := cmplx.Abs(eval.at(w))
 			if mag > 0 {
 				return 20*math.Log10(mag) - threshold
 			}
