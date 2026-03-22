@@ -412,6 +412,199 @@ func TestHinfNorm_MatchesBode(t *testing.T) {
 	}
 }
 
+// python-control MATLAB-verified: 3rd-order MIMO system
+func TestH2Norm_MIMO_MATLABVerified(t *testing.T) {
+	sys, _ := New(
+		mat.NewDense(3, 3, []float64{
+			-1.017041847539126, -0.224182952826418, 0.042538079149249,
+			-0.310374015319095, -0.516461581407780, -0.119195790221750,
+			-1.452723568727942, 1.799586083710209, -1.491935830615152,
+		}),
+		mat.NewDense(3, 2, []float64{
+			0.312858596637428, -0.164879019209038,
+			-0.864879917324456, 0.627707287528727,
+			-0.030051296196269, 1.093265669039484,
+		}),
+		mat.NewDense(2, 3, []float64{
+			1.109273297614398, 0.077359091130425, -1.113500741486764,
+			-0.863652821988714, -1.214117043615409, -0.006849328103348,
+		}),
+		mat.NewDense(2, 2, nil), 0)
+
+	got, err := H2Norm(sys)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := 2.237461821810309
+	if math.Abs(got-want)/want > 1e-4 {
+		t.Errorf("H2 = %g, want %g (MATLAB)", got, want)
+	}
+}
+
+func TestHinfNorm_MIMO_MATLABVerified(t *testing.T) {
+	sys, _ := New(
+		mat.NewDense(3, 3, []float64{
+			-1.017041847539126, -0.224182952826418, 0.042538079149249,
+			-0.310374015319095, -0.516461581407780, -0.119195790221750,
+			-1.452723568727942, 1.799586083710209, -1.491935830615152,
+		}),
+		mat.NewDense(3, 2, []float64{
+			0.312858596637428, -0.164879019209038,
+			-0.864879917324456, 0.627707287528727,
+			-0.030051296196269, 1.093265669039484,
+		}),
+		mat.NewDense(2, 3, []float64{
+			1.109273297614398, 0.077359091130425, -1.113500741486764,
+			-0.863652821988714, -1.214117043615409, -0.006849328103348,
+		}),
+		mat.NewDense(2, 2, nil), 0)
+
+	got, _, err := HinfNorm(sys)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := 4.276759162964244
+	if math.Abs(got-want)/want > 1e-3 {
+		t.Errorf("Hinf = %g, want %g (MATLAB)", got, want)
+	}
+}
+
+// python-control: G=1/(s+1), ||G||_inf = 1.0, ||G||_2 = 1/sqrt(2)
+func TestNorms_FirstOrder_MATLABVerified(t *testing.T) {
+	sys, _ := New(
+		mat.NewDense(1, 1, []float64{-1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{0}), 0)
+
+	h2, _ := H2Norm(sys)
+	hinf, _, _ := HinfNorm(sys)
+
+	if math.Abs(h2-0.707106781186547) > 1e-6 {
+		t.Errorf("H2 = %g, want 0.707107", h2)
+	}
+	if math.Abs(hinf-1.0) > 1e-6 {
+		t.Errorf("Hinf = %g, want 1.0", hinf)
+	}
+}
+
+// python-control: 1/(1-s) unstable => Hinf = 1.0, H2 = inf
+func TestNorms_UnstableNonMinPhase(t *testing.T) {
+	sys, _ := New(
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{-1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{0}), 0)
+
+	_, err := H2Norm(sys)
+	if !errors.Is(err, ErrUnstable) {
+		t.Errorf("H2: got %v, want ErrUnstable", err)
+	}
+	_, _, err = HinfNorm(sys)
+	if !errors.Is(err, ErrUnstable) {
+		t.Errorf("Hinf: got %v, want ErrUnstable", err)
+	}
+}
+
+// python-control: underdamped 2nd-order tf([100],[1,10,100]) zeta=0.5 wn=10
+// gpeak = 1/(2*zeta*sqrt(1-zeta^2)) ≈ 1.1547
+// fpeak = wn*sqrt(1-2*zeta^2) ≈ 7.0711
+func TestHinfNorm_Underdamped_MATLABVerified(t *testing.T) {
+	wn := 10.0
+	zeta := 0.5
+	sys, _ := New(
+		mat.NewDense(2, 2, []float64{0, 1, -wn * wn, -2 * zeta * wn}),
+		mat.NewDense(2, 1, []float64{0, wn * wn}),
+		mat.NewDense(1, 2, []float64{1, 0}),
+		mat.NewDense(1, 1, []float64{0}), 0)
+
+	got, omega, err := HinfNorm(sys)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	wantGpeak := 1.0 / (2 * zeta * math.Sqrt(1-zeta*zeta))
+	wantFpeak := wn * math.Sqrt(1-2*zeta*zeta)
+	if math.Abs(got-wantGpeak)/wantGpeak > 1e-3 {
+		t.Errorf("gpeak = %g, want %g", got, wantGpeak)
+	}
+	if math.Abs(omega-wantFpeak)/wantFpeak > 0.05 {
+		t.Errorf("fpeak = %g, want %g", omega, wantFpeak)
+	}
+}
+
+// python-control: static gain tf([1.23],[1]) => gpeak=1.23, fpeak=0
+func TestHinfNorm_StaticGain(t *testing.T) {
+	sys, _ := NewGain(mat.NewDense(1, 1, []float64{1.23}), 0)
+	got, omega, err := HinfNorm(sys)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if math.Abs(got-1.23) > 1e-10 {
+		t.Errorf("gpeak = %g, want 1.23", got)
+	}
+	if omega != 0 {
+		t.Errorf("fpeak = %g, want 0", omega)
+	}
+}
+
+// python-control: MATLAB-verified HSV for A=[[1,-2],[3,-4]], B=[[5],[7]], C=[[6,8]], D=[[9]]
+func TestHSV_MATLABVerified(t *testing.T) {
+	sys, _ := New(
+		mat.NewDense(2, 2, []float64{1, -2, 3, -4}),
+		mat.NewDense(2, 1, []float64{5, 7}),
+		mat.NewDense(1, 2, []float64{6, 8}),
+		mat.NewDense(1, 1, []float64{9}), 0)
+
+	hsv, err := HSV(sys)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(hsv) != 2 {
+		t.Fatalf("len(hsv) = %d, want 2", len(hsv))
+	}
+	want := []float64{24.42686, 0.5731395}
+	for i, w := range want {
+		if math.Abs(hsv[i]-w)/w > 1e-3 {
+			t.Errorf("hsv[%d] = %g, want %g", i, hsv[i], w)
+		}
+	}
+}
+
+// Discrete MIMO norms: MATLAB-verified
+func TestH2Norm_Discrete_MATLABVerified(t *testing.T) {
+	sys, _ := New(
+		mat.NewDense(3, 3, []float64{
+			-1.017041847539126, -0.224182952826418, 0.042538079149249,
+			-0.310374015319095, -0.516461581407780, -0.119195790221750,
+			-1.452723568727942, 1.799586083710209, -1.491935830615152,
+		}),
+		mat.NewDense(3, 2, []float64{
+			0.312858596637428, -0.164879019209038,
+			-0.864879917324456, 0.627707287528727,
+			-0.030051296196269, 1.093265669039484,
+		}),
+		mat.NewDense(2, 3, []float64{
+			1.109273297614398, 0.077359091130425, -1.113500741486764,
+			-0.863652821988714, -1.214117043615409, -0.006849328103348,
+		}),
+		mat.NewDense(2, 2, nil), 0)
+
+	dsys, err := sys.DiscretizeZOH(0.1)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := H2Norm(dsys)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := 0.707434962289554
+	if math.Abs(got-want)/want > 1e-2 {
+		t.Errorf("discrete H2 = %g, want %g (MATLAB)", got, want)
+	}
+}
+
 func TestH2_HSV_Relationship(t *testing.T) {
 	sys, _ := New(
 		mat.NewDense(2, 2, []float64{-1, 0.5, 0, -2}),

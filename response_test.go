@@ -377,6 +377,210 @@ func TestInitial_NilX0_Error(t *testing.T) {
 	}
 }
 
+// python-control: A=[[1,-2],[3,-4]], B=[[5],[7]], C=[[6,8]], D=[[9]]
+// step response at t = linspace(0,1,10)
+func TestStep_PythonControlVerified(t *testing.T) {
+	sys, _ := New(
+		mat.NewDense(2, 2, []float64{1, -2, 3, -4}),
+		mat.NewDense(2, 1, []float64{5, 7}),
+		mat.NewDense(1, 2, []float64{6, 8}),
+		mat.NewDense(1, 1, []float64{9}), 0)
+
+	resp, err := Step(sys, 1.0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := []float64{9.0, 17.6457, 24.7072, 30.4855, 35.2234, 39.1165, 42.3227, 44.9694, 47.1599, 48.9776}
+
+	_, steps := resp.Y.Dims()
+	if steps < len(want) {
+		t.Fatalf("only %d steps, want at least %d", steps, len(want))
+	}
+
+	for i, w := range want {
+		ti := resp.T[0] + float64(i)*(1.0/float64(len(want)-1))
+		k := 0
+		for j := 1; j < steps; j++ {
+			if math.Abs(resp.T[j]-ti) < math.Abs(resp.T[k]-ti) {
+				k = j
+			}
+		}
+		got := resp.Y.At(0, k)
+		if math.Abs(got-w) > 1.5 {
+			t.Errorf("t=%.3f: got %f, want ~%f", resp.T[k], got, w)
+		}
+	}
+}
+
+// python-control: A=[[1,-2],[3,-4]], B=[[5],[7]], C=[[6,8]], D=[[0]]
+// C*B = 6*5 + 8*7 = 86, so continuous impulse should start near 86 and decay
+func TestImpulse_PythonControlVerified(t *testing.T) {
+	sys, _ := New(
+		mat.NewDense(2, 2, []float64{1, -2, 3, -4}),
+		mat.NewDense(2, 1, []float64{5, 7}),
+		mat.NewDense(1, 2, []float64{6, 8}),
+		mat.NewDense(1, 1, []float64{0}), 0)
+
+	resp, err := Impulse(sys, 1.0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, steps := resp.Y.Dims()
+	if steps < 10 {
+		t.Fatal("too few steps")
+	}
+
+	// For continuous impulse, early samples should be near C*B = 86
+	found := false
+	for k := 0; k < min(10, steps); k++ {
+		y := resp.Y.At(0, k)
+		if y > 70 && y < 100 {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("early impulse response should be near C*B=86")
+	}
+
+	yLast := resp.Y.At(0, steps-1)
+	if yLast > 20 {
+		t.Errorf("final value = %f, want decaying", yLast)
+	}
+}
+
+// python-control: discrete tf([1],[1,1,0.25], dt=True)
+// step response: [0, 0, 1, 0, 0.75]
+func TestStep_Discrete_PythonControl(t *testing.T) {
+	tf := &TransferFunc{
+		Num:   [][][]float64{{{1}}},
+		Den:   [][]float64{{1, 1, 0.25}},
+		Dt:    1.0,
+		Delay: nil,
+	}
+	ssr, err := tf.StateSpace(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	resp, err := Step(ssr.Sys, 4.0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := []float64{0, 0, 1, 0, 0.75}
+	_, steps := resp.Y.Dims()
+	if steps < len(want) {
+		t.Fatalf("steps = %d, want >= %d", steps, len(want))
+	}
+	for k, w := range want {
+		got := resp.Y.At(0, k)
+		if math.Abs(got-w) > 0.05 {
+			t.Errorf("y[%d] = %f, want %f", k, got, w)
+		}
+	}
+}
+
+// python-control: initial response siso_dss1
+// A=[[-1,-0.25],[1,0]], B=[[1],[0]], C=[[0,1]], D=[[0]], dt=True
+// X0=[0.5,1.0], expected: [1.0, 0.5, -0.75, 0.625, -0.4375]
+func TestInitial_Discrete_PythonControl(t *testing.T) {
+	sys, _ := New(
+		mat.NewDense(2, 2, []float64{-1, -0.25, 1, 0}),
+		mat.NewDense(2, 1, []float64{1, 0}),
+		mat.NewDense(1, 2, []float64{0, 1}),
+		mat.NewDense(1, 1, []float64{0}), 1.0)
+
+	x0 := mat.NewVecDense(2, []float64{0.5, 1.0})
+	resp, err := Initial(sys, x0, 4.0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := []float64{1.0, 0.5, -0.75, 0.625, -0.4375}
+	_, steps := resp.Y.Dims()
+	if steps < len(want) {
+		t.Fatalf("steps = %d, want >= %d", steps, len(want))
+	}
+	for k, w := range want {
+		got := resp.Y.At(0, k)
+		if math.Abs(got-w) > 1e-10 {
+			t.Errorf("y[%d] = %f, want %f", k, got, w)
+		}
+	}
+}
+
+// Impulse with feedthrough D!=0
+func TestImpulse_WithD(t *testing.T) {
+	sys, _ := New(
+		mat.NewDense(1, 1, []float64{-1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{2}), 0)
+
+	resp, err := Impulse(sys, 3.0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, steps := resp.Y.Dims()
+	if steps < 10 {
+		t.Fatal("too few steps")
+	}
+	yLast := resp.Y.At(0, steps-1)
+	if math.Abs(yLast) > 0.1 {
+		t.Errorf("final value = %f, want ~0 (decay)", yLast)
+	}
+}
+
+// Step for discrete system with feedthrough
+func TestStep_Discrete_WithD(t *testing.T) {
+	sys, _ := New(
+		mat.NewDense(1, 1, []float64{0.5}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{1}), 1.0)
+
+	resp, err := Step(sys, 4.0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// y[0] = C*x0 + D*1 = 0 + 1 = 1
+	// y[1] = C*(A*0+B*1) + D*1 = 1 + 1 = 2
+	// y[2] = C*(A*1+B*1) + D*1 = 1.5 + 1 = 2.5
+	if math.Abs(resp.Y.At(0, 0)-1.0) > 1e-12 {
+		t.Errorf("y[0] = %f, want 1", resp.Y.At(0, 0))
+	}
+	if math.Abs(resp.Y.At(0, 1)-2.0) > 1e-12 {
+		t.Errorf("y[1] = %f, want 2", resp.Y.At(0, 1))
+	}
+}
+
+// Damp for real poles
+func TestDamp_RealPoles(t *testing.T) {
+	sys, _ := New(
+		mat.NewDense(2, 2, []float64{-1, 0, 0, -5}),
+		mat.NewDense(2, 1, []float64{1, 1}),
+		mat.NewDense(1, 2, []float64{1, 1}),
+		mat.NewDense(1, 1, []float64{0}), 0)
+
+	info, err := Damp(sys)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(info) != 2 {
+		t.Fatalf("got %d poles, want 2", len(info))
+	}
+	for _, d := range info {
+		if d.Zeta != 1.0 {
+			t.Errorf("real pole zeta = %f, want 1.0", d.Zeta)
+		}
+	}
+}
+
 func TestStep_AutoTFinal(t *testing.T) {
 	sys, _ := New(
 		mat.NewDense(1, 1, []float64{-1}),

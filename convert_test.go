@@ -1923,3 +1923,185 @@ func TestD2D_Names(t *testing.T) {
 		t.Errorf("OutputName = %v, want [position]", result.OutputName)
 	}
 }
+
+func makeLFTSystem(t *testing.T) *System {
+	t.Helper()
+	sys, err := New(
+		mat.NewDense(2, 2, []float64{-1, 0.5, 0, -2}),
+		mat.NewDense(2, 1, []float64{1, 0}),
+		mat.NewDense(1, 2, []float64{1, 0}),
+		mat.NewDense(1, 1, []float64{0}), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sys.InputDelay = []float64{0.5}
+	lft, err := sys.PullDelaysToLFT()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return lft
+}
+
+func TestDiscretizeTustinWithInternalDelay(t *testing.T) {
+	lft := makeLFTSystem(t)
+
+	dt := 0.1
+	disc, err := lft.DiscretizeWithOpts(dt, C2DOptions{Method: "tustin"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !disc.IsDiscrete() {
+		t.Fatal("expected discrete")
+	}
+	if len(disc.InternalDelay) == 0 {
+		t.Fatal("expected InternalDelay")
+	}
+
+	n, m, p := disc.Dims()
+	if n < 2 || m < 1 || p < 1 {
+		t.Errorf("dims = (%d,%d,%d), want ≥ (2,1,1)", n, m, p)
+	}
+
+	stable, err := disc.IsStable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !stable {
+		t.Error("discretized system unstable")
+	}
+}
+
+func TestDiscretizeFOHWithInternalDelay(t *testing.T) {
+	lft := makeLFTSystem(t)
+
+	dt := 0.1
+	disc, err := lft.DiscretizeWithOpts(dt, C2DOptions{Method: "foh"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !disc.IsDiscrete() {
+		t.Fatal("expected discrete")
+	}
+	if len(disc.InternalDelay) == 0 {
+		t.Fatal("expected InternalDelay")
+	}
+
+	stable, err := disc.IsStable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !stable {
+		t.Error("discretized system unstable")
+	}
+}
+
+func TestDiscretizeImpulseWithInternalDelay(t *testing.T) {
+	lft := makeLFTSystem(t)
+
+	dt := 0.1
+	disc, err := lft.DiscretizeWithOpts(dt, C2DOptions{Method: "impulse"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !disc.IsDiscrete() {
+		t.Fatal("expected discrete")
+	}
+	if len(disc.InternalDelay) == 0 {
+		t.Fatal("expected InternalDelay")
+	}
+}
+
+func TestDiscretizeTustinAugmented_FreqResp(t *testing.T) {
+	sys, _ := New(
+		mat.NewDense(1, 1, []float64{-1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{0}), 0)
+	sys.InputDelay = []float64{0.5}
+
+	lft, err := sys.PullDelaysToLFT()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dt := 0.1
+	discZOH, err := lft.DiscretizeWithOpts(dt, C2DOptions{Method: "zoh"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	discTustin, err := lft.DiscretizeWithOpts(dt, C2DOptions{Method: "tustin"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, w := range []float64{0.1, 0.5, 1.0} {
+		z := cmplx.Exp(complex(0, w*dt))
+		hZOH, _ := discZOH.EvalFr(z)
+		hTustin, _ := discTustin.EvalFr(z)
+		magZOH := cmplx.Abs(hZOH[0][0])
+		magTustin := cmplx.Abs(hTustin[0][0])
+		if magZOH == 0 || magTustin == 0 {
+			continue
+		}
+		ratio := magTustin / magZOH
+		if ratio < 0.5 || ratio > 2.0 {
+			t.Errorf("w=%v: Tustin/ZOH mag ratio = %v, expected ~1", w, ratio)
+		}
+	}
+}
+
+func TestDiscretizeFOHAugmented_Stability(t *testing.T) {
+	sys, _ := New(
+		mat.NewDense(2, 2, []float64{-1, 0.5, 0, -2}),
+		mat.NewDense(2, 1, []float64{1, 1}),
+		mat.NewDense(1, 2, []float64{1, 0}),
+		mat.NewDense(1, 1, []float64{0}), 0)
+	sys.InputDelay = []float64{0.3}
+
+	lft, err := sys.PullDelaysToLFT()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	disc, err := lft.DiscretizeWithOpts(0.1, C2DOptions{Method: "foh"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	stable, err := disc.IsStable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !stable {
+		t.Error("FOH-discretized system unstable")
+	}
+}
+
+func TestDiscretizeImpulseAugmented_SISO(t *testing.T) {
+	sys, _ := New(
+		mat.NewDense(1, 1, []float64{-2}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{0}), 0)
+	sys.InputDelay = []float64{0.3}
+
+	lft, err := sys.PullDelaysToLFT()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	disc, err := lft.DiscretizeWithOpts(0.1, C2DOptions{Method: "impulse"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !disc.IsDiscrete() {
+		t.Fatal("expected discrete")
+	}
+	if len(disc.InternalDelay) == 0 {
+		t.Fatal("expected InternalDelay")
+	}
+}

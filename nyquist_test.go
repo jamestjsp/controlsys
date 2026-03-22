@@ -239,6 +239,153 @@ func TestNyquist_MIMO_Error(t *testing.T) {
 	}
 }
 
+// python-control: pole at origin - tf([3],[1,2,2,1,0])
+// Uses indentation contour around origin
+func TestNyquist_PoleAtOrigin(t *testing.T) {
+	// s^4+2s^3+2s^2+s = s(s^3+2s^2+2s+1) = s(s+1)(s^2+s+1)
+	sys, err := NewFromSlices(4, 1, 1,
+		[]float64{
+			0, 1, 0, 0,
+			0, 0, 1, 0,
+			0, 0, 0, 1,
+			0, -1, -2, -2,
+		},
+		[]float64{0, 0, 0, 1},
+		[]float64{3, 0, 0, 0},
+		[]float64{0}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	r, err := sys.Nyquist(nil, 2000)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if r.RHPPoles != 0 {
+		t.Errorf("RHPPoles = %d, want 0", r.RHPPoles)
+	}
+	if len(r.Contour) == 0 {
+		t.Fatal("empty contour")
+	}
+}
+
+// python-control FBS: L(s) = 1/(s*(s+1)^2)
+// Pole at origin, open-loop stable except for integrator
+func TestNyquist_IntegratorWithSecondOrder(t *testing.T) {
+	// s(s+1)^2 = s^3 + 2s^2 + s
+	sys, err := NewFromSlices(3, 1, 1,
+		[]float64{
+			0, 1, 0,
+			0, 0, 1,
+			0, -1, -2,
+		},
+		[]float64{0, 0, 1},
+		[]float64{1, 0, 0},
+		[]float64{0}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	r, err := sys.Nyquist(nil, 2000)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if r.RHPPoles != 0 {
+		t.Errorf("RHPPoles = %d, want 0", r.RHPPoles)
+	}
+}
+
+// python-control FBS: 3*(s+6)^2/(s*(s+1)^2)
+// Non-minimum phase with pole at origin
+func TestNyquist_FBS_Figure10_10(t *testing.T) {
+	// Numerator: 3*(s+6)^2 = 3*(s^2+12s+36) = 3s^2+36s+108
+	// Denominator: s*(s+1)^2 = s^3+2s^2+s
+	sys, err := NewFromSlices(3, 1, 1,
+		[]float64{
+			0, 1, 0,
+			0, 0, 1,
+			0, -1, -2,
+		},
+		[]float64{0, 0, 1},
+		[]float64{108, 36, 3},
+		[]float64{0}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	r, err := sys.Nyquist(nil, 2000)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if r.RHPPoles != 0 {
+		t.Errorf("RHPPoles = %d, want 0", r.RHPPoles)
+	}
+	if len(r.Contour) == 0 {
+		t.Fatal("empty contour")
+	}
+}
+
+// Two CW encirclements from high gain (K > Kc)
+func TestNyquist_HighGain_TwoEncirclements(t *testing.T) {
+	// G = 200/((s+1)(s+2)(s+3)) = 200/(s^3+6s^2+11s+6)
+	// Kc = 60, so K=200 should give 2 CW encirclements
+	sys, err := NewFromSlices(3, 1, 1,
+		[]float64{
+			0, 1, 0,
+			0, 0, 1,
+			-6, -11, -6,
+		},
+		[]float64{0, 0, 1},
+		[]float64{200, 0, 0},
+		[]float64{0}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	r, err := sys.Nyquist(nil, 2000)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if r.RHPPoles != 0 {
+		t.Errorf("RHPPoles = %d, want 0", r.RHPPoles)
+	}
+	if r.Encirclements != 2 {
+		t.Errorf("Encirclements = %d, want 2", r.Encirclements)
+	}
+	if r.RHPZerosCL != 2 {
+		t.Errorf("RHPZerosCL = %d, want 2", r.RHPZerosCL)
+	}
+}
+
+// Discrete system with encirclement
+func TestNyquist_Discrete_Unstable(t *testing.T) {
+	// High gain discrete system should have encirclements
+	sys, err := New(
+		mat.NewDense(1, 1, []float64{0.99}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{10}),
+		mat.NewDense(1, 1, []float64{0}), 0.01)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	r, err := sys.Nyquist(nil, 1000)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if r.RHPPoles != 0 {
+		t.Errorf("RHPPoles = %d, want 0", r.RHPPoles)
+	}
+	if len(r.Contour) == 0 {
+		t.Fatal("empty contour")
+	}
+}
+
 func TestWindingNumber(t *testing.T) {
 	tests := []struct {
 		name    string

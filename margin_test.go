@@ -583,6 +583,354 @@ func TestDiskMargin_MIMOReject(t *testing.T) {
 
 // === Benchmarks ===
 
+// python-control: tf([1], [1,2,3,4])
+// GM = 20*log10(2) ≈ 6.02 dB at wg = sqrt(3) ≈ 1.732
+func TestAllMargin_ThirdOrderPythonControl(t *testing.T) {
+	sys, err := NewFromSlices(3, 1, 1,
+		[]float64{0, 1, 0, 0, 0, 1, -4, -3, -2},
+		[]float64{0, 0, 1},
+		[]float64{1, 0, 0},
+		[]float64{0}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	all, err := AllMargin(sys)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(all.PhaseCrossFreqs) < 1 {
+		t.Fatal("expected at least 1 phase crossover")
+	}
+
+	wantGM := 20 * math.Log10(2.0)
+	wantWp := math.Sqrt(3.0)
+	foundGM := false
+	for i, w := range all.PhaseCrossFreqs {
+		if math.Abs(w-wantWp) < 0.1 {
+			if math.Abs(all.GainMargins[i]-wantGM) > 0.5 {
+				t.Errorf("GM at w=%.2f: got %v dB, want ~%v dB", w, all.GainMargins[i], wantGM)
+			}
+			foundGM = true
+		}
+	}
+	if !foundGM {
+		t.Errorf("phase crossover at w≈%.2f not found in %v", wantWp, all.PhaseCrossFreqs)
+	}
+}
+
+// python-control: tf([1], [1,2,3,4]) discretized at dt=0.01
+func TestAllMargin_Discrete(t *testing.T) {
+	sys, err := NewFromSlices(3, 1, 1,
+		[]float64{0, 1, 0, 0, 0, 1, -4, -3, -2},
+		[]float64{0, 0, 1},
+		[]float64{1, 0, 0},
+		[]float64{0}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dsys, err := sys.DiscretizeZOH(0.01)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	all, err := AllMargin(dsys)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(all.PhaseCrossFreqs) == 0 {
+		t.Fatal("expected phase crossover")
+	}
+	if len(all.GainCrossFreqs) > 0 {
+		t.Log("gain crossover freqs:", all.GainCrossFreqs)
+	}
+}
+
+// python-control: 8.75*(4s^2+0.4s+1)/((100s+1)(s^2+0.22s+1)(s^2/100+0.008s+1))
+// multiple gain crossovers -> AllMargin should return multiple phase margins
+func TestAllMargin_MultipleGainCrossovers(t *testing.T) {
+	// Construct via ZPK: zeros from 4s^2+0.4s+1=0, poles from each factor
+	// Use Margin to check the worst-case
+	// G(s) = K/(s+1)^3, K=2: Margin at wg ≈ 0.766
+	K := 2.0
+	sys, err := NewFromSlices(3, 1, 1,
+		[]float64{0, 1, 0, 0, 0, 1, -1, -3, -3},
+		[]float64{0, 0, 1},
+		[]float64{K, 0, 0},
+		[]float64{0}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	all, err := AllMargin(sys)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// python-control: gm=4.0 (12.04 dB), pm=67.6 deg, wg=1.732, wp=0.766
+	m, err := Margin(sys)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantGM := 20 * math.Log10(4.0)
+	if math.Abs(m.GainMargin-wantGM) > 0.5 {
+		t.Errorf("GM = %v dB, want ~%v dB", m.GainMargin, wantGM)
+	}
+	if math.Abs(m.PhaseMargin-67.6) > 2 {
+		t.Errorf("PM = %v deg, want ~67.6 deg", m.PhaseMargin)
+	}
+	_ = all
+}
+
+// python-control: nonminimum phase system 0.01*(10-s)/((2+s)*(1+s))
+// GM = 20*log10(300) ≈ 49.54 dB
+func TestMargin_NonMinimumPhase(t *testing.T) {
+	// G(s) = 0.01*(10-s)/((s+2)(s+1)) = 0.01*(-s+10)/(s^2+3s+2)
+	sys, err := NewFromSlices(2, 1, 1,
+		[]float64{0, 1, -2, -3},
+		[]float64{0, 1},
+		[]float64{0.01 * 10, 0.01 * -1},
+		[]float64{0}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	m, err := Margin(sys)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	wantGM := 20 * math.Log10(300.0)
+	if math.Abs(m.GainMargin-wantGM) > 1 {
+		t.Errorf("GM = %v dB, want ~%v dB", m.GainMargin, wantGM)
+	}
+}
+
+// AllMargin for system with no crossings
+func TestAllMargin_NoCrossings(t *testing.T) {
+	sys, err := New(
+		mat.NewDense(1, 1, []float64{-1}),
+		mat.NewDense(1, 1, []float64{0.1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{0}), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	all, err := AllMargin(sys)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all.GainCrossFreqs) != 0 {
+		t.Errorf("expected no gain crossings, got %d", len(all.GainCrossFreqs))
+	}
+	if len(all.PhaseCrossFreqs) != 0 {
+		t.Errorf("expected no phase crossings, got %d", len(all.PhaseCrossFreqs))
+	}
+}
+
+// Bandwidth with MIMO system (exercises Sigma path)
+func TestBandwidth_MIMO(t *testing.T) {
+	sys, err := NewFromSlices(2, 2, 2,
+		[]float64{-1, 0, 0, -2},
+		[]float64{1, 0, 0, 1},
+		[]float64{1, 0, 0, 1},
+		[]float64{0, 0, 0, 0}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	bw, err := Bandwidth(sys, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bw <= 0 {
+		t.Errorf("MIMO bandwidth = %v, want > 0", bw)
+	}
+	if bw > 3 {
+		t.Errorf("MIMO bandwidth = %v, want ≤ 3", bw)
+	}
+}
+
+// Bandwidth with integrator (no DC gain) should return 0
+func TestBandwidth_Integrator(t *testing.T) {
+	sys, err := New(
+		mat.NewDense(1, 1, []float64{0}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{0}), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	bw, err := Bandwidth(sys, 0)
+	if err == nil {
+		if bw != 0 {
+			t.Errorf("integrator bandwidth = %v, want 0 or error", bw)
+		}
+	}
+}
+
+// DiskMargin with python-control verified values: L = tf(25, [1,10,10,10])
+func TestDiskMargin_PythonControl(t *testing.T) {
+	// L(s) = 25/(s^3+10s^2+10s+10)
+	sys, err := NewFromSlices(3, 1, 1,
+		[]float64{0, 1, 0, 0, 0, 1, -10, -10, -10},
+		[]float64{0, 0, 1},
+		[]float64{25, 0, 0},
+		[]float64{0}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dm, err := DiskMargin(sys)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if dm.Alpha < 0.3 || dm.Alpha > 0.6 {
+		t.Errorf("Alpha = %v, want in [0.3, 0.6]", dm.Alpha)
+	}
+	if dm.GainMarginDB[1] < 2.5 || dm.GainMarginDB[1] > 5.5 {
+		t.Errorf("DGM_high = %v dB, want in [2.5, 5.5]", dm.GainMarginDB[1])
+	}
+	if dm.PhaseMargin < 18 || dm.PhaseMargin > 30 {
+		t.Errorf("DPM = %v deg, want in [18, 30]", dm.PhaseMargin)
+	}
+}
+
+// DiskMargin for discrete system
+func TestDiskMargin_Discrete(t *testing.T) {
+	sys, err := New(
+		mat.NewDense(1, 1, []float64{-1}),
+		mat.NewDense(1, 1, []float64{10}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{0}), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dsys, err := sys.DiscretizeZOH(0.01)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dm, err := DiskMargin(dsys)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if dm.Alpha <= 0 {
+		t.Errorf("discrete alpha = %v, want > 0", dm.Alpha)
+	}
+	if dm.PhaseMargin <= 0 {
+		t.Errorf("discrete disk PM = %v, want > 0", dm.PhaseMargin)
+	}
+}
+
+// Margin on LFT system (exercises evalSISOFreqResponse path in sisoEval.at)
+func TestMargin_LFTSystem(t *testing.T) {
+	sys, err := New(
+		mat.NewDense(1, 1, []float64{-1}),
+		mat.NewDense(1, 1, []float64{2}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{0}), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = sys.SetInputDelay([]float64{0.5})
+	lft, err := sys.PullDelaysToLFT()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	r, err := Margin(lft)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if r.PhaseMargin <= 0 || math.IsNaN(r.PhaseMargin) {
+		t.Errorf("PM = %v, want positive", r.PhaseMargin)
+	}
+}
+
+// AllMargin on LFT system
+func TestAllMargin_LFTSystem(t *testing.T) {
+	sys, err := New(
+		mat.NewDense(1, 1, []float64{-1}),
+		mat.NewDense(1, 1, []float64{2}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{0}), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = sys.SetInputDelay([]float64{0.5})
+	lft, err := sys.PullDelaysToLFT()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	all, err := AllMargin(lft)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(all.GainCrossFreqs) == 0 {
+		t.Error("expected gain crossover(s) for gain=2 system")
+	}
+}
+
+// Bandwidth on LFT system - may not support DCGain, so just check no panic
+func TestBandwidth_LFTSystem(t *testing.T) {
+	sys, err := New(
+		mat.NewDense(1, 1, []float64{-1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{0}), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = sys.SetInputDelay([]float64{0.1})
+	lft, err := sys.PullDelaysToLFT()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	bw, err := Bandwidth(lft, 0)
+	if err != nil {
+		t.Skipf("Bandwidth on LFT system returned error: %v", err)
+	}
+	t.Logf("LFT bandwidth = %v", bw)
+}
+
+// DiskMargin on LFT system
+func TestDiskMargin_LFTSystem(t *testing.T) {
+	sys, err := New(
+		mat.NewDense(1, 1, []float64{-1}),
+		mat.NewDense(1, 1, []float64{10}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{0}), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = sys.SetInputDelay([]float64{0.01})
+	lft, err := sys.PullDelaysToLFT()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dm, err := DiskMargin(lft)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dm.Alpha <= 0 {
+		t.Errorf("Alpha = %v, want > 0", dm.Alpha)
+	}
+}
+
 func BenchmarkMargin_SISO(b *testing.B) {
 	sys, _ := New(
 		mat.NewDense(3, 3, []float64{

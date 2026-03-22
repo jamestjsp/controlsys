@@ -214,6 +214,107 @@ func TestObsvF_DimMismatch(t *testing.T) {
 	}
 }
 
+// python-control: duality ctrb(A,B) == obsv(A',B')'
+func TestCtrb_Obsv_Duality(t *testing.T) {
+	A := mat.NewDense(2, 2, []float64{1.2, -2.3, 3.4, -4.5})
+	B := mat.NewDense(2, 2, []float64{5.8, 6.9, 8.0, 9.1})
+
+	wc, err := Ctrb(A, B)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	wo, err := Obsv(mat.DenseCopyOf(A.T()), mat.DenseCopyOf(B.T()))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	woT := mat.DenseCopyOf(wo.T())
+	assertMatNearT(t, "duality", wc, woT, 1e-10)
+}
+
+func TestCtrbF_WithC(t *testing.T) {
+	A := mat.NewDense(2, 2, []float64{0, 1, -2, -3})
+	B := mat.NewDense(2, 1, []float64{0, 1})
+	C := mat.NewDense(1, 2, []float64{1, 0})
+
+	res, err := CtrbF(A, B, C)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.NCont != 2 {
+		t.Errorf("NCont = %d, want 2", res.NCont)
+	}
+	if res.C == nil {
+		t.Fatal("expected transformed C")
+	}
+	cr, cc := res.C.Dims()
+	if cr != 1 || cc != 2 {
+		t.Errorf("C dims = (%d,%d), want (1,2)", cr, cc)
+	}
+}
+
+func TestCtrbF_PartialRank_WithC(t *testing.T) {
+	A := mat.NewDense(3, 3, []float64{
+		-1, 0, 0,
+		0, -2, 0,
+		0, 0, -3,
+	})
+	B := mat.NewDense(3, 1, []float64{1, 0, 0})
+	C := mat.NewDense(1, 3, []float64{1, 1, 1})
+
+	res, err := CtrbF(A, B, C)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.NCont != 1 {
+		t.Errorf("NCont = %d, want 1", res.NCont)
+	}
+}
+
+func TestObsvF_WithB(t *testing.T) {
+	A := mat.NewDense(2, 2, []float64{0, 1, -2, -3})
+	B := mat.NewDense(2, 1, []float64{0, 1})
+	C := mat.NewDense(1, 2, []float64{1, 0})
+
+	res, err := ObsvF(A, B, C)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.NCont != 2 {
+		t.Errorf("NObs = %d, want 2", res.NCont)
+	}
+	if res.B == nil {
+		t.Fatal("expected transformed B")
+	}
+}
+
+func TestCtrb_1x1(t *testing.T) {
+	A := mat.NewDense(1, 1, []float64{-5})
+	B := mat.NewDense(1, 1, []float64{3})
+
+	got, err := Ctrb(A, B)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if math.Abs(got.At(0, 0)-3) > 1e-10 {
+		t.Errorf("Ctrb = %v, want [[3]]", mat.Formatted(got))
+	}
+}
+
+func TestObsv_1x1(t *testing.T) {
+	A := mat.NewDense(1, 1, []float64{-5})
+	C := mat.NewDense(1, 1, []float64{2})
+
+	got, err := Obsv(A, C)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if math.Abs(got.At(0, 0)-2) > 1e-10 {
+		t.Errorf("Obsv = %v, want [[2]]", mat.Formatted(got))
+	}
+}
+
 func assertMatNearT(t *testing.T, label string, got, want *mat.Dense, tol float64) {
 	t.Helper()
 	gr, gc := got.Dims()

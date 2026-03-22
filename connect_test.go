@@ -1152,6 +1152,58 @@ func TestSafeFeedback_DefaultPadeOrder(t *testing.T) {
 	}
 }
 
+func TestSafeFeedback_WithThiranOrder(t *testing.T) {
+	plant, _ := New(
+		mat.NewDense(1, 1, []float64{0.5}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{0}),
+		0.1,
+	)
+	_ = plant.SetInputDelay([]float64{3})
+
+	controller, _ := NewGain(mat.NewDense(1, 1, []float64{0.5}), 0.1)
+
+	cl, err := SafeFeedback(plant, controller, -1, WithThiranOrder(2))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	nCl, m, p := cl.Dims()
+	if m != 1 || p != 1 {
+		t.Errorf("m=%d p=%d, want 1,1", m, p)
+	}
+	if nCl < 1 {
+		t.Errorf("n=%d, want ≥ 1", nCl)
+	}
+}
+
+func TestSafeFeedback_DiscreteWithThiranOrder(t *testing.T) {
+	plant, _ := New(
+		mat.NewDense(1, 1, []float64{0.9}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{0}),
+		0.1,
+	)
+	_ = plant.SetInputDelay([]float64{2})
+
+	controller, _ := NewGain(mat.NewDense(1, 1, []float64{0.1}), 0.1)
+
+	cl, err := SafeFeedback(plant, controller, -1, WithThiranOrder(3))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	stable, err := cl.IsStable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !stable {
+		t.Error("closed-loop should be stable")
+	}
+}
+
 func TestSafeFeedback_ContinuousMIMO(t *testing.T) {
 	plant, _ := New(
 		mat.NewDense(2, 2, []float64{-1, 0.5, 0, -2}),
@@ -2485,5 +2537,101 @@ func TestConnect_MIMOThreeBlocks(t *testing.T) {
 	hdc := evalTF(conn, 0)
 	if cmplx.Abs(hdc[0][0]) < 1e-15 && cmplx.Abs(hdc[0][1]) < 1e-15 {
 		t.Error("DC gain should not be all zero")
+	}
+}
+
+func TestBlkDiag_ThreeWithInternalDelay(t *testing.T) {
+	mkLFT := func(a, tau float64) *System {
+		s, _ := New(
+			mat.NewDense(1, 1, []float64{a}),
+			mat.NewDense(1, 1, []float64{1}),
+			mat.NewDense(1, 1, []float64{1}),
+			mat.NewDense(1, 1, []float64{0}), 0)
+		_ = s.SetInternalDelay(
+			[]float64{tau},
+			mat.NewDense(1, 1, []float64{0.1}),
+			mat.NewDense(1, 1, []float64{0.2}),
+			mat.NewDense(1, 1, []float64{0.3}),
+			mat.NewDense(1, 1, []float64{0.4}),
+			mat.NewDense(1, 1, []float64{0}),
+		)
+		return s
+	}
+
+	s1 := mkLFT(-1, 0.5)
+	s2 := mkLFT(-2, 1.0)
+	s3 := mkLFT(-3, 1.5)
+
+	result, err := BlkDiag(s1, s2, s3)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	n, m, p := result.Dims()
+	if n != 3 || m != 3 || p != 3 {
+		t.Errorf("dims = (%d,%d,%d), want (3,3,3)", n, m, p)
+	}
+	if len(result.InternalDelay) != 3 {
+		t.Fatalf("InternalDelay = %v, want 3 entries", result.InternalDelay)
+	}
+	wantTau := []float64{0.5, 1.0, 1.5}
+	for i, w := range wantTau {
+		if result.InternalDelay[i] != w {
+			t.Errorf("tau[%d] = %v, want %v", i, result.InternalDelay[i], w)
+		}
+	}
+
+	r, c := result.B2.Dims()
+	if r != 3 || c != 3 {
+		t.Errorf("B2 dims = (%d,%d), want (3,3)", r, c)
+	}
+	for i := range 3 {
+		if result.B2.At(i, i) != 0.1 {
+			t.Errorf("B2[%d,%d] = %v, want 0.1", i, i, result.B2.At(i, i))
+		}
+	}
+
+	r, c = result.D12.Dims()
+	if r != 3 || c != 3 {
+		t.Errorf("D12 dims = (%d,%d), want (3,3)", r, c)
+	}
+	r, c = result.D21.Dims()
+	if r != 3 || c != 3 {
+		t.Errorf("D21 dims = (%d,%d), want (3,3)", r, c)
+	}
+}
+
+func TestAppend_MixedLFTAndPlain(t *testing.T) {
+	s1, _ := New(
+		mat.NewDense(1, 1, []float64{-1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{0}), 0)
+	_ = s1.SetInternalDelay(
+		[]float64{0.5},
+		mat.NewDense(1, 1, []float64{0.1}),
+		mat.NewDense(1, 1, []float64{0.2}),
+		mat.NewDense(1, 1, []float64{0.3}),
+		mat.NewDense(1, 1, []float64{0.4}),
+		mat.NewDense(1, 1, []float64{0}),
+	)
+
+	s2, _ := New(
+		mat.NewDense(1, 1, []float64{-2}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{0}), 0)
+
+	result, err := Append(s1, s2)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(result.InternalDelay) != 1 {
+		t.Errorf("InternalDelay = %v, want [0.5]", result.InternalDelay)
+	}
+	n, m, p := result.Dims()
+	if n != 2 || m != 2 || p != 2 {
+		t.Errorf("dims = (%d,%d,%d), want (2,2,2)", n, m, p)
 	}
 }
