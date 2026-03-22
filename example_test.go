@@ -9,6 +9,54 @@ import (
 	"gonum.org/v1/gonum/mat"
 )
 
+func ExampleStep() {
+	A := mat.NewDense(1, 1, []float64{-1})
+	B := mat.NewDense(1, 1, []float64{1})
+	C := mat.NewDense(1, 1, []float64{1})
+	D := mat.NewDense(1, 1, []float64{0})
+	sys, _ := controlsys.New(A, B, C, D, 0)
+
+	resp, _ := controlsys.Step(sys, 7.0)
+	last := len(resp.T) - 1
+	fmt.Printf("Steady-state: %.2f\n", resp.Y.At(0, last))
+
+	// Output:
+	// Steady-state: 1.00
+}
+
+func ExampleSystem_DCGain() {
+	A := mat.NewDense(1, 1, []float64{-2})
+	B := mat.NewDense(1, 1, []float64{1})
+	C := mat.NewDense(1, 1, []float64{1})
+	D := mat.NewDense(1, 1, []float64{0})
+	sys, _ := controlsys.New(A, B, C, D, 0)
+
+	g, _ := sys.DCGain()
+	fmt.Printf("DC gain: %.2f\n", g.At(0, 0))
+
+	// Output:
+	// DC gain: 0.50
+}
+
+func ExampleDamp() {
+	wn := 10.0
+	zeta := 0.3
+	sigma := -zeta * wn
+	A := mat.NewDense(2, 2, []float64{0, 1, -(wn * wn), 2 * sigma})
+	B := mat.NewDense(2, 1, []float64{0, 1})
+	C := mat.NewDense(1, 2, []float64{1, 0})
+	D := mat.NewDense(1, 1, []float64{0})
+	sys, _ := controlsys.New(A, B, C, D, 0)
+
+	info, _ := controlsys.Damp(sys)
+	fmt.Printf("Wn:   %.1f rad/s\n", info[0].Wn)
+	fmt.Printf("Zeta: %.1f\n", info[0].Zeta)
+
+	// Output:
+	// Wn:   10.0 rad/s
+	// Zeta: 0.3
+}
+
 func ExampleNew() {
 	A := mat.NewDense(2, 2, []float64{0, 1, 0, 0})
 	B := mat.NewDense(2, 1, []float64{0, 1})
