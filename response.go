@@ -9,8 +9,9 @@ import (
 )
 
 type TimeResponse struct {
-	T []float64
-	Y *mat.Dense
+	T          []float64
+	Y          *mat.Dense
+	OutputName []string
 }
 
 type DampInfo struct {
@@ -236,7 +237,7 @@ func Step(sys *System, tFinal float64) (*TimeResponse, error) {
 		}
 	}
 
-	return &TimeResponse{T: makeTimeVector(steps, dt), Y: Y}, nil
+	return &TimeResponse{T: makeTimeVector(steps, dt), Y: Y, OutputName: copyStringSlice(sys.OutputName)}, nil
 }
 
 func Impulse(sys *System, tFinal float64) (*TimeResponse, error) {
@@ -270,7 +271,7 @@ func Impulse(sys *System, tFinal float64) (*TimeResponse, error) {
 		}
 	}
 
-	return &TimeResponse{T: makeTimeVector(steps, dt), Y: Y}, nil
+	return &TimeResponse{T: makeTimeVector(steps, dt), Y: Y, OutputName: copyStringSlice(sys.OutputName)}, nil
 }
 
 func Initial(sys *System, x0 *mat.VecDense, tFinal float64) (*TimeResponse, error) {
@@ -290,5 +291,5 @@ func Initial(sys *System, x0 *mat.VecDense, tFinal float64) (*TimeResponse, erro
 		return nil, fmt.Errorf("Initial: %w", err)
 	}
 
-	return &TimeResponse{T: makeTimeVector(steps, dt), Y: resp.Y}, nil
+	return &TimeResponse{T: makeTimeVector(steps, dt), Y: resp.Y, OutputName: copyStringSlice(sys.OutputName)}, nil
 }

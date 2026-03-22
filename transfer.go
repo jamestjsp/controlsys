@@ -13,10 +13,12 @@ import (
 var impl gonumLapack.Implementation
 
 type TransferFunc struct {
-	Num   [][][]float64
-	Den   [][]float64
-	Delay [][]float64 // [p][m]; nil = no delay
-	Dt    float64
+	Num        [][][]float64
+	Den        [][]float64
+	Delay      [][]float64 // [p][m]; nil = no delay
+	Dt         float64
+	InputName  []string
+	OutputName []string
 }
 
 func (tf *TransferFunc) Dims() (p, m int) {
@@ -120,6 +122,8 @@ func (sys *System) TransferFunction(opts *TransferFuncOpts) (*TransferFuncResult
 				}
 			}
 		}
+		tf.InputName = copyStringSlice(sys.InputName)
+		tf.OutputName = copyStringSlice(sys.OutputName)
 		return &TransferFuncResult{TF: tf, MinimalOrder: 0, RowDegrees: rowDeg}, nil
 	}
 
@@ -134,6 +138,8 @@ func (sys *System) TransferFunction(opts *TransferFuncOpts) (*TransferFuncResult
 				tf.Num[i][j] = []float64{sys.D.At(i, j)}
 			}
 		}
+		tf.InputName = copyStringSlice(sys.InputName)
+		tf.OutputName = copyStringSlice(sys.OutputName)
 		return &TransferFuncResult{TF: tf, MinimalOrder: 0, RowDegrees: rowDeg}, nil
 	}
 
@@ -170,6 +176,8 @@ func (sys *System) TransferFunction(opts *TransferFuncOpts) (*TransferFuncResult
 		tf.Delay = denseToSlice2D(sys.Delay)
 	}
 
+	tf.InputName = copyStringSlice(sys.InputName)
+	tf.OutputName = copyStringSlice(sys.OutputName)
 	return &TransferFuncResult{TF: tf, MinimalOrder: totalOrder, RowDegrees: rowDeg}, nil
 }
 
@@ -460,6 +468,8 @@ func (tf *TransferFunc) StateSpace(opts *StateSpaceOpts) (*StateSpaceResult, err
 
 	if p == 0 || m == 0 {
 		sys, _ := NewGain(&mat.Dense{}, tf.Dt)
+		sys.InputName = copyStringSlice(tf.InputName)
+		sys.OutputName = copyStringSlice(tf.OutputName)
 		return &StateSpaceResult{Sys: sys, MinimalOrder: 0}, nil
 	}
 
@@ -479,6 +489,8 @@ func (tf *TransferFunc) StateSpace(opts *StateSpaceOpts) (*StateSpaceResult, err
 			}
 		}
 		sys, _ := NewGain(D, tf.Dt)
+		sys.InputName = copyStringSlice(tf.InputName)
+		sys.OutputName = copyStringSlice(tf.OutputName)
 		return &StateSpaceResult{Sys: sys, MinimalOrder: 0, BlockSizes: degrees}, nil
 	}
 
@@ -587,6 +599,8 @@ func (tf *TransferFunc) StateSpace(opts *StateSpaceOpts) (*StateSpaceResult, err
 		sys.Delay = slice2DToDense(tf.Delay)
 	}
 
+	sys.InputName = copyStringSlice(tf.InputName)
+	sys.OutputName = copyStringSlice(tf.OutputName)
 	return &StateSpaceResult{
 		Sys:          sys,
 		MinimalOrder: totalN,

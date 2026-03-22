@@ -2,6 +2,7 @@ package controlsys
 
 import (
 	"fmt"
+	"strings"
 
 	"gonum.org/v1/gonum/mat"
 )
@@ -85,6 +86,165 @@ func propagateNames(result, src *System) {
 func propagateIONames(result, src *System) {
 	result.InputName = copyStringSlice(src.InputName)
 	result.OutputName = copyStringSlice(src.OutputName)
+}
+
+func expandName(name string, count int) []string {
+	if count == 1 {
+		return []string{name}
+	}
+	out := make([]string, count)
+	for i := range out {
+		out[i] = fmt.Sprintf("%s(%d)", name, i+1)
+	}
+	return out
+}
+
+func autoLabel(prefix string, count int) []string {
+	out := make([]string, count)
+	for i := range out {
+		out[i] = fmt.Sprintf("%s%d", prefix, i+1)
+	}
+	return out
+}
+
+func (sys *System) SetInputName(names ...string) error {
+	_, m, _ := sys.Dims()
+	if len(names) == 1 && m > 1 {
+		sys.InputName = expandName(names[0], m)
+		return nil
+	}
+	if len(names) != m {
+		return fmt.Errorf("SetInputName: got %d names for %d inputs: %w", len(names), m, ErrDimensionMismatch)
+	}
+	sys.InputName = copyStringSlice(names)
+	return nil
+}
+
+func (sys *System) SetOutputName(names ...string) error {
+	_, _, p := sys.Dims()
+	if len(names) == 1 && p > 1 {
+		sys.OutputName = expandName(names[0], p)
+		return nil
+	}
+	if len(names) != p {
+		return fmt.Errorf("SetOutputName: got %d names for %d outputs: %w", len(names), p, ErrDimensionMismatch)
+	}
+	sys.OutputName = copyStringSlice(names)
+	return nil
+}
+
+func (sys *System) SetStateName(names ...string) error {
+	n, _, _ := sys.Dims()
+	if len(names) == 1 && n > 1 {
+		sys.StateName = expandName(names[0], n)
+		return nil
+	}
+	if len(names) != n {
+		return fmt.Errorf("SetStateName: got %d names for %d states: %w", len(names), n, ErrDimensionMismatch)
+	}
+	sys.StateName = copyStringSlice(names)
+	return nil
+}
+
+func (sys *System) inputLabels() []string {
+	_, m, _ := sys.Dims()
+	if sys.InputName != nil {
+		return sys.InputName
+	}
+	return autoLabel("u", m)
+}
+
+func (sys *System) outputLabels() []string {
+	_, _, p := sys.Dims()
+	if sys.OutputName != nil {
+		return sys.OutputName
+	}
+	return autoLabel("y", p)
+}
+
+func (sys *System) stateLabels() []string {
+	n, _, _ := sys.Dims()
+	if sys.StateName != nil {
+		return sys.StateName
+	}
+	return autoLabel("x", n)
+}
+
+func (sys *System) String() string {
+	n, m, p := sys.Dims()
+	if n == 0 && m == 0 && p == 0 {
+		return "Empty state-space model.\n"
+	}
+
+	sl := sys.stateLabels()
+	il := sys.inputLabels()
+	ol := sys.outputLabels()
+
+	var b strings.Builder
+
+	maxColW := func(labels []string) int {
+		w := 0
+		for _, l := range labels {
+			if len(l) > w {
+				w = len(l)
+			}
+		}
+		if w < 8 {
+			w = 8
+		}
+		return w
+	}
+
+	writeMatrix := func(name string, mat *mat.Dense, rowLabels, colLabels []string) {
+		if mat == nil {
+			return
+		}
+		r, c := mat.Dims()
+		if r == 0 || c == 0 {
+			return
+		}
+
+		colW := maxColW(colLabels)
+		rowW := 0
+		for _, l := range rowLabels {
+			if len(l) > rowW {
+				rowW = len(l)
+			}
+		}
+		if rowW < 4 {
+			rowW = 4
+		}
+
+		fmt.Fprintf(&b, "%s =\n", name)
+		fmt.Fprintf(&b, "%*s", rowW+2, "")
+		for _, l := range colLabels {
+			fmt.Fprintf(&b, "%*s", colW+1, l)
+		}
+		b.WriteString("\n")
+		raw := mat.RawMatrix()
+		for i := 0; i < r; i++ {
+			fmt.Fprintf(&b, "  %*s", rowW, rowLabels[i])
+			for j := 0; j < c; j++ {
+				fmt.Fprintf(&b, "%*g", colW+1, raw.Data[i*raw.Stride+j])
+			}
+			b.WriteString("\n")
+		}
+		b.WriteString("\n")
+	}
+
+	if n > 0 {
+		writeMatrix("A", sys.A, sl, sl)
+		writeMatrix("B", sys.B, sl, il)
+		writeMatrix("C", sys.C, ol, sl)
+	}
+	writeMatrix("D", sys.D, ol, il)
+
+	if sys.Dt == 0 {
+		b.WriteString("Continuous-time state-space model.\n")
+	} else {
+		fmt.Fprintf(&b, "Discrete-time state-space model (Dt = %g).\n", sys.Dt)
+	}
+	return b.String()
 }
 
 func (sys *System) SelectByIndex(inputs, outputs []int) (*System, error) {

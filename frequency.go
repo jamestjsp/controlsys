@@ -9,9 +9,11 @@ import (
 )
 
 type FreqResponseMatrix struct {
-	Data  []complex128
-	NFreq int
-	P, M  int
+	Data       []complex128
+	NFreq      int
+	P, M       int
+	InputName  []string
+	OutputName []string
 }
 
 func (f *FreqResponseMatrix) At(freq, output, input int) complex128 {
@@ -19,10 +21,12 @@ func (f *FreqResponseMatrix) At(freq, output, input int) complex128 {
 }
 
 type BodeResult struct {
-	Omega []float64
-	magDB []float64
-	phase []float64
-	p, m  int
+	Omega      []float64
+	magDB      []float64
+	phase      []float64
+	p, m       int
+	InputName  []string
+	OutputName []string
 }
 
 func (b *BodeResult) MagDBAt(freq, output, input int) float64 {
@@ -46,6 +50,8 @@ func (sys *System) FreqResponse(omega []float64) (*FreqResponseMatrix, error) {
 			return nil, err
 		}
 		applyIODelayPhase(sys, omega, resp.Data, p, m)
+		resp.InputName = copyStringSlice(sys.InputName)
+		resp.OutputName = copyStringSlice(sys.OutputName)
 		return resp, nil
 	}
 
@@ -70,7 +76,11 @@ func (sys *System) FreqResponse(omega []float64) (*FreqResponseMatrix, error) {
 
 	applyIODelayPhase(sys, omega, data, p, m)
 
-	return &FreqResponseMatrix{Data: data, NFreq: nw, P: p, M: m}, nil
+	return &FreqResponseMatrix{
+		Data: data, NFreq: nw, P: p, M: m,
+		InputName:  copyStringSlice(sys.InputName),
+		OutputName: copyStringSlice(sys.OutputName),
+	}, nil
 }
 
 func (sys *System) Bode(omega []float64, nPoints int) (*BodeResult, error) {
@@ -120,7 +130,11 @@ func (sys *System) Bode(omega []float64, nPoints int) (*BodeResult, error) {
 		}
 	}
 
-	return &BodeResult{Omega: omega, magDB: magDB, phase: phase, p: p, m: m}, nil
+	return &BodeResult{
+		Omega: omega, magDB: magDB, phase: phase, p: p, m: m,
+		InputName:  copyStringSlice(sys.InputName),
+		OutputName: copyStringSlice(sys.OutputName),
+	}, nil
 }
 
 func (sys *System) EvalFr(s complex128) ([][]complex128, error) {
@@ -526,10 +540,12 @@ func cMulDiagLeftInto(dst, diag, a []complex128, rows, cols int) {
 
 // NicholsResult holds Nichols chart data: open-loop phase (degrees) vs magnitude (dB).
 type NicholsResult struct {
-	Omega []float64
-	magDB []float64
-	phase []float64
-	p, m  int
+	Omega      []float64
+	magDB      []float64
+	phase      []float64
+	p, m       int
+	InputName  []string
+	OutputName []string
 }
 
 func (r *NicholsResult) MagDBAt(freq, output, input int) float64 {
@@ -565,19 +581,23 @@ func (sys *System) Nichols(omega []float64, nPoints int) (*NicholsResult, error)
 	}
 
 	return &NicholsResult{
-		Omega: bode.Omega,
-		magDB: bode.magDB,
-		phase: phase,
-		p:     p,
-		m:     m,
+		Omega:      bode.Omega,
+		magDB:      bode.magDB,
+		phase:      phase,
+		p:          p,
+		m:          m,
+		InputName:  bode.InputName,
+		OutputName: bode.OutputName,
 	}, nil
 }
 
 // SigmaResult holds singular value frequency response data.
 type SigmaResult struct {
-	Omega []float64
-	sv    []float64
-	nSV   int
+	Omega      []float64
+	sv         []float64
+	nSV        int
+	InputName  []string
+	OutputName []string
 }
 
 func (r *SigmaResult) At(freq, svIndex int) float64 {
@@ -621,7 +641,7 @@ func (sys *System) Sigma(omega []float64, nPoints int) (*SigmaResult, error) {
 	_, m, p := sys.Dims()
 	nSV := min(p, m)
 	if nSV == 0 {
-		return &SigmaResult{Omega: omega, nSV: 0}, nil
+		return &SigmaResult{Omega: omega, nSV: 0, InputName: copyStringSlice(sys.InputName), OutputName: copyStringSlice(sys.OutputName)}, nil
 	}
 
 	resp, err := sys.FreqResponse(omega)
@@ -629,7 +649,7 @@ func (sys *System) Sigma(omega []float64, nPoints int) (*SigmaResult, error) {
 		return nil, err
 	}
 	if resp == nil {
-		return &SigmaResult{Omega: omega, nSV: nSV}, nil
+		return &SigmaResult{Omega: omega, nSV: nSV, InputName: copyStringSlice(sys.InputName), OutputName: copyStringSlice(sys.OutputName)}, nil
 	}
 
 	nw := len(omega)
@@ -641,7 +661,7 @@ func (sys *System) Sigma(omega []float64, nPoints int) (*SigmaResult, error) {
 		for k := range nw {
 			sv[k] = cmplx.Abs(data[k])
 		}
-		return &SigmaResult{Omega: omega, sv: sv, nSV: 1}, nil
+		return &SigmaResult{Omega: omega, sv: sv, nSV: 1, InputName: copyStringSlice(sys.InputName), OutputName: copyStringSlice(sys.OutputName)}, nil
 	}
 
 	ws := newSVDWorkspace(p, m)
@@ -664,7 +684,7 @@ func (sys *System) Sigma(omega []float64, nPoints int) (*SigmaResult, error) {
 		copy(allSV[k*nSV:], ws.sv[:nSV])
 	}
 
-	return &SigmaResult{Omega: omega, sv: allSV, nSV: nSV}, nil
+	return &SigmaResult{Omega: omega, sv: allSV, nSV: nSV, InputName: copyStringSlice(sys.InputName), OutputName: copyStringSlice(sys.OutputName)}, nil
 }
 
 func cInvertInto(dst, aug, src []complex128, n int) error {

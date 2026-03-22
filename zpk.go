@@ -6,10 +6,12 @@ import (
 )
 
 type ZPK struct {
-	Zeros [][][]complex128
-	Poles [][][]complex128
-	Gain  [][]float64
-	Dt    float64
+	Zeros      [][][]complex128
+	Poles      [][][]complex128
+	Gain       [][]float64
+	Dt         float64
+	InputName  []string
+	OutputName []string
 }
 
 func NewZPK(zeros, poles []complex128, gain, dt float64) (*ZPK, error) {
@@ -142,7 +144,11 @@ func (z *ZPK) FreqResponse(omega []float64) (*FreqResponseMatrix, error) {
 			}
 		}
 	}
-	return &FreqResponseMatrix{Data: data, NFreq: len(omega), P: p, M: m}, nil
+	return &FreqResponseMatrix{
+		Data: data, NFreq: len(omega), P: p, M: m,
+		InputName:  copyStringSlice(z.InputName),
+		OutputName: copyStringSlice(z.OutputName),
+	}, nil
 }
 
 func (z *ZPK) TransferFunction() (*TransferFunc, error) {
@@ -171,6 +177,8 @@ func (z *ZPK) TransferFunction() (*TransferFunc, error) {
 			tf.Num[i][j] = []float64(zeroPoly.Scale(z.Gain[i][j]))
 		}
 	}
+	tf.InputName = copyStringSlice(z.InputName)
+	tf.OutputName = copyStringSlice(z.OutputName)
 	return tf, nil
 }
 
@@ -209,6 +217,8 @@ func (tf *TransferFunc) ZPK() (*ZPK, error) {
 			z.Gain[i][j] = num[0] / tf.Den[i][0]
 		}
 	}
+	z.InputName = copyStringSlice(tf.InputName)
+	z.OutputName = copyStringSlice(tf.OutputName)
 	return z, nil
 }
 
@@ -221,6 +231,8 @@ func (sys *System) ZPKModel(opts *TransferFuncOpts) (*ZPKResult, error) {
 	if err != nil {
 		return nil, err
 	}
+	zpk.InputName = copyStringSlice(sys.InputName)
+	zpk.OutputName = copyStringSlice(sys.OutputName)
 	return &ZPKResult{
 		ZPK:          zpk,
 		MinimalOrder: tfResult.MinimalOrder,

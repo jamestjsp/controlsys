@@ -4,6 +4,7 @@ import (
 	"errors"
 	"math/cmplx"
 	"reflect"
+	"strings"
 	"testing"
 
 	"gonum.org/v1/gonum/mat"
@@ -589,5 +590,225 @@ func TestConnectByName_FullWorkflow(t *testing.T) {
 		if diff > nameTol {
 			t.Errorf("s=%v: H=%v, want %v (diff=%v)", s, hCl[0][0], hRef[0][0], diff)
 		}
+	}
+}
+
+func TestSetInputName_Validation(t *testing.T) {
+	sys, _ := New(
+		mat.NewDense(2, 2, []float64{-1, 0, 0, -2}),
+		mat.NewDense(2, 2, []float64{1, 0, 0, 1}),
+		mat.NewDense(1, 2, []float64{1, 0}),
+		mat.NewDense(1, 2, []float64{0, 0}),
+		0,
+	)
+
+	if err := sys.SetInputName("u1", "u2"); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(sys.InputName, []string{"u1", "u2"}) {
+		t.Errorf("InputName = %v, want [u1 u2]", sys.InputName)
+	}
+
+	err := sys.SetInputName("u1", "u2", "u3")
+	if !errors.Is(err, ErrDimensionMismatch) {
+		t.Errorf("expected ErrDimensionMismatch, got %v", err)
+	}
+}
+
+func TestSetInputName_VectorExpansion(t *testing.T) {
+	sys, _ := New(
+		mat.NewDense(2, 2, []float64{-1, 0, 0, -2}),
+		mat.NewDense(2, 3, []float64{1, 0, 0, 0, 1, 0}),
+		mat.NewDense(1, 2, []float64{1, 0}),
+		mat.NewDense(1, 3, []float64{0, 0, 0}),
+		0,
+	)
+
+	if err := sys.SetInputName("ctrl"); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"ctrl(1)", "ctrl(2)", "ctrl(3)"}
+	if !reflect.DeepEqual(sys.InputName, want) {
+		t.Errorf("InputName = %v, want %v", sys.InputName, want)
+	}
+}
+
+func TestSetStateName_VectorExpansion(t *testing.T) {
+	sys, _ := New(
+		mat.NewDense(2, 2, []float64{-1, 0, 0, -2}),
+		mat.NewDense(2, 1, []float64{1, 0}),
+		mat.NewDense(1, 2, []float64{1, 0}),
+		mat.NewDense(1, 1, []float64{0}),
+		0,
+	)
+
+	if err := sys.SetStateName("state"); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"state(1)", "state(2)"}
+	if !reflect.DeepEqual(sys.StateName, want) {
+		t.Errorf("StateName = %v, want %v", sys.StateName, want)
+	}
+}
+
+func TestSystem_String(t *testing.T) {
+	sys, _ := New(
+		mat.NewDense(2, 2, []float64{0, 1, -5, -2}),
+		mat.NewDense(2, 1, []float64{0, 3}),
+		mat.NewDense(1, 2, []float64{0, 1}),
+		mat.NewDense(1, 1, []float64{0}),
+		0,
+	)
+
+	s := sys.String()
+	if !strings.Contains(s, "A =") {
+		t.Error("missing A matrix header")
+	}
+	if !strings.Contains(s, "B =") {
+		t.Error("missing B matrix header")
+	}
+	if !strings.Contains(s, "C =") {
+		t.Error("missing C matrix header")
+	}
+	if !strings.Contains(s, "D =") {
+		t.Error("missing D matrix header")
+	}
+	if !strings.Contains(s, "x1") {
+		t.Error("missing auto-generated state label x1")
+	}
+	if !strings.Contains(s, "u1") {
+		t.Error("missing auto-generated input label u1")
+	}
+	if !strings.Contains(s, "y1") {
+		t.Error("missing auto-generated output label y1")
+	}
+	if !strings.Contains(s, "Continuous-time") {
+		t.Error("missing continuous-time footer")
+	}
+}
+
+func TestSystem_String_Named(t *testing.T) {
+	sys, _ := New(
+		mat.NewDense(1, 1, []float64{-1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{0}),
+		0.1,
+	)
+	sys.InputName = []string{"voltage"}
+	sys.OutputName = []string{"speed"}
+	sys.StateName = []string{"omega"}
+
+	s := sys.String()
+	if !strings.Contains(s, "voltage") {
+		t.Error("missing custom input name")
+	}
+	if !strings.Contains(s, "speed") {
+		t.Error("missing custom output name")
+	}
+	if !strings.Contains(s, "omega") {
+		t.Error("missing custom state name")
+	}
+	if !strings.Contains(s, "Discrete-time") {
+		t.Error("missing discrete-time footer")
+	}
+}
+
+func TestTransferFunc_Names(t *testing.T) {
+	sys, _ := New(
+		mat.NewDense(2, 2, []float64{-1, 0.5, 0, -2}),
+		mat.NewDense(2, 1, []float64{1, 0}),
+		mat.NewDense(1, 2, []float64{0, 1}),
+		mat.NewDense(1, 1, []float64{0}),
+		0,
+	)
+	sys.InputName = []string{"force"}
+	sys.OutputName = []string{"position"}
+
+	tfResult, err := sys.TransferFunction(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(tfResult.TF.InputName, []string{"force"}) {
+		t.Errorf("TF InputName = %v, want [force]", tfResult.TF.InputName)
+	}
+	if !reflect.DeepEqual(tfResult.TF.OutputName, []string{"position"}) {
+		t.Errorf("TF OutputName = %v, want [position]", tfResult.TF.OutputName)
+	}
+
+	ssResult, err := tfResult.TF.StateSpace(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(ssResult.Sys.InputName, []string{"force"}) {
+		t.Errorf("SS InputName = %v, want [force]", ssResult.Sys.InputName)
+	}
+	if !reflect.DeepEqual(ssResult.Sys.OutputName, []string{"position"}) {
+		t.Errorf("SS OutputName = %v, want [position]", ssResult.Sys.OutputName)
+	}
+}
+
+func TestZPK_Names(t *testing.T) {
+	sys, _ := New(
+		mat.NewDense(1, 1, []float64{-1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{0}),
+		0,
+	)
+	sys.InputName = []string{"u"}
+	sys.OutputName = []string{"y"}
+
+	zpkResult, err := sys.ZPKModel(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(zpkResult.ZPK.InputName, []string{"u"}) {
+		t.Errorf("ZPK InputName = %v, want [u]", zpkResult.ZPK.InputName)
+	}
+	if !reflect.DeepEqual(zpkResult.ZPK.OutputName, []string{"y"}) {
+		t.Errorf("ZPK OutputName = %v, want [y]", zpkResult.ZPK.OutputName)
+	}
+}
+
+func TestStep_OutputName(t *testing.T) {
+	sys, _ := New(
+		mat.NewDense(1, 1, []float64{-1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{0}),
+		0,
+	)
+	sys.OutputName = []string{"temp"}
+
+	resp, err := Step(sys, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(resp.OutputName, []string{"temp"}) {
+		t.Errorf("OutputName = %v, want [temp]", resp.OutputName)
+	}
+}
+
+func TestFreqResponse_Names(t *testing.T) {
+	sys, _ := New(
+		mat.NewDense(1, 1, []float64{-1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{0}),
+		0,
+	)
+	sys.InputName = []string{"u"}
+	sys.OutputName = []string{"y"}
+
+	fr, err := sys.FreqResponse([]float64{0.1, 1, 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(fr.InputName, []string{"u"}) {
+		t.Errorf("InputName = %v, want [u]", fr.InputName)
+	}
+	if !reflect.DeepEqual(fr.OutputName, []string{"y"}) {
+		t.Errorf("OutputName = %v, want [y]", fr.OutputName)
 	}
 }
