@@ -451,11 +451,9 @@ func mergeDelays(existing, decomposed []float64) []float64 {
 	n := len(decomposed)
 	out := make([]float64, n)
 	copy(out, decomposed)
-	if existing != nil {
-		for i := range existing {
-			if i < n {
-				out[i] += existing[i]
-			}
+	for i := range existing {
+		if i < n {
+			out[i] += existing[i]
 		}
 	}
 	return out
