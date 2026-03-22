@@ -32,4 +32,9 @@ var (
 	ErrNotMinimal       = errors.New("controlsys: gramian not positive definite; system may not be minimal")
 	ErrInvalidOrder     = errors.New("controlsys: reduction order out of range")
 	ErrSingularA22      = errors.New("controlsys: A22 block singular; singular perturbation not applicable")
+
+	ErrNotSISO        = errors.New("controlsys: system must be single-input")
+	ErrConjugatePairs = errors.New("controlsys: complex poles must appear in conjugate pairs")
+	ErrPoleCount      = errors.New("controlsys: number of poles must equal state dimension")
+	ErrUncontrollable = errors.New("controlsys: uncontrollable mode cannot be assigned")
 )

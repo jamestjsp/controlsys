@@ -949,6 +949,116 @@ func BenchmarkBalred(b *testing.B) {
 	}
 }
 
+// --- Controller & Observer Benchmarks ---
+
+func benchPlace(b *testing.B, n, m int) {
+	A := benchStableA(n)
+	B := benchB(n, m)
+	poles := make([]complex128, n)
+	for i := range n {
+		poles[i] = complex(-float64(i+1)*2, 0)
+	}
+	b.ResetTimer()
+	for range b.N {
+		Place(A, B, poles)
+	}
+}
+
+func BenchmarkPlace_N10_M2(b *testing.B)  { benchPlace(b, 10, 2) }
+func BenchmarkPlace_N50_M5(b *testing.B)  { benchPlace(b, 50, 5) }
+func BenchmarkPlace_N100_M5(b *testing.B) { benchPlace(b, 100, 5) }
+
+func benchAcker(b *testing.B, n int) {
+	A := benchStableA(n)
+	bCol := mat.NewDense(n, 1, nil)
+	bCol.Set(0, 0, 1)
+	poles := make([]complex128, n)
+	for i := range n {
+		poles[i] = complex(-float64(i+1)*2, 0)
+	}
+	b.ResetTimer()
+	for range b.N {
+		Acker(A, bCol, poles)
+	}
+}
+
+func BenchmarkAcker_N5(b *testing.B)  { benchAcker(b, 5) }
+func BenchmarkAcker_N10(b *testing.B) { benchAcker(b, 10) }
+
+func benchLqr(b *testing.B, n, m int) {
+	A := benchStableA(n)
+	B := benchB(n, m)
+	Q := benchSymPD(n)
+	R := mat.NewDense(m, m, nil)
+	for i := range m {
+		R.Set(i, i, 1)
+	}
+	b.ResetTimer()
+	for range b.N {
+		Lqr(A, B, Q, R, nil)
+	}
+}
+
+func BenchmarkLqr_N10_M2(b *testing.B)  { benchLqr(b, 10, 2) }
+func BenchmarkLqr_N50_M5(b *testing.B)  { benchLqr(b, 50, 5) }
+func BenchmarkLqr_N100_M5(b *testing.B) { benchLqr(b, 100, 5) }
+
+func benchKalman(b *testing.B, n, m, p int) {
+	sys := benchSys(n, m, p)
+	Qn := mat.NewDense(m, m, nil)
+	for i := range m {
+		Qn.Set(i, i, 1)
+	}
+	Rn := mat.NewDense(p, p, nil)
+	for i := range p {
+		Rn.Set(i, i, 1)
+	}
+	b.ResetTimer()
+	for range b.N {
+		Kalman(sys, Qn, Rn)
+	}
+}
+
+func BenchmarkKalman_N10_M2_P3(b *testing.B)  { benchKalman(b, 10, 2, 3) }
+func BenchmarkKalman_N50_M5_P5(b *testing.B)  { benchKalman(b, 50, 5, 5) }
+func BenchmarkKalman_N100_M5_P5(b *testing.B) { benchKalman(b, 100, 5, 5) }
+
+func benchEstim(b *testing.B, n, m, p int) {
+	sys := benchSys(n, m, p)
+	L := mat.NewDense(n, p, nil)
+	for i := range min(n, p) {
+		L.Set(i, i, 1)
+	}
+	b.ResetTimer()
+	for range b.N {
+		Estim(sys, L)
+	}
+}
+
+func BenchmarkEstim_N10_M2_P3(b *testing.B)  { benchEstim(b, 10, 2, 3) }
+func BenchmarkEstim_N50_M5_P5(b *testing.B)  { benchEstim(b, 50, 5, 5) }
+func BenchmarkEstim_N100_M5_P5(b *testing.B) { benchEstim(b, 100, 5, 5) }
+
+func benchReg(b *testing.B, n, m, p int) {
+	sys := benchSys(n, m, p)
+	K := mat.NewDense(m, n, nil)
+	L := mat.NewDense(n, p, nil)
+	for i := range min(m, n) {
+		K.Set(i, i, 1)
+	}
+	for i := range min(n, p) {
+		L.Set(i, i, 1)
+	}
+	b.ResetTimer()
+	for range b.N {
+		Reg(sys, K, L)
+	}
+}
+
+func BenchmarkReg_N10_M2_P3(b *testing.B)  { benchReg(b, 10, 2, 3) }
+func BenchmarkReg_N50_M5_P5(b *testing.B)  { benchReg(b, 50, 5, 5) }
+func BenchmarkReg_N100_M5_P5(b *testing.B) { benchReg(b, 100, 5, 5) }
+
 func benchSys(n, m, p int) *System {
 	A := mat.NewDense(n, n, nil)
 	for i := 0; i < n; i++ {

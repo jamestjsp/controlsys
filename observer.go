@@ -1,0 +1,367 @@
+package controlsys
+
+import (
+	"fmt"
+
+	"gonum.org/v1/gonum/blas"
+	"gonum.org/v1/gonum/blas/blas64"
+	"gonum.org/v1/gonum/mat"
+)
+
+// Lqe computes the Kalman estimator gain via duality with LQR.
+// It solves the continuous CARE for the dual system (A', C', G*Qn*G', Rn)
+// and returns observer gain L (n×p) such that eig(A - L*C) is stable.
+//
+// A is n×n, G is n×g (noise input), C is p×n, Qn is g×g, Rn is p×p.
+func Lqe(A, G, C, Qn, Rn *mat.Dense) (*RiccatiResult, error) {
+	na, nac := A.Dims()
+	if na != nac {
+		return nil, ErrDimensionMismatch
+	}
+	n := na
+	ng, g := G.Dims()
+	if ng != n {
+		return nil, ErrDimensionMismatch
+	}
+	p, cn := C.Dims()
+	if cn != n {
+		return nil, ErrDimensionMismatch
+	}
+	qr, qc := Qn.Dims()
+	if qr != g || qc != g {
+		return nil, ErrDimensionMismatch
+	}
+	rr, rc := Rn.Dims()
+	if rr != p || rc != p {
+		return nil, ErrDimensionMismatch
+	}
+
+	if n == 0 {
+		return &RiccatiResult{X: &mat.Dense{}, K: &mat.Dense{}, Eig: nil}, nil
+	}
+
+	gRaw := G.RawMatrix()
+	qnRaw := Qn.RawMatrix()
+
+	// GQnGt = G * Qn * G' via BLAS: tmp = G*Qn, then GQnGt = tmp*G'
+	gqnData := make([]float64, n*g)
+	blas64.Gemm(blas.NoTrans, blas.NoTrans,
+		1, blas64.General{Rows: n, Cols: g, Data: gRaw.Data, Stride: gRaw.Stride},
+		blas64.General{Rows: g, Cols: g, Data: qnRaw.Data, Stride: qnRaw.Stride},
+		0, blas64.General{Rows: n, Cols: g, Data: gqnData, Stride: g})
+
+	gqngtData := make([]float64, n*n)
+	blas64.Gemm(blas.NoTrans, blas.Trans,
+		1, blas64.General{Rows: n, Cols: g, Data: gqnData, Stride: g},
+		blas64.General{Rows: n, Cols: g, Data: gRaw.Data, Stride: gRaw.Stride},
+		0, blas64.General{Rows: n, Cols: n, Data: gqngtData, Stride: n})
+	GQnGt := mat.NewDense(n, n, gqngtData)
+
+	// Transpose A and C into flat arrays for Care(A', C', ...)
+	atData := make([]float64, n*n)
+	aRaw := A.RawMatrix()
+	for i := range n {
+		for j := range n {
+			atData[i*n+j] = aRaw.Data[j*aRaw.Stride+i]
+		}
+	}
+	At := mat.NewDense(n, n, atData)
+
+	cRaw := C.RawMatrix()
+	ctData := make([]float64, n*p)
+	for i := range n {
+		for j := range p {
+			ctData[i*p+j] = cRaw.Data[j*cRaw.Stride+i]
+		}
+	}
+	Ct := mat.NewDense(n, p, ctData)
+
+	res, err := Care(At, Ct, GQnGt, Rn, nil)
+	if err != nil {
+		return nil, fmt.Errorf("Lqe: %w", err)
+	}
+
+	// L = K_dual' (transpose pxn -> nxp)
+	L := transposeGain(res.K)
+
+	return &RiccatiResult{X: res.X, K: L, Eig: res.Eig, Rcnd: res.Rcnd}, nil
+}
+
+// Kalman computes the Kalman filter gain for a state-space system.
+// Noise is assumed to enter through the input matrix B (G = B).
+// Automatically handles continuous (CARE) and discrete (DARE) systems.
+//
+// Qn is m×m (process noise covariance), Rn is p×p (measurement noise covariance).
+func Kalman(sys *System, Qn, Rn *mat.Dense) (*RiccatiResult, error) {
+	n, m, p := sys.Dims()
+	if n == 0 {
+		return nil, fmt.Errorf("Kalman: system has no states: %w", ErrDimensionMismatch)
+	}
+	qr, qc := Qn.Dims()
+	if qr != m || qc != m {
+		return nil, ErrDimensionMismatch
+	}
+	rr, rc := Rn.Dims()
+	if rr != p || rc != p {
+		return nil, ErrDimensionMismatch
+	}
+
+	if sys.IsContinuous() {
+		return Lqe(sys.A, sys.B, sys.C, Qn, Rn)
+	}
+
+	GQnGt, At, Ct := dualRiccatiSetup(sys.A, sys.B, sys.C, Qn, n, m, p)
+
+	res, err := Dare(At, Ct, GQnGt, Rn, nil)
+	if err != nil {
+		return nil, fmt.Errorf("Kalman: %w", err)
+	}
+
+	L := transposeGain(res.K)
+
+	return &RiccatiResult{X: res.X, K: L, Eig: res.Eig, Rcnd: res.Rcnd}, nil
+}
+
+// Kalmd computes the discrete Kalman filter gain from a continuous plant
+// using Van Loan's method for noise covariance discretization.
+//
+// sys must be continuous. Qn is m×m, Rn is p×p, dt > 0.
+func Kalmd(sys *System, Qn, Rn *mat.Dense, dt float64) (*RiccatiResult, error) {
+	if sys.IsDiscrete() {
+		return nil, fmt.Errorf("Kalmd: %w", ErrWrongDomain)
+	}
+	if dt <= 0 {
+		return nil, ErrInvalidSampleTime
+	}
+	n, m, p := sys.Dims()
+	if n == 0 {
+		return nil, fmt.Errorf("Kalmd: system has no states: %w", ErrDimensionMismatch)
+	}
+	qr, qc := Qn.Dims()
+	if qr != m || qc != m {
+		return nil, ErrDimensionMismatch
+	}
+	rr, rc := Rn.Dims()
+	if rr != p || rc != p {
+		return nil, ErrDimensionMismatch
+	}
+
+	// GQnGt = B * Qn * B'
+	BQn := mat.NewDense(n, m, nil)
+	BQn.Mul(sys.B, Qn)
+	GQnGt := mat.NewDense(n, n, nil)
+	GQnGt.Mul(BQn, sys.B.T())
+
+	// Van Loan augmented matrix: F = [[-A, GQnGt], [0, A']] * dt
+	nn := 2 * n
+	F := mat.NewDense(nn, nn, nil)
+	aRaw := sys.A.RawMatrix()
+	gRaw := GQnGt.RawMatrix()
+	fRaw := F.RawMatrix()
+	for i := range n {
+		for j := range n {
+			fRaw.Data[i*fRaw.Stride+j] = -aRaw.Data[i*aRaw.Stride+j] * dt
+			fRaw.Data[i*fRaw.Stride+n+j] = gRaw.Data[i*gRaw.Stride+j] * dt
+			fRaw.Data[(n+i)*fRaw.Stride+n+j] = aRaw.Data[j*aRaw.Stride+i] * dt
+		}
+	}
+
+	var eF mat.Dense
+	eF.Exp(F)
+	efRaw := eF.RawMatrix()
+
+	// Ad = eF[n:2n, n:2n]'
+	adData := make([]float64, n*n)
+	for i := range n {
+		for j := range n {
+			adData[i*n+j] = efRaw.Data[(n+j)*efRaw.Stride+n+i]
+		}
+	}
+	Ad := mat.NewDense(n, n, adData)
+
+	// Qd = Ad * eF[0:n, n:2n]
+	f12Data := make([]float64, n*n)
+	for i := range n {
+		copy(f12Data[i*n:i*n+n], efRaw.Data[i*efRaw.Stride+n:i*efRaw.Stride+nn])
+	}
+	F12 := mat.NewDense(n, n, f12Data)
+	Qd := mat.NewDense(n, n, nil)
+	Qd.Mul(Ad, F12)
+
+	// Symmetrize Qd
+	qdRaw := Qd.RawMatrix()
+	symmetrize(qdRaw.Data, n, qdRaw.Stride)
+
+	// Rd = Rn / dt
+	Rd := mat.NewDense(p, p, nil)
+	rnRaw := Rn.RawMatrix()
+	rdRaw := Rd.RawMatrix()
+	for i := range p {
+		for j := range p {
+			rdRaw.Data[i*rdRaw.Stride+j] = rnRaw.Data[i*rnRaw.Stride+j] / dt
+		}
+	}
+
+	// Solve discrete Kalman: Dare(Ad', C', Qd, Rd), transpose K
+	adtData := make([]float64, n*n)
+	adR := Ad.RawMatrix()
+	for i := range n {
+		for j := range n {
+			adtData[i*n+j] = adR.Data[j*adR.Stride+i]
+		}
+	}
+	Adt := mat.NewDense(n, n, adtData)
+
+	cRaw := sys.C.RawMatrix()
+	ctData := make([]float64, n*p)
+	for i := range n {
+		for j := range p {
+			ctData[i*p+j] = cRaw.Data[j*cRaw.Stride+i]
+		}
+	}
+	Ct := mat.NewDense(n, p, ctData)
+
+	res, err := Dare(Adt, Ct, Qd, Rd, nil)
+	if err != nil {
+		return nil, fmt.Errorf("Kalmd: %w", err)
+	}
+
+	L := transposeGain(res.K)
+
+	return &RiccatiResult{X: res.X, K: L, Eig: res.Eig, Rcnd: res.Rcnd}, nil
+}
+
+// Estim constructs an estimator system from a plant and observer gain L.
+// The estimator takes [u; y] as input and produces [y_hat; x_hat] as output.
+//
+// L is n×p. Returns system with n states, (m+p) inputs, (p+n) outputs.
+func Estim(sys *System, L *mat.Dense) (*System, error) {
+	n, m, p := sys.Dims()
+	if n == 0 {
+		return nil, fmt.Errorf("Estim: system has no states: %w", ErrDimensionMismatch)
+	}
+	lr, lc := L.Dims()
+	if lr != n || lc != p {
+		return nil, ErrDimensionMismatch
+	}
+
+	// Ae = A - L*C
+	Ae := mat.NewDense(n, n, nil)
+	Ae.Mul(L, sys.C)
+	Ae.Sub(sys.A, Ae)
+
+	// Be = [B - L*D, L]
+	LD := mat.NewDense(n, m, nil)
+	LD.Mul(L, sys.D)
+	BmLD := mat.NewDense(n, m, nil)
+	BmLD.Sub(sys.B, LD)
+
+	mp := m + p
+	Be := mat.NewDense(n, mp, nil)
+	setBlock(Be, 0, 0, BmLD)
+	setBlock(Be, 0, m, L)
+
+	// Ce = [C; I_n]
+	pn := p + n
+	Ce := mat.NewDense(pn, n, nil)
+	setBlock(Ce, 0, 0, sys.C)
+	for i := range n {
+		Ce.Set(p+i, i, 1)
+	}
+
+	// De = [D, 0; 0, 0]
+	De := mat.NewDense(pn, mp, nil)
+	setBlock(De, 0, 0, sys.D)
+
+	return New(Ae, Be, Ce, De, sys.Dt)
+}
+
+// Reg constructs a regulator (observer-based controller) from a plant,
+// state-feedback gain K, and observer gain L.
+// The controller takes y (p) as input and produces u (m) as output.
+//
+// K is m×n, L is n×p. Returns system with n states, p inputs, m outputs.
+func Reg(sys *System, K, L *mat.Dense) (*System, error) {
+	n, m, p := sys.Dims()
+	if n == 0 {
+		return nil, fmt.Errorf("Reg: system has no states: %w", ErrDimensionMismatch)
+	}
+	kr, kc := K.Dims()
+	if kr != m || kc != n {
+		return nil, ErrDimensionMismatch
+	}
+	lr, lc := L.Dims()
+	if lr != n || lc != p {
+		return nil, ErrDimensionMismatch
+	}
+
+	// Ar = A - B*K - L*C + L*D*K
+	BK := mulDense(sys.B, K)
+	LC := mulDense(L, sys.C)
+	DK := mulDense(sys.D, K)
+	LDK := mulDense(L, DK)
+
+	Ar := mat.NewDense(n, n, nil)
+	Ar.Sub(sys.A, BK)
+	Ar.Sub(Ar, LC)
+	Ar.Add(Ar, LDK)
+
+	Br := denseCopy(L)
+
+	Cr := mat.NewDense(m, n, nil)
+	Cr.Scale(-1, K)
+
+	Dr := mat.NewDense(m, p, nil)
+
+	return New(Ar, Br, Cr, Dr, sys.Dt)
+}
+
+func transposeGain(K *mat.Dense) *mat.Dense {
+	kr, kc := K.Dims()
+	lData := make([]float64, kc*kr)
+	kRaw := K.RawMatrix()
+	for i := range kr {
+		src := kRaw.Data[i*kRaw.Stride:]
+		for j := range kc {
+			lData[j*kr+i] = src[j]
+		}
+	}
+	return mat.NewDense(kc, kr, lData)
+}
+
+func dualRiccatiSetup(A, B, C, Qn *mat.Dense, n, m, p int) (GQnGt, At, Ct *mat.Dense) {
+	bRaw := B.RawMatrix()
+	qnRaw := Qn.RawMatrix()
+
+	gqnData := make([]float64, n*m)
+	blas64.Gemm(blas.NoTrans, blas.NoTrans,
+		1, blas64.General{Rows: n, Cols: m, Data: bRaw.Data, Stride: bRaw.Stride},
+		blas64.General{Rows: m, Cols: m, Data: qnRaw.Data, Stride: qnRaw.Stride},
+		0, blas64.General{Rows: n, Cols: m, Data: gqnData, Stride: m})
+
+	gqngtData := make([]float64, n*n)
+	blas64.Gemm(blas.NoTrans, blas.Trans,
+		1, blas64.General{Rows: n, Cols: m, Data: gqnData, Stride: m},
+		blas64.General{Rows: n, Cols: m, Data: bRaw.Data, Stride: bRaw.Stride},
+		0, blas64.General{Rows: n, Cols: n, Data: gqngtData, Stride: n})
+	GQnGt = mat.NewDense(n, n, gqngtData)
+
+	aRaw := A.RawMatrix()
+	atData := make([]float64, n*n)
+	for i := range n {
+		for j := range n {
+			atData[i*n+j] = aRaw.Data[j*aRaw.Stride+i]
+		}
+	}
+	At = mat.NewDense(n, n, atData)
+
+	cRaw := C.RawMatrix()
+	ctData := make([]float64, n*p)
+	for i := range n {
+		for j := range p {
+			ctData[i*p+j] = cRaw.Data[j*cRaw.Stride+i]
+		}
+	}
+	Ct = mat.NewDense(n, p, ctData)
+	return
+}
