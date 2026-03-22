@@ -1873,3 +1873,583 @@ func TestFeedback_DelayInFeedbackPath(t *testing.T) {
 		t.Errorf("T(inf) = %.4f, want ~1", tFinal)
 	}
 }
+
+func TestBlkDiag_Empty(t *testing.T) {
+	_, err := BlkDiag()
+	if err == nil {
+		t.Fatal("expected error for 0 args")
+	}
+	if !errors.Is(err, ErrDimensionMismatch) {
+		t.Errorf("got %v, want ErrDimensionMismatch", err)
+	}
+}
+
+func TestBlkDiag_Single(t *testing.T) {
+	sys, _ := New(
+		mat.NewDense(2, 2, []float64{-1, 0.5, 0, -2}),
+		mat.NewDense(2, 1, []float64{1, 0}),
+		mat.NewDense(1, 2, []float64{0, 1}),
+		mat.NewDense(1, 1, []float64{0}),
+		0,
+	)
+	got, err := BlkDiag(sys)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n, m, p := got.Dims()
+	if n != 2 || m != 1 || p != 1 {
+		t.Fatalf("dims = (%d,%d,%d), want (2,1,1)", n, m, p)
+	}
+	for _, s := range []complex128{0.1i, 1i, 10i} {
+		h1 := evalTF(sys, s)
+		h2 := evalTF(got, s)
+		if cmplx.Abs(h1[0][0]-h2[0][0]) > 1e-10 {
+			t.Errorf("TF mismatch at s=%v: %v vs %v", s, h1[0][0], h2[0][0])
+		}
+	}
+}
+
+func TestBlkDiag_Two_MatchesAppend(t *testing.T) {
+	G1, _ := New(
+		mat.NewDense(2, 2, []float64{-1, 0.3, 0, -2}),
+		mat.NewDense(2, 1, []float64{1, 0}),
+		mat.NewDense(1, 2, []float64{0, 1}),
+		mat.NewDense(1, 1, []float64{0}),
+		0,
+	)
+	G2, _ := New(
+		mat.NewDense(1, 1, []float64{-3}),
+		mat.NewDense(1, 1, []float64{2}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{0}),
+		0,
+	)
+
+	blk, err := BlkDiag(G1, G2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	app, err := Append(G1, G2)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	nb, mb, pb := blk.Dims()
+	na, ma, pa := app.Dims()
+	if nb != na || mb != ma || pb != pa {
+		t.Fatalf("dim mismatch: blkdiag(%d,%d,%d) vs append(%d,%d,%d)", nb, mb, pb, na, ma, pa)
+	}
+
+	for _, s := range []complex128{0.1i, 1i, 10i} {
+		hb := evalTF(blk, s)
+		ha := evalTF(app, s)
+		for i := range hb {
+			for j := range hb[i] {
+				if cmplx.Abs(hb[i][j]-ha[i][j]) > 1e-10 {
+					t.Errorf("TF[%d][%d] mismatch at s=%v: %v vs %v", i, j, s, hb[i][j], ha[i][j])
+				}
+			}
+		}
+	}
+}
+
+func TestBlkDiag_Three_SISO(t *testing.T) {
+	G1, _ := New(
+		mat.NewDense(1, 1, []float64{-1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{0}),
+		0,
+	)
+	G2, _ := New(
+		mat.NewDense(1, 1, []float64{-2}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{0}),
+		0,
+	)
+	G3, _ := New(
+		mat.NewDense(1, 1, []float64{-3}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{0}),
+		0,
+	)
+
+	blk, err := BlkDiag(G1, G2, G3)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	n, m, p := blk.Dims()
+	if n != 3 || m != 3 || p != 3 {
+		t.Fatalf("dims = (%d,%d,%d), want (3,3,3)", n, m, p)
+	}
+
+	for _, s := range []complex128{0.1i, 1i, 10i} {
+		h := evalTF(blk, s)
+		h1 := evalTF(G1, s)
+		h2 := evalTF(G2, s)
+		h3 := evalTF(G3, s)
+
+		if cmplx.Abs(h[0][0]-h1[0][0]) > 1e-10 {
+			t.Errorf("(0,0) mismatch at s=%v", s)
+		}
+		if cmplx.Abs(h[1][1]-h2[0][0]) > 1e-10 {
+			t.Errorf("(1,1) mismatch at s=%v", s)
+		}
+		if cmplx.Abs(h[2][2]-h3[0][0]) > 1e-10 {
+			t.Errorf("(2,2) mismatch at s=%v", s)
+		}
+		if cmplx.Abs(h[0][1]) > 1e-10 || cmplx.Abs(h[1][0]) > 1e-10 {
+			t.Errorf("off-diagonal nonzero at s=%v", s)
+		}
+	}
+}
+
+func TestBlkDiag_AllGain(t *testing.T) {
+	G1, _ := NewGain(mat.NewDense(1, 2, []float64{1, 2}), 0)
+	G2, _ := NewGain(mat.NewDense(2, 1, []float64{3, 4}), 0)
+
+	blk, err := BlkDiag(G1, G2)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	n, m, p := blk.Dims()
+	if n != 0 {
+		t.Fatalf("expected n=0, got %d", n)
+	}
+	if m != 3 || p != 3 {
+		t.Fatalf("dims = (%d,%d,%d), want (0,3,3)", n, m, p)
+	}
+
+	wantD := [][]float64{
+		{1, 2, 0},
+		{0, 0, 3},
+		{0, 0, 4},
+	}
+	for i := range wantD {
+		for j := range wantD[i] {
+			if math.Abs(blk.D.At(i, j)-wantD[i][j]) > 1e-10 {
+				t.Errorf("D(%d,%d) = %v, want %v", i, j, blk.D.At(i, j), wantD[i][j])
+			}
+		}
+	}
+}
+
+func TestBlkDiag_DomainMismatch(t *testing.T) {
+	G1, _ := New(
+		mat.NewDense(1, 1, []float64{-1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{0}),
+		0,
+	)
+	G2, _ := New(
+		mat.NewDense(1, 1, []float64{0.5}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{0}),
+		0.01,
+	)
+	_, err := BlkDiag(G1, G2)
+	if err == nil {
+		t.Fatal("expected error for domain mismatch")
+	}
+	if !errors.Is(err, ErrDomainMismatch) {
+		t.Errorf("got %v, want ErrDomainMismatch", err)
+	}
+}
+
+func TestBlkDiag_NonSymmetricA(t *testing.T) {
+	G1, _ := New(
+		mat.NewDense(2, 2, []float64{-1, 0.7, -0.3, -2}),
+		mat.NewDense(2, 1, []float64{1, 0.5}),
+		mat.NewDense(1, 2, []float64{0.2, 1}),
+		mat.NewDense(1, 1, []float64{0.1}),
+		0,
+	)
+	G2, _ := New(
+		mat.NewDense(2, 2, []float64{-3, 1.2, -0.8, -4}),
+		mat.NewDense(2, 1, []float64{0, 1}),
+		mat.NewDense(1, 2, []float64{1, 0.3}),
+		mat.NewDense(1, 1, []float64{0}),
+		0,
+	)
+
+	blk, err := BlkDiag(G1, G2)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	n, m, p := blk.Dims()
+	if n != 4 || m != 2 || p != 2 {
+		t.Fatalf("dims = (%d,%d,%d), want (4,2,2)", n, m, p)
+	}
+
+	if math.Abs(blk.A.At(0, 2)) > 1e-15 || math.Abs(blk.A.At(2, 0)) > 1e-15 {
+		t.Error("off-diagonal blocks of A should be zero")
+	}
+
+	for _, s := range []complex128{0.1i, 1i, 10i} {
+		hblk := evalTF(blk, s)
+		h1 := evalTF(G1, s)
+		h2 := evalTF(G2, s)
+		if cmplx.Abs(hblk[0][0]-h1[0][0]) > 1e-10 {
+			t.Errorf("(0,0) mismatch at s=%v", s)
+		}
+		if cmplx.Abs(hblk[1][1]-h2[0][0]) > 1e-10 {
+			t.Errorf("(1,1) mismatch at s=%v", s)
+		}
+		if cmplx.Abs(hblk[0][1]) > 1e-10 || cmplx.Abs(hblk[1][0]) > 1e-10 {
+			t.Errorf("off-diagonal nonzero at s=%v", s)
+		}
+	}
+}
+
+func TestConnect_SeriesEquivalence(t *testing.T) {
+	G1, _ := New(
+		mat.NewDense(2, 2, []float64{-1, 0.5, 0, -2}),
+		mat.NewDense(2, 1, []float64{1, 0}),
+		mat.NewDense(1, 2, []float64{0, 1}),
+		mat.NewDense(1, 1, []float64{0}),
+		0,
+	)
+	G2, _ := New(
+		mat.NewDense(1, 1, []float64{-3}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{0}),
+		0,
+	)
+
+	aug, err := BlkDiag(G1, G2)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	Q := mat.NewDense(2, 2, nil)
+	Q.Set(1, 0, 1)
+
+	conn, err := Connect(aug, Q, []int{0}, []int{1})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ser, err := Series(G1, G2)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, s := range []complex128{0.1i, 1i, 10i} {
+		hc := evalTF(conn, s)
+		hs := evalTF(ser, s)
+		if cmplx.Abs(hc[0][0]-hs[0][0]) > 1e-10 {
+			t.Errorf("series mismatch at s=%v: connect=%v series=%v", s, hc[0][0], hs[0][0])
+		}
+	}
+}
+
+func TestConnect_FeedbackEquivalence(t *testing.T) {
+	P, _ := New(
+		mat.NewDense(2, 2, []float64{-1, 0.5, 0, -2}),
+		mat.NewDense(2, 1, []float64{1, 0}),
+		mat.NewDense(1, 2, []float64{0, 1}),
+		mat.NewDense(1, 1, []float64{0}),
+		0,
+	)
+	K, _ := New(
+		mat.NewDense(1, 1, []float64{-5}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{3}),
+		mat.NewDense(1, 1, []float64{0}),
+		0,
+	)
+
+	aug, err := BlkDiag(P, K)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	Q := mat.NewDense(2, 2, nil)
+	Q.Set(0, 1, -1)
+	Q.Set(1, 0, 1)
+
+	conn, err := Connect(aug, Q, []int{0}, []int{0})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	fb, err := Feedback(P, K, -1)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, s := range []complex128{0.1i, 1i, 10i} {
+		hc := evalTF(conn, s)
+		hf := evalTF(fb, s)
+		if cmplx.Abs(hc[0][0]-hf[0][0]) > 1e-10 {
+			t.Errorf("feedback mismatch at s=%v: connect=%v feedback=%v", s, hc[0][0], hf[0][0])
+		}
+	}
+}
+
+func TestConnect_AlgebraicLoop(t *testing.T) {
+	G, _ := New(
+		mat.NewDense(1, 1, []float64{-1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{1}),
+		0,
+	)
+
+	aug, _ := BlkDiag(G)
+
+	Q := mat.NewDense(1, 1, []float64{1})
+
+	_, err := Connect(aug, Q, []int{0}, []int{0})
+	if err == nil {
+		t.Fatal("expected algebraic loop error")
+	}
+	if !errors.Is(err, ErrAlgebraicLoop) {
+		t.Errorf("got %v, want ErrAlgebraicLoop", err)
+	}
+}
+
+func TestConnect_ZeroQ(t *testing.T) {
+	G, _ := New(
+		mat.NewDense(2, 2, []float64{-1, 0.3, -0.5, -2}),
+		mat.NewDense(2, 2, []float64{1, 0, 0, 1}),
+		mat.NewDense(2, 2, []float64{1, 0, 0, 1}),
+		mat.NewDense(2, 2, []float64{0, 0, 0, 0}),
+		0,
+	)
+
+	Q := mat.NewDense(2, 2, nil)
+
+	conn, err := Connect(G, Q, []int{0}, []int{1})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	n, m, p := conn.Dims()
+	if m != 1 || p != 1 {
+		t.Fatalf("dims = (%d,%d,%d), want (_,1,1)", n, m, p)
+	}
+
+	for _, s := range []complex128{0.1i, 1i, 10i} {
+		hc := evalTF(conn, s)
+		hg := evalTF(G, s)
+		if cmplx.Abs(hc[0][0]-hg[1][0]) > 1e-10 {
+			t.Errorf("ZeroQ mismatch at s=%v: got %v, want G[1][0]=%v", s, hc[0][0], hg[1][0])
+		}
+	}
+}
+
+func TestConnect_QDimMismatch(t *testing.T) {
+	G, _ := New(
+		mat.NewDense(1, 1, []float64{-1}),
+		mat.NewDense(1, 2, []float64{1, 0}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 2, []float64{0, 0}),
+		0,
+	)
+
+	Q := mat.NewDense(3, 3, nil)
+	_, err := Connect(G, Q, []int{0}, []int{0})
+	if err == nil {
+		t.Fatal("expected error for Q dim mismatch")
+	}
+	if !errors.Is(err, ErrDimensionMismatch) {
+		t.Errorf("got %v, want ErrDimensionMismatch", err)
+	}
+}
+
+func TestConnect_IndexOutOfRange(t *testing.T) {
+	G, _ := New(
+		mat.NewDense(1, 1, []float64{-1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{0}),
+		0,
+	)
+	Q := mat.NewDense(1, 1, nil)
+
+	_, err := Connect(G, Q, []int{5}, []int{0})
+	if err == nil {
+		t.Fatal("expected error for input index out of range")
+	}
+
+	_, err = Connect(G, Q, []int{0}, []int{5})
+	if err == nil {
+		t.Fatal("expected error for output index out of range")
+	}
+
+	_, err = Connect(G, Q, []int{-1}, []int{0})
+	if err == nil {
+		t.Fatal("expected error for negative input index")
+	}
+}
+
+func TestConnect_DuplicateIndex(t *testing.T) {
+	G, _ := New(
+		mat.NewDense(2, 2, []float64{-1, 0.3, -0.5, -2}),
+		mat.NewDense(2, 2, []float64{1, 0, 0, 1}),
+		mat.NewDense(2, 2, []float64{1, 0, 0, 1}),
+		mat.NewDense(2, 2, []float64{0, 0, 0, 0}),
+		0,
+	)
+	Q := mat.NewDense(2, 2, nil)
+
+	_, err := Connect(G, Q, []int{0, 0}, []int{0})
+	if err == nil {
+		t.Fatal("expected error for duplicate input index")
+	}
+
+	_, err = Connect(G, Q, []int{0}, []int{1, 1})
+	if err == nil {
+		t.Fatal("expected error for duplicate output index")
+	}
+}
+
+func TestConnect_AllGain(t *testing.T) {
+	G1, _ := NewGain(mat.NewDense(1, 1, []float64{2}), 0)
+	G2, _ := NewGain(mat.NewDense(1, 1, []float64{3}), 0)
+
+	aug, _ := BlkDiag(G1, G2)
+	Q := mat.NewDense(2, 2, nil)
+	Q.Set(1, 0, 1)
+
+	conn, err := Connect(aug, Q, []int{0}, []int{1})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	n, m, p := conn.Dims()
+	if n != 0 {
+		t.Fatalf("expected n=0 for gain-only, got %d", n)
+	}
+	if m != 1 || p != 1 {
+		t.Fatalf("dims = (%d,%d,%d), want (0,1,1)", n, m, p)
+	}
+
+	if math.Abs(conn.D.At(0, 0)-6) > 1e-10 {
+		t.Errorf("series gain: got %v, want 6", conn.D.At(0, 0))
+	}
+}
+
+func TestConnect_WithDelay_Error(t *testing.T) {
+	G, _ := New(
+		mat.NewDense(1, 1, []float64{-1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{0}),
+		0,
+	)
+	_ = G.SetDelay(mat.NewDense(1, 1, []float64{0.5}))
+
+	Q := mat.NewDense(1, 1, nil)
+	_, err := Connect(G, Q, []int{0}, []int{0})
+	if err == nil {
+		t.Fatal("expected error for system with delay")
+	}
+	if !errors.Is(err, ErrFeedbackDelay) {
+		t.Errorf("got %v, want ErrFeedbackDelay", err)
+	}
+}
+
+func TestConnect_NonSymmetricA(t *testing.T) {
+	G1, _ := New(
+		mat.NewDense(2, 2, []float64{-1, 0.7, -0.3, -2}),
+		mat.NewDense(2, 1, []float64{1, 0.5}),
+		mat.NewDense(1, 2, []float64{0.2, 1}),
+		mat.NewDense(1, 1, []float64{0}),
+		0,
+	)
+	G2, _ := New(
+		mat.NewDense(2, 2, []float64{-3, 1.2, -0.8, -4}),
+		mat.NewDense(2, 1, []float64{0, 1}),
+		mat.NewDense(1, 2, []float64{1, 0.3}),
+		mat.NewDense(1, 1, []float64{0}),
+		0,
+	)
+
+	aug, _ := BlkDiag(G1, G2)
+	Q := mat.NewDense(2, 2, nil)
+	Q.Set(1, 0, 1)
+	conn, err := Connect(aug, Q, []int{0}, []int{1})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ser, _ := Series(G1, G2)
+	for _, s := range []complex128{0.1i, 1i, 10i} {
+		hc := evalTF(conn, s)
+		hs := evalTF(ser, s)
+		if cmplx.Abs(hc[0][0]-hs[0][0]) > 1e-10 {
+			t.Errorf("non-sym series mismatch at s=%v: %v vs %v", s, hc[0][0], hs[0][0])
+		}
+	}
+}
+
+func TestConnect_MIMOThreeBlocks(t *testing.T) {
+	P, _ := New(
+		mat.NewDense(2, 2, []float64{-1, 0.5, -0.3, -2}),
+		mat.NewDense(2, 1, []float64{1, 0}),
+		mat.NewDense(1, 2, []float64{0, 1}),
+		mat.NewDense(1, 1, []float64{0}),
+		0,
+	)
+	K, _ := New(
+		mat.NewDense(1, 1, []float64{-5}),
+		mat.NewDense(1, 1, []float64{2}),
+		mat.NewDense(1, 1, []float64{3}),
+		mat.NewDense(1, 1, []float64{0}),
+		0,
+	)
+	S, _ := New(
+		mat.NewDense(1, 1, []float64{-10}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{10}),
+		mat.NewDense(1, 1, []float64{0}),
+		0,
+	)
+
+	aug, err := BlkDiag(P, K, S)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	n, m, p := aug.Dims()
+	if n != 4 || m != 3 || p != 3 {
+		t.Fatalf("aug dims = (%d,%d,%d), want (4,3,3)", n, m, p)
+	}
+
+	Q := mat.NewDense(3, 3, nil)
+	Q.Set(0, 2, -1)
+	Q.Set(1, 0, 0)
+	Q.Set(2, 0, 1)
+
+	conn, err := Connect(aug, Q, []int{0, 1}, []int{0})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cn, cm, cp := conn.Dims()
+	if cm != 2 || cp != 1 {
+		t.Fatalf("conn dims = (%d,%d,%d), want (%d,2,1)", cn, cm, cp, cn)
+	}
+
+	for _, s := range []complex128{0.1i, 1i, 10i} {
+		h := evalTF(conn, s)
+		if cmplx.IsNaN(h[0][0]) || cmplx.IsInf(h[0][0]) {
+			t.Errorf("TF is NaN/Inf at s=%v", s)
+		}
+	}
+
+	hdc := evalTF(conn, 0)
+	if cmplx.Abs(hdc[0][0]) < 1e-15 && cmplx.Abs(hdc[0][1]) < 1e-15 {
+		t.Error("DC gain should not be all zero")
+	}
+}

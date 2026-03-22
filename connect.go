@@ -1110,6 +1110,351 @@ func appendInternalDelay(sys, sys1, sys2 *System, n1, n2, m1, m2, p1, p2 int) {
 }
 
 
+func BlkDiag(systems ...*System) (*System, error) {
+	if len(systems) == 0 {
+		return nil, fmt.Errorf("blkdiag: no systems provided: %w", ErrDimensionMismatch)
+	}
+	if len(systems) == 1 {
+		return systems[0].Copy(), nil
+	}
+
+	dt := systems[0].Dt
+	for i := 1; i < len(systems); i++ {
+		if systems[i].Dt != dt {
+			return nil, fmt.Errorf("blkdiag: system %d Dt=%v != Dt=%v: %w", i, systems[i].Dt, dt, ErrDomainMismatch)
+		}
+	}
+
+	anyInternalDelay := false
+	for _, s := range systems {
+		if s.HasInternalDelay() {
+			anyInternalDelay = true
+			break
+		}
+	}
+
+	srcs := systems
+	if anyInternalDelay {
+		srcs = make([]*System, len(systems))
+		for i, s := range systems {
+			pulled, err := s.PullDelaysToLFT()
+			if err != nil {
+				return nil, err
+			}
+			srcs[i] = pulled
+		}
+	}
+
+	k := len(srcs)
+	ns := make([]int, k)
+	ms := make([]int, k)
+	ps := make([]int, k)
+	var nTotal, mTotal, pTotal int
+	for i, s := range srcs {
+		ns[i], ms[i], ps[i] = s.Dims()
+		nTotal += ns[i]
+		mTotal += ms[i]
+		pTotal += ps[i]
+	}
+
+	A := mat.NewDense(max(nTotal, 1), max(nTotal, 1), nil)
+	B := mat.NewDense(max(nTotal, 1), max(mTotal, 1), nil)
+	C := mat.NewDense(max(pTotal, 1), max(nTotal, 1), nil)
+	D := mat.NewDense(max(pTotal, 1), max(mTotal, 1), nil)
+
+	nOff, mOff, pOff := 0, 0, 0
+	for i, s := range srcs {
+		if ns[i] > 0 {
+			setBlock(A, nOff, nOff, s.A)
+			setBlock(B, nOff, mOff, s.B)
+			setBlock(C, pOff, nOff, s.C)
+		}
+		setBlock(D, pOff, mOff, s.D)
+		nOff += ns[i]
+		mOff += ms[i]
+		pOff += ps[i]
+	}
+
+	A = resizeDense(A, nTotal, nTotal)
+	B = resizeDense(B, nTotal, mTotal)
+	C = resizeDense(C, pTotal, nTotal)
+	D = resizeDense(D, pTotal, mTotal)
+
+	var delay *mat.Dense
+	hasIODelay := false
+	for _, s := range systems {
+		if s.Delay != nil {
+			hasIODelay = true
+			break
+		}
+	}
+	if hasIODelay {
+		delay = mat.NewDense(pTotal, mTotal, nil)
+		pOff, mOff = 0, 0
+		for i, s := range systems {
+			if s.Delay != nil {
+				setBlock(delay, pOff, mOff, s.Delay)
+			}
+			pOff += ps[i]
+			mOff += ms[i]
+		}
+	}
+
+	var inDel []float64
+	hasIn := false
+	for _, s := range systems {
+		if s.InputDelay != nil {
+			hasIn = true
+			break
+		}
+	}
+	if hasIn {
+		inDel = make([]float64, mTotal)
+		off := 0
+		for i, s := range systems {
+			if s.InputDelay != nil {
+				copy(inDel[off:], s.InputDelay)
+			}
+			off += ms[i]
+		}
+	}
+
+	var outDel []float64
+	hasOut := false
+	for _, s := range systems {
+		if s.OutputDelay != nil {
+			hasOut = true
+			break
+		}
+	}
+	if hasOut {
+		outDel = make([]float64, pTotal)
+		off := 0
+		for i, s := range systems {
+			if s.OutputDelay != nil {
+				copy(outDel[off:], s.OutputDelay)
+			}
+			off += ps[i]
+		}
+	}
+
+	if nTotal == 0 {
+		sys, _ := NewGain(D, dt)
+		sys.Delay = delay
+		sys.InputDelay = inDel
+		sys.OutputDelay = outDel
+		blkDiagInternalDelay(sys, srcs, ns, ms, ps, nTotal, mTotal, pTotal)
+		return sys, nil
+	}
+
+	sys, err := newNoCopy(A, B, C, D, dt)
+	if err != nil {
+		return nil, err
+	}
+	sys.Delay = delay
+	sys.InputDelay = inDel
+	sys.OutputDelay = outDel
+	blkDiagInternalDelay(sys, srcs, ns, ms, ps, nTotal, mTotal, pTotal)
+	return sys, nil
+}
+
+func blkDiagInternalDelay(sys *System, srcs []*System, ns, ms, ps []int, nTotal, mTotal, pTotal int) {
+	var NTotal int
+	for _, s := range srcs {
+		NTotal += len(s.InternalDelay)
+	}
+	if NTotal == 0 {
+		return
+	}
+
+	tau := make([]float64, 0, NTotal)
+	for _, s := range srcs {
+		tau = append(tau, s.InternalDelay...)
+	}
+
+	n := nTotal
+	m := mTotal
+	p := pTotal
+
+	b2 := mat.NewDense(max(n, 1), NTotal, nil)
+	c2 := mat.NewDense(NTotal, max(n, 1), nil)
+	d12 := mat.NewDense(max(p, 1), NTotal, nil)
+	d21 := mat.NewDense(NTotal, max(m, 1), nil)
+	d22 := mat.NewDense(NTotal, NTotal, nil)
+
+	nOff, mOff, pOff, NOff := 0, 0, 0, 0
+	for i, s := range srcs {
+		Ni := len(s.InternalDelay)
+		if Ni > 0 {
+			if ns[i] > 0 && s.B2 != nil {
+				setBlock(b2, nOff, NOff, s.B2)
+			}
+			if ns[i] > 0 && s.C2 != nil {
+				setBlock(c2, NOff, nOff, s.C2)
+			}
+			if s.D12 != nil {
+				setBlock(d12, pOff, NOff, s.D12)
+			}
+			if s.D21 != nil {
+				setBlock(d21, NOff, mOff, s.D21)
+			}
+			if s.D22 != nil {
+				setBlock(d22, NOff, NOff, s.D22)
+			}
+		}
+		nOff += ns[i]
+		mOff += ms[i]
+		pOff += ps[i]
+		NOff += Ni
+	}
+
+	sys.InternalDelay = tau
+	sys.B2 = resizeDense(b2, n, NTotal)
+	sys.C2 = resizeDense(c2, NTotal, n)
+	sys.D12 = resizeDense(d12, p, NTotal)
+	sys.D21 = resizeDense(d21, NTotal, m)
+	sys.D22 = resizeDense(d22, NTotal, NTotal)
+}
+
+func Connect(sys *System, Q *mat.Dense, inputs, outputs []int) (*System, error) {
+	if sys == nil {
+		return nil, fmt.Errorf("connect: system cannot be nil")
+	}
+	n, m, p := sys.Dims()
+
+	qr, qc := Q.Dims()
+	if qr != m || qc != p {
+		return nil, fmt.Errorf("connect: Q size %dx%d != %dx%d: %w", qr, qc, m, p, ErrDimensionMismatch)
+	}
+	if len(inputs) == 0 {
+		return nil, fmt.Errorf("connect: inputs must be non-empty: %w", ErrDimensionMismatch)
+	}
+	if len(outputs) == 0 {
+		return nil, fmt.Errorf("connect: outputs must be non-empty: %w", ErrDimensionMismatch)
+	}
+
+	inSeen := make(map[int]bool, len(inputs))
+	for _, idx := range inputs {
+		if idx < 0 || idx >= m {
+			return nil, fmt.Errorf("connect: input index %d out of range [0,%d): %w", idx, m, ErrDimensionMismatch)
+		}
+		if inSeen[idx] {
+			return nil, fmt.Errorf("connect: duplicate input index %d: %w", idx, ErrDimensionMismatch)
+		}
+		inSeen[idx] = true
+	}
+	outSeen := make(map[int]bool, len(outputs))
+	for _, idx := range outputs {
+		if idx < 0 || idx >= p {
+			return nil, fmt.Errorf("connect: output index %d out of range [0,%d): %w", idx, p, ErrDimensionMismatch)
+		}
+		if outSeen[idx] {
+			return nil, fmt.Errorf("connect: duplicate output index %d: %w", idx, ErrDimensionMismatch)
+		}
+		outSeen[idx] = true
+	}
+
+	if sys.HasDelay() || sys.HasInternalDelay() {
+		return nil, fmt.Errorf("connect: system has delays; absorb delays first: %w", ErrFeedbackDelay)
+	}
+
+	mExt := len(inputs)
+	pExt := len(outputs)
+
+	QD := mat.NewDense(m, m, nil)
+	QD.Mul(Q, sys.D)
+	IQD := mat.NewDense(m, m, nil)
+	for i := 0; i < m; i++ {
+		IQD.Set(i, i, 1)
+	}
+	IQD.Sub(IQD, QD)
+
+	var lu mat.LU
+	lu.Factorize(IQD)
+	if lu.Det() == 0 {
+		return nil, fmt.Errorf("connect: (I-Q*D) singular, algebraic loop: %w", ErrAlgebraicLoop)
+	}
+
+	E := mat.NewDense(m, m, nil)
+	eye := eyeDense(m)
+	if err := lu.SolveTo(E, false, eye); err != nil {
+		return nil, fmt.Errorf("connect: LU solve failed: %w", ErrSingularTransform)
+	}
+
+	EQ := mat.NewDense(m, p, nil)
+	EQ.Mul(E, Q)
+
+	if n == 0 {
+		Er := mat.NewDense(p, p, nil)
+		DEQ := mat.NewDense(p, p, nil)
+		DEQ.Mul(sys.D, EQ)
+		for i := 0; i < p; i++ {
+			Er.Set(i, i, 1)
+		}
+		Er.Add(Er, DEQ)
+
+		Dfull := mat.NewDense(p, m, nil)
+		Dfull.Mul(Er, sys.D)
+
+		Dcl := mat.NewDense(pExt, mExt, nil)
+		for ki, oi := range outputs {
+			for kj, ij := range inputs {
+				Dcl.Set(ki, kj, Dfull.At(oi, ij))
+			}
+		}
+		return NewGain(Dcl, sys.Dt)
+	}
+
+	BEQC := mat.NewDense(n, n, nil)
+	BEQ := mat.NewDense(n, p, nil)
+	BEQ.Mul(sys.B, EQ)
+	BEQC.Mul(BEQ, sys.C)
+	Acl := mat.NewDense(n, n, nil)
+	Acl.Add(sys.A, BEQC)
+
+	Bfull := mat.NewDense(n, m, nil)
+	Bfull.Mul(sys.B, E)
+
+	Er := mat.NewDense(p, p, nil)
+	DEQ := mat.NewDense(p, p, nil)
+	DEQ.Mul(sys.D, EQ)
+	for i := 0; i < p; i++ {
+		Er.Set(i, i, 1)
+	}
+	Er.Add(Er, DEQ)
+
+	Cfull := mat.NewDense(p, n, nil)
+	Cfull.Mul(Er, sys.C)
+
+	Dfull := mat.NewDense(p, m, nil)
+	Dfull.Mul(Er, sys.D)
+
+	Bcl := mat.NewDense(n, mExt, nil)
+	bfRaw := Bfull.RawMatrix()
+	bcRaw := Bcl.RawMatrix()
+	for k, j := range inputs {
+		for i := 0; i < n; i++ {
+			bcRaw.Data[i*bcRaw.Stride+k] = bfRaw.Data[i*bfRaw.Stride+j]
+		}
+	}
+
+	Ccl := mat.NewDense(pExt, n, nil)
+	cfRaw := Cfull.RawMatrix()
+	ccRaw := Ccl.RawMatrix()
+	for k, i := range outputs {
+		copy(ccRaw.Data[k*ccRaw.Stride:k*ccRaw.Stride+n], cfRaw.Data[i*cfRaw.Stride:i*cfRaw.Stride+n])
+	}
+
+	Dcl := mat.NewDense(pExt, mExt, nil)
+	for ki, oi := range outputs {
+		for kj, ij := range inputs {
+			Dcl.Set(ki, kj, Dfull.At(oi, ij))
+		}
+	}
+
+	return newNoCopy(Acl, Bcl, Ccl, Dcl, sys.Dt)
+}
+
 func buildSystem(A, B, C, D *mat.Dense, dt float64, delay *mat.Dense) (*System, error) {
 	if A == nil && B == nil && C == nil {
 		sys, err := NewGain(D, dt)

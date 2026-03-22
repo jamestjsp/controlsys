@@ -38,4 +38,5 @@ var (
 	ErrPoleCount      = errors.New("controlsys: number of poles must equal state dimension")
 	ErrUncontrollable    = errors.New("controlsys: uncontrollable mode cannot be assigned")
 	ErrInsufficientData  = errors.New("controlsys: insufficient data for estimation")
+	ErrInvalidExpression = errors.New("controlsys: invalid sumblk expression")
 )
