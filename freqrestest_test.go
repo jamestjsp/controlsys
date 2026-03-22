@@ -1,0 +1,269 @@
+package controlsys
+
+import (
+	"math"
+	"math/cmplx"
+	"math/rand"
+	"testing"
+
+	"gonum.org/v1/gonum/dsp/window"
+	"gonum.org/v1/gonum/mat"
+)
+
+func TestFreqRespEst_KnownSISO(t *testing.T) {
+	// Discrete first-order lowpass: A=0.9, B=0.1, C=1, D=0, dt=0.01
+	dt := 0.01
+	sys, err := New(
+		mat.NewDense(1, 1, []float64{0.9}),
+		mat.NewDense(1, 1, []float64{0.1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{0}),
+		dt,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	N := 4096
+	rng := rand.New(rand.NewSource(42))
+	uData := make([]float64, N)
+	for i := range uData {
+		uData[i] = rng.NormFloat64()
+	}
+	u := mat.NewDense(1, N, uData)
+
+	resp, err := sys.Simulate(u, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	est, err := FreqRespEst(u, resp.Y, dt, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Compare at mid frequencies (skip DC and near-Nyquist)
+	nFreq := len(est.Omega)
+	skipLow := nFreq / 10
+	skipHigh := nFreq * 9 / 10
+
+	for f := skipLow; f < skipHigh; f++ {
+		w := est.Omega[f]
+		z := cmplx.Exp(complex(0, w*dt))
+		hTrue := complex(0.1, 0) / (z - 0.9)
+
+		hEst := est.H.At(f, 0, 0)
+		relErr := cmplx.Abs(hEst-hTrue) / cmplx.Abs(hTrue)
+		if relErr > 0.15 {
+			t.Errorf("w=%.2f: relErr=%.3f, est=%v, true=%v", w, relErr, hEst, hTrue)
+		}
+	}
+}
+
+func TestFreqRespEst_Coherence(t *testing.T) {
+	dt := 0.01
+	sys, err := New(
+		mat.NewDense(1, 1, []float64{0.9}),
+		mat.NewDense(1, 1, []float64{0.1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{0}),
+		dt,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	N := 4096
+	rng := rand.New(rand.NewSource(123))
+	uData := make([]float64, N)
+	for i := range uData {
+		uData[i] = rng.NormFloat64()
+	}
+	u := mat.NewDense(1, N, uData)
+
+	resp, err := sys.Simulate(u, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// No noise: coherence should be near 1
+	est, err := FreqRespEst(u, resp.Y, dt, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	nFreq := len(est.Omega)
+	for f := nFreq / 10; f < nFreq*9/10; f++ {
+		coh := est.CoherenceAt(f, 0, 0)
+		if coh < 0.95 {
+			t.Errorf("w=%.2f: coherence=%.3f, want >0.95", est.Omega[f], coh)
+			break
+		}
+	}
+}
+
+func TestFreqRespEst_EdgeCases(t *testing.T) {
+	_, err := FreqRespEst(nil, nil, 0.01, nil)
+	if err == nil {
+		t.Error("expected error for nil input")
+	}
+
+	u := mat.NewDense(1, 10, nil)
+	y := mat.NewDense(1, 5, nil)
+	_, err = FreqRespEst(u, y, 0.01, nil)
+	if err == nil {
+		t.Error("expected error for mismatched lengths")
+	}
+
+	y2 := mat.NewDense(1, 10, nil)
+	_, err = FreqRespEst(u, y2, 0, nil)
+	if err == nil {
+		t.Error("expected error for dt=0")
+	}
+
+	_, err = FreqRespEst(u, y2, -1, nil)
+	if err == nil {
+		t.Error("expected error for dt<0")
+	}
+}
+
+func TestFreqRespEst_WindowOptions(t *testing.T) {
+	dt := 0.01
+	N := 512
+	rng := rand.New(rand.NewSource(99))
+	uData := make([]float64, N)
+	yData := make([]float64, N)
+	for i := range N {
+		uData[i] = rng.NormFloat64()
+		yData[i] = 0.5 * uData[i]
+	}
+	u := mat.NewDense(1, N, uData)
+	y := mat.NewDense(1, N, yData)
+
+	for _, wf := range []struct {
+		name string
+		fn   func([]float64) []float64
+	}{
+		{"Rectangular", window.Rectangular},
+		{"Blackman", window.Blackman},
+		{"Hamming", window.Hamming},
+	} {
+		t.Run(wf.name, func(t *testing.T) {
+			est, err := FreqRespEst(u, y, dt, &FreqRespEstOpts{Window: wf.fn})
+			if err != nil {
+				t.Fatal(err)
+			}
+			for f := range est.Omega {
+				h := est.H.At(f, 0, 0)
+				if math.IsNaN(real(h)) || math.IsInf(real(h), 0) {
+					t.Errorf("NaN/Inf at f=%d", f)
+					break
+				}
+			}
+		})
+	}
+}
+
+func TestFreqRespEst_FFTMethod(t *testing.T) {
+	dt := 0.01
+	sys, err := New(
+		mat.NewDense(1, 1, []float64{0.9}),
+		mat.NewDense(1, 1, []float64{0.1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{0}),
+		dt,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	N := 1024
+	rng := rand.New(rand.NewSource(55))
+	uData := make([]float64, N)
+	for i := range uData {
+		uData[i] = rng.NormFloat64()
+	}
+	u := mat.NewDense(1, N, uData)
+	resp, _ := sys.Simulate(u, nil, nil)
+
+	est, err := FreqRespEst(u, resp.Y, dt, &FreqRespEstOpts{Method: "fft", NFFT: N})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if est.Coherence != nil {
+		t.Error("expected nil coherence for fft method")
+	}
+
+	// Verify estimate at a few mid-range frequencies
+	nFreq := len(est.Omega)
+	for f := nFreq / 10; f < nFreq/2; f += nFreq / 20 {
+		w := est.Omega[f]
+		z := cmplx.Exp(complex(0, w*dt))
+		hTrue := complex(0.1, 0) / (z - 0.9)
+		hEst := est.H.At(f, 0, 0)
+		relErr := cmplx.Abs(hEst-hTrue) / cmplx.Abs(hTrue)
+		if relErr > 0.2 {
+			t.Errorf("w=%.2f: relErr=%.3f", w, relErr)
+		}
+	}
+}
+
+func TestFreqRespEst_MIMO(t *testing.T) {
+	dt := 0.01
+	sys, err := NewFromSlices(2, 2, 2,
+		[]float64{0.8, 0, 0, 0.6},
+		[]float64{0.2, 0, 0, 0.4},
+		[]float64{1, 0, 0, 1},
+		[]float64{0, 0, 0, 0},
+		dt,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	N := 4096
+	rng := rand.New(rand.NewSource(77))
+	uData := make([]float64, 2*N)
+	for i := range uData {
+		uData[i] = rng.NormFloat64()
+	}
+	u := mat.NewDense(2, N, uData)
+
+	resp, err := sys.Simulate(u, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	est, err := FreqRespEst(u, resp.Y, dt, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Verify diagonal dominance: off-diag should be much smaller than diagonal
+	nFreq := len(est.Omega)
+	offDiagSum, diagSum := 0.0, 0.0
+	for f := nFreq / 5; f < nFreq*4/5; f++ {
+		diagSum += cmplx.Abs(est.H.At(f, 0, 0)) + cmplx.Abs(est.H.At(f, 1, 1))
+		offDiagSum += cmplx.Abs(est.H.At(f, 0, 1)) + cmplx.Abs(est.H.At(f, 1, 0))
+	}
+	ratio := offDiagSum / diagSum
+	if ratio > 0.3 {
+		t.Errorf("off-diagonal/diagonal ratio = %.3f, want < 0.3", ratio)
+	}
+}
+
+func TestFreqRespEst_ShortData(t *testing.T) {
+	uData := []float64{1, 2, 3, 4, 5}
+	yData := []float64{0.5, 1, 1.5, 2, 2.5}
+	u := mat.NewDense(1, 5, uData)
+	y := mat.NewDense(1, 5, yData)
+
+	est, err := FreqRespEst(u, y, 0.01, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(est.Omega) == 0 {
+		t.Error("expected non-empty result for short data")
+	}
+}

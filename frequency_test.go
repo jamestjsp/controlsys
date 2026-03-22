@@ -820,3 +820,359 @@ func TestFreqResponse_SingularLFT(t *testing.T) {
 		t.Fatal("expected error for singular (I - H22*Delta) at w=0 with D22=1")
 	}
 }
+
+func TestNichols_FirstOrderLowpass(t *testing.T) {
+	sys, err := New(
+		mat.NewDense(1, 1, []float64{-1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{0}),
+		0,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	r, err := sys.Nichols([]float64{1.0}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	magDB := r.MagDBAt(0, 0, 0)
+	if math.Abs(magDB-(-3.0103)) > 0.01 {
+		t.Errorf("mag = %v dB, want ~-3.01", magDB)
+	}
+
+	phase := r.PhaseAt(0, 0, 0)
+	if math.Abs(phase-(-45)) > 0.5 {
+		t.Errorf("phase = %v, want ~-45", phase)
+	}
+}
+
+func TestNichols_PhaseRange(t *testing.T) {
+	sys, err := NewFromSlices(3, 1, 1,
+		[]float64{
+			0, 1, 0,
+			0, 0, 1,
+			-1000, -110, -11,
+		},
+		[]float64{0, 0, 1000},
+		[]float64{1, 0, 0},
+		[]float64{0},
+		0,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	r, err := sys.Nichols(nil, 500)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for k := range r.Omega {
+		ph := r.PhaseAt(k, 0, 0)
+		if ph > 0 || ph <= -360 {
+			t.Errorf("w=%v: phase=%v outside (-360, 0]", r.Omega[k], ph)
+			break
+		}
+	}
+}
+
+func TestNichols_MatchesBode(t *testing.T) {
+	sys, err := New(
+		mat.NewDense(1, 1, []float64{-1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{0}),
+		0,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	omega := logspace(-2, 2, 100)
+	bode, err := sys.Bode(omega, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nichols, err := sys.Nichols(omega, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for k := range omega {
+		if bode.MagDBAt(k, 0, 0) != nichols.MagDBAt(k, 0, 0) {
+			t.Errorf("w=%v: magDB mismatch", omega[k])
+			break
+		}
+	}
+}
+
+func TestNichols_AutoFreq(t *testing.T) {
+	sys, err := New(
+		mat.NewDense(1, 1, []float64{-10}),
+		mat.NewDense(1, 1, []float64{10}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{0}),
+		0,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	r, err := sys.Nichols(nil, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.Omega) != 100 {
+		t.Fatalf("len(omega) = %d, want 100", len(r.Omega))
+	}
+}
+
+func TestNichols_MIMO(t *testing.T) {
+	sys, err := NewFromSlices(2, 2, 2,
+		[]float64{-1, 0, 0, -2},
+		[]float64{1, 0, 0, 1},
+		[]float64{1, 0, 0, 1},
+		[]float64{0, 0, 0, 0},
+		0,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	r, err := sys.Nichols([]float64{1.0}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	mag00 := r.MagDBAt(0, 0, 0)
+	mag11 := r.MagDBAt(0, 1, 1)
+	want00 := 20 * math.Log10(1.0/math.Sqrt(2))
+	want11 := 20 * math.Log10(1.0/math.Sqrt(5))
+
+	if math.Abs(mag00-want00) > 0.1 {
+		t.Errorf("H(0,0) mag = %v dB, want %v", mag00, want00)
+	}
+	if math.Abs(mag11-want11) > 0.1 {
+		t.Errorf("H(1,1) mag = %v dB, want %v", mag11, want11)
+	}
+}
+
+func TestNichols_Discrete(t *testing.T) {
+	sysc, _ := New(
+		mat.NewDense(1, 1, []float64{-1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{0}),
+		0,
+	)
+	sysd, _ := sysc.Discretize(0.01)
+
+	r, err := sysd.Nichols([]float64{0.1, 1.0, 10.0}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for k := range r.Omega {
+		if math.IsNaN(r.MagDBAt(k, 0, 0)) || math.IsInf(r.MagDBAt(k, 0, 0), 0) {
+			t.Errorf("w=%v: NaN/Inf magnitude", r.Omega[k])
+		}
+	}
+}
+
+func TestSigma_SISO(t *testing.T) {
+	sys, err := New(
+		mat.NewDense(1, 1, []float64{-1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{0}),
+		0,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	freqs := []float64{0.01, 1.0, 10.0}
+	r, err := sys.Sigma(freqs, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if r.NSV() != 1 {
+		t.Fatalf("NSV = %d, want 1", r.NSV())
+	}
+
+	resp, _ := sys.FreqResponse(freqs)
+	for k, w := range freqs {
+		got := r.At(k, 0)
+		want := cmplx.Abs(resp.At(k, 0, 0))
+		if math.Abs(got-want) > 1e-10 {
+			t.Errorf("w=%v: sigma=%v, want %v", w, got, want)
+		}
+	}
+}
+
+func TestSigma_DiagonalMIMO(t *testing.T) {
+	sys, err := NewFromSlices(2, 2, 2,
+		[]float64{-1, 0, 0, -2},
+		[]float64{1, 0, 0, 1},
+		[]float64{1, 0, 0, 1},
+		[]float64{0, 0, 0, 0},
+		0,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	r, err := sys.Sigma([]float64{0.001}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if r.NSV() != 2 {
+		t.Fatalf("NSV = %d, want 2", r.NSV())
+	}
+
+	sv0 := r.At(0, 0)
+	sv1 := r.At(0, 1)
+	if sv0 < sv1 {
+		t.Errorf("SVs not descending: %v < %v", sv0, sv1)
+	}
+
+	if math.Abs(sv0-1.0) > 0.01 {
+		t.Errorf("sv0 = %v, want ~1.0", sv0)
+	}
+	if math.Abs(sv1-0.5) > 0.01 {
+		t.Errorf("sv1 = %v, want ~0.5", sv1)
+	}
+}
+
+func TestSigma_NonSquare(t *testing.T) {
+	sys, err := NewFromSlices(2, 3, 2,
+		[]float64{-1, 0, 0, -2},
+		[]float64{1, 0, 0, 0, 1, 0},
+		[]float64{1, 0, 0, 1},
+		[]float64{0, 0, 0, 0, 0, 0},
+		0,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	r, err := sys.Sigma([]float64{1.0}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.NSV() != 2 {
+		t.Errorf("NSV = %d, want 2 (min(p=2, m=3))", r.NSV())
+	}
+	for i := 0; i < r.NSV(); i++ {
+		if r.At(0, i) < 0 {
+			t.Errorf("negative sv[%d] = %v", i, r.At(0, i))
+		}
+	}
+}
+
+func TestSigma_MatchesHinfNorm(t *testing.T) {
+	sys, err := NewFromSlices(2, 2, 2,
+		[]float64{-1, 0.3, -0.5, -2},
+		[]float64{1, 0, 0.5, 1},
+		[]float64{1, 0.2, 0, 1},
+		[]float64{0, 0, 0, 0},
+		0,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	hinfNorm, _, err := HinfNorm(sys)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	r, err := sys.Sigma(nil, 500)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	peakSV := 0.0
+	for k := range r.Omega {
+		if r.At(k, 0) > peakSV {
+			peakSV = r.At(k, 0)
+		}
+	}
+
+	relErr := math.Abs(peakSV-hinfNorm) / hinfNorm
+	if relErr > 0.05 {
+		t.Errorf("peak sigma = %v, HinfNorm = %v, relErr = %v", peakSV, hinfNorm, relErr)
+	}
+}
+
+func TestSigma_PureGain(t *testing.T) {
+	D := mat.NewDense(2, 2, []float64{3, 0, 0, 4})
+	sys, err := NewGain(D, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	r, err := sys.Sigma([]float64{0.1, 1.0, 10.0}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for k := range r.Omega {
+		if math.Abs(r.At(k, 0)-4.0) > 1e-10 {
+			t.Errorf("sv_max = %v, want 4.0", r.At(k, 0))
+		}
+		if math.Abs(r.At(k, 1)-3.0) > 1e-10 {
+			t.Errorf("sv_min = %v, want 3.0", r.At(k, 1))
+		}
+	}
+}
+
+func TestSigma_SISO_MatchesBodeMag(t *testing.T) {
+	sys, err := New(
+		mat.NewDense(1, 1, []float64{-5}),
+		mat.NewDense(1, 1, []float64{5}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{0}),
+		0,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	omega := logspace(-1, 2, 50)
+	bode, _ := sys.Bode(omega, 0)
+	sigma, _ := sys.Sigma(omega, 0)
+
+	for k := range omega {
+		svFromBode := math.Pow(10, bode.MagDBAt(k, 0, 0)/20)
+		if math.Abs(sigma.At(k, 0)-svFromBode) > 1e-10 {
+			t.Errorf("w=%v: sigma=%v, bode_lin=%v", omega[k], sigma.At(k, 0), svFromBode)
+			break
+		}
+	}
+}
+
+func TestSigma_AutoFreq(t *testing.T) {
+	sys, err := New(
+		mat.NewDense(1, 1, []float64{-10}),
+		mat.NewDense(1, 1, []float64{10}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{0}),
+		0,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	r, err := sys.Sigma(nil, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.Omega) != 50 {
+		t.Fatalf("len(omega) = %d, want 50", len(r.Omega))
+	}
+}

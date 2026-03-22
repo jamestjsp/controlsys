@@ -36,5 +36,6 @@ var (
 	ErrNotSISO        = errors.New("controlsys: system must be single-input")
 	ErrConjugatePairs = errors.New("controlsys: complex poles must appear in conjugate pairs")
 	ErrPoleCount      = errors.New("controlsys: number of poles must equal state dimension")
-	ErrUncontrollable = errors.New("controlsys: uncontrollable mode cannot be assigned")
+	ErrUncontrollable    = errors.New("controlsys: uncontrollable mode cannot be assigned")
+	ErrInsufficientData  = errors.New("controlsys: insufficient data for estimation")
 )

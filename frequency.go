@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"math"
 	"math/cmplx"
+
+	"gonum.org/v1/gonum/lapack"
 )
 
 type FreqResponseMatrix struct {
@@ -520,6 +522,143 @@ func cMulDiagLeftInto(dst, diag, a []complex128, rows, cols int) {
 			dst[i*cols+j] = diag[i] * a[i*cols+j]
 		}
 	}
+}
+
+// NicholsResult holds Nichols chart data: open-loop phase (degrees) vs magnitude (dB).
+type NicholsResult struct {
+	Omega []float64
+	magDB []float64
+	phase []float64
+	p, m  int
+}
+
+func (r *NicholsResult) MagDBAt(freq, output, input int) float64 {
+	return r.magDB[freq*r.p*r.m+output*r.m+input]
+}
+
+func (r *NicholsResult) PhaseAt(freq, output, input int) float64 {
+	return r.phase[freq*r.p*r.m+output*r.m+input]
+}
+
+func (sys *System) Nichols(omega []float64, nPoints int) (*NicholsResult, error) {
+	bode, err := sys.Bode(omega, nPoints)
+	if err != nil {
+		return nil, err
+	}
+	if bode == nil {
+		return nil, nil
+	}
+
+	phase := bode.phase
+	p, m := bode.p, bode.m
+	nw := len(bode.Omega)
+	pm := p * m
+
+	for i := 0; i < p; i++ {
+		for j := 0; j < m; j++ {
+			base := phase[i*m+j]
+			shift := math.Ceil(base/360) * 360
+			for k := 0; k < nw; k++ {
+				phase[k*pm+i*m+j] -= shift
+			}
+		}
+	}
+
+	return &NicholsResult{
+		Omega: bode.Omega,
+		magDB: bode.magDB,
+		phase: phase,
+		p:     p,
+		m:     m,
+	}, nil
+}
+
+// SigmaResult holds singular value frequency response data.
+type SigmaResult struct {
+	Omega []float64
+	sv    []float64
+	nSV   int
+}
+
+func (r *SigmaResult) At(freq, svIndex int) float64 {
+	return r.sv[freq*r.nSV+svIndex]
+}
+
+func (r *SigmaResult) NSV() int {
+	return r.nSV
+}
+
+type svdWorkspace struct {
+	rData []float64
+	sv    []float64
+	work  []float64
+	p, m  int
+}
+
+func newSVDWorkspace(p, m int) *svdWorkspace {
+	rows := 2 * p
+	cols := m
+	nSV := min(rows, cols)
+	rData := make([]float64, rows*cols)
+	sv := make([]float64, nSV)
+
+	wq := make([]float64, 1)
+	impl.Dgesvd(lapack.SVDNone, lapack.SVDNone, rows, cols, rData, cols, sv, nil, 1, nil, 1, wq, -1)
+	work := make([]float64, int(wq[0]))
+
+	return &svdWorkspace{rData: rData, sv: sv, work: work, p: p, m: m}
+}
+
+func (sys *System) Sigma(omega []float64, nPoints int) (*SigmaResult, error) {
+	if omega == nil {
+		var err error
+		omega, err = autoBodeFreqs(sys, nPoints)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	_, m, p := sys.Dims()
+	nSV := min(p, m)
+	if nSV == 0 {
+		return &SigmaResult{Omega: omega, nSV: 0}, nil
+	}
+
+	resp, err := sys.FreqResponse(omega)
+	if err != nil {
+		return nil, err
+	}
+	if resp == nil {
+		return &SigmaResult{Omega: omega, nSV: nSV}, nil
+	}
+
+	nw := len(omega)
+
+	if p == 1 && m == 1 {
+		sv := make([]float64, nw)
+		for k := range omega {
+			sv[k] = cmplx.Abs(resp.At(k, 0, 0))
+		}
+		return &SigmaResult{Omega: omega, sv: sv, nSV: 1}, nil
+	}
+
+	ws := newSVDWorkspace(p, m)
+	allSV := make([]float64, nw*nSV)
+
+	for k := range omega {
+		for i := 0; i < p; i++ {
+			for j := 0; j < m; j++ {
+				h := resp.At(k, i, j)
+				ws.rData[i*m+j] = real(h)
+				ws.rData[(p+i)*m+j] = imag(h)
+			}
+		}
+		impl.Dgesvd(lapack.SVDNone, lapack.SVDNone, 2*p, m, ws.rData, m,
+			ws.sv, nil, 1, nil, 1, ws.work, len(ws.work))
+		copy(allSV[k*nSV:], ws.sv[:nSV])
+	}
+
+	return &SigmaResult{Omega: omega, sv: allSV, nSV: nSV}, nil
 }
 
 func cInvertInto(dst, aug, src []complex128, n int) error {
