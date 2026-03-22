@@ -620,12 +620,14 @@ func TestAllMargin_ThirdOrderPythonControl(t *testing.T) {
 	}
 }
 
-// python-control: tf([1], [1,2,3,4]) discretized at dt=0.01
+// python-control: tf([2],[1,3,2,0]) sampled at dt=0.01
+// Expected: gm=2.955761 (9.41 dB), pm=32.398, wg=1.403725, wp=0.749367
 func TestAllMargin_Discrete(t *testing.T) {
+	// G(s) = 2/(s^3+3s^2+2s) = 2/(s(s+1)(s+2))
 	sys, err := NewFromSlices(3, 1, 1,
-		[]float64{0, 1, 0, 0, 0, 1, -4, -3, -2},
+		[]float64{0, 1, 0, 0, 0, 1, 0, -2, -3},
 		[]float64{0, 0, 1},
-		[]float64{1, 0, 0},
+		[]float64{2, 0, 0},
 		[]float64{0}, 0)
 	if err != nil {
 		t.Fatal(err)
@@ -636,16 +638,24 @@ func TestAllMargin_Discrete(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	all, err := AllMargin(dsys)
+	m, err := Margin(dsys)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if len(all.PhaseCrossFreqs) == 0 {
-		t.Fatal("expected phase crossover")
+	// python-control: gm ≈ 9.41 dB (linear 2.9558)
+	wantGM := 20 * math.Log10(2.9558)
+	if math.Abs(m.GainMargin-wantGM) > 0.5 {
+		t.Errorf("GM = %v dB, want ~%v dB", m.GainMargin, wantGM)
 	}
-	if len(all.GainCrossFreqs) > 0 {
-		t.Log("gain crossover freqs:", all.GainCrossFreqs)
+	if math.Abs(m.PhaseMargin-32.4) > 2 {
+		t.Errorf("PM = %v deg, want ~32.4 deg", m.PhaseMargin)
+	}
+	if math.Abs(m.WgFreq-0.749) > 0.05 {
+		t.Errorf("WgFreq = %v, want ~0.749", m.WgFreq)
+	}
+	if math.Abs(m.WpFreq-1.404) > 0.05 {
+		t.Errorf("WpFreq = %v, want ~1.404", m.WpFreq)
 	}
 }
 
@@ -670,17 +680,23 @@ func TestAllMargin_MultipleGainCrossovers(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// python-control: gm=4.0 (12.04 dB), pm=67.6 deg, wg=1.732, wp=0.766
+	// python-control: gm=4.0 (12.04 dB), pm=67.6058 deg, wg=1.7322, wp=0.7663
 	m, err := Margin(sys)
 	if err != nil {
 		t.Fatal(err)
 	}
 	wantGM := 20 * math.Log10(4.0)
-	if math.Abs(m.GainMargin-wantGM) > 0.5 {
+	if math.Abs(m.GainMargin-wantGM) > 0.3 {
 		t.Errorf("GM = %v dB, want ~%v dB", m.GainMargin, wantGM)
 	}
-	if math.Abs(m.PhaseMargin-67.6) > 2 {
-		t.Errorf("PM = %v deg, want ~67.6 deg", m.PhaseMargin)
+	if math.Abs(m.PhaseMargin-67.6058) > 1.0 {
+		t.Errorf("PM = %v deg, want ~67.6058 deg", m.PhaseMargin)
+	}
+	if math.Abs(m.WgFreq-0.7663) > 0.03 {
+		t.Errorf("WgFreq = %v, want ~0.7663", m.WgFreq)
+	}
+	if math.Abs(m.WpFreq-1.7322) > 0.05 {
+		t.Errorf("WpFreq = %v, want ~1.7322", m.WpFreq)
 	}
 	_ = all
 }
@@ -703,9 +719,13 @@ func TestMargin_NonMinimumPhase(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// python-control: gm=300 (49.54 dB), wg=5.6569
 	wantGM := 20 * math.Log10(300.0)
-	if math.Abs(m.GainMargin-wantGM) > 1 {
+	if math.Abs(m.GainMargin-wantGM) > 0.5 {
 		t.Errorf("GM = %v dB, want ~%v dB", m.GainMargin, wantGM)
+	}
+	if math.Abs(m.WpFreq-5.6569) > 0.1 {
+		t.Errorf("WpFreq = %v, want ~5.6569", m.WpFreq)
 	}
 }
 
@@ -733,6 +753,8 @@ func TestAllMargin_NoCrossings(t *testing.T) {
 }
 
 // Bandwidth with MIMO system (exercises Sigma path)
+// Diagonal MIMO: diag(1/(s+1), 1/(s+2)) → max singular value = 1/(s+1)
+// -3dB bandwidth of 1/(s+1) is w=1
 func TestBandwidth_MIMO(t *testing.T) {
 	sys, err := NewFromSlices(2, 2, 2,
 		[]float64{-1, 0, 0, -2},
@@ -747,11 +769,8 @@ func TestBandwidth_MIMO(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if bw <= 0 {
-		t.Errorf("MIMO bandwidth = %v, want > 0", bw)
-	}
-	if bw > 3 {
-		t.Errorf("MIMO bandwidth = %v, want ≤ 3", bw)
+	if math.Abs(bw-1.0) > 0.15 {
+		t.Errorf("MIMO bandwidth = %v, want ~1.0 (from 1/(s+1) channel)", bw)
 	}
 }
 
@@ -791,14 +810,20 @@ func TestDiskMargin_PythonControl(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if dm.Alpha < 0.3 || dm.Alpha > 0.6 {
-		t.Errorf("Alpha = %v, want in [0.3, 0.6]", dm.Alpha)
+	// python-control: DM=0.46, DGM=4.05 dB, DPM=25.8 deg, peak at ~1.94 rad/s
+	// Our implementation computes α differently (1/Ms vs full disk), so we allow
+	// wider tolerance but still verify the values are in the correct ballpark
+	if math.Abs(dm.Alpha-0.40) > 0.10 {
+		t.Errorf("Alpha = %v, want ~0.40 (python-control: 0.46)", dm.Alpha)
 	}
-	if dm.GainMarginDB[1] < 2.5 || dm.GainMarginDB[1] > 5.5 {
-		t.Errorf("DGM_high = %v dB, want in [2.5, 5.5]", dm.GainMarginDB[1])
+	if math.Abs(dm.GainMarginDB[1]-3.5) > 1.0 {
+		t.Errorf("DGM_high = %v dB, want ~3.5 (python-control: 4.05)", dm.GainMarginDB[1])
 	}
-	if dm.PhaseMargin < 18 || dm.PhaseMargin > 30 {
-		t.Errorf("DPM = %v deg, want in [18, 30]", dm.PhaseMargin)
+	if math.Abs(dm.PhaseMargin-23.0) > 4.0 {
+		t.Errorf("DPM = %v deg, want ~23 (python-control: 25.8)", dm.PhaseMargin)
+	}
+	if dm.PeakFreq < 1.0 || dm.PeakFreq > 3.0 {
+		t.Errorf("PeakFreq = %v, want ~1.94", dm.PeakFreq)
 	}
 }
 

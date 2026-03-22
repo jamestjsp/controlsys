@@ -391,6 +391,7 @@ func TestStep_PythonControlVerified(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// python-control verified: y at t=linspace(0,1,10)
 	want := []float64{9.0, 17.6457, 24.7072, 30.4855, 35.2234, 39.1165, 42.3227, 44.9694, 47.1599, 48.9776}
 
 	_, steps := resp.Y.Dims()
@@ -407,8 +408,12 @@ func TestStep_PythonControlVerified(t *testing.T) {
 			}
 		}
 		got := resp.Y.At(0, k)
-		if math.Abs(got-w) > 1.5 {
-			t.Errorf("t=%.3f: got %f, want ~%f", resp.T[k], got, w)
+		tol := 1.0
+		if i == 0 {
+			tol = 0.01 // D=9, so y(0)=9 exactly
+		}
+		if math.Abs(got-w) > tol {
+			t.Errorf("t=%.3f: got %f, want %f (±%.1f)", resp.T[k], got, w, tol)
 		}
 	}
 }
