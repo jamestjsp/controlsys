@@ -7,6 +7,13 @@ import (
 	"gonum.org/v1/gonum/mat"
 )
 
+// LFTDelay holds the internal delay representation using a linear
+// fractional transformation (LFT) structure.
+type LFTDelay struct {
+	Tau                    []float64
+	B2, C2, D12, D21, D22 *mat.Dense
+}
+
 // System represents a linear time-invariant (LTI) state-space model:
 //
 //	Continuous: dx/dt = Ax + Bu,  y = Cx + Du
@@ -19,13 +26,7 @@ type System struct {
 	Delay       *mat.Dense // p×m IODelay; nil = no delay
 	InputDelay  []float64  // length m; nil = zeros
 	OutputDelay []float64  // length p; nil = zeros
-
-	InternalDelay []float64  // length N; nil = none (LFT)
-	B2            *mat.Dense // n×N
-	C2            *mat.Dense // N×n
-	D12           *mat.Dense // p×N
-	D21           *mat.Dense // N×m
-	D22           *mat.Dense // N×N
+	LFT         *LFTDelay  // internal delays; nil = none
 
 	Dt float64
 
@@ -33,6 +34,13 @@ type System struct {
 	OutputName []string
 	StateName  []string
 	Notes      string
+}
+
+func (sys *System) internalDelayCount() int {
+	if sys.LFT == nil {
+		return 0
+	}
+	return len(sys.LFT.Tau)
 }
 
 func (sys *System) Dims() (n, m, p int) {
@@ -249,11 +257,6 @@ func (sys *System) Copy() *System {
 		C:     denseCopy(sys.C),
 		D:     denseCopy(sys.D),
 		Delay: copyDelayOrNil(sys.Delay),
-		B2:    copyDelayOrNil(sys.B2),
-		C2:    copyDelayOrNil(sys.C2),
-		D12:   copyDelayOrNil(sys.D12),
-		D21:   copyDelayOrNil(sys.D21),
-		D22:   copyDelayOrNil(sys.D22),
 		Dt:    sys.Dt,
 	}
 	if sys.InputDelay != nil {
@@ -264,9 +267,15 @@ func (sys *System) Copy() *System {
 		cp.OutputDelay = make([]float64, len(sys.OutputDelay))
 		copy(cp.OutputDelay, sys.OutputDelay)
 	}
-	if sys.InternalDelay != nil {
-		cp.InternalDelay = make([]float64, len(sys.InternalDelay))
-		copy(cp.InternalDelay, sys.InternalDelay)
+	if sys.LFT != nil {
+		cp.LFT = &LFTDelay{
+			Tau: append([]float64(nil), sys.LFT.Tau...),
+			B2:  copyDelayOrNil(sys.LFT.B2),
+			C2:  copyDelayOrNil(sys.LFT.C2),
+			D12: copyDelayOrNil(sys.LFT.D12),
+			D21: copyDelayOrNil(sys.LFT.D21),
+			D22: copyDelayOrNil(sys.LFT.D22),
+		}
 	}
 	cp.InputName = copyStringSlice(sys.InputName)
 	cp.OutputName = copyStringSlice(sys.OutputName)

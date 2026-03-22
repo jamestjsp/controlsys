@@ -56,9 +56,7 @@ func Lqi(A, B, C, Q, R *mat.Dense, opts *RiccatiOpts) (*RiccatiResult, error) {
 	aaugData := make([]float64, aug*aug)
 	aRaw := A.RawMatrix()
 	cRaw := C.RawMatrix()
-	for i := range n {
-		copy(aaugData[i*aug:i*aug+n], aRaw.Data[i*aRaw.Stride:i*aRaw.Stride+n])
-	}
+	copyStrided(aaugData, aug, aRaw.Data, aRaw.Stride, n, n)
 	for i := range p {
 		for j := range n {
 			aaugData[(n+i)*aug+j] = -cRaw.Data[i*cRaw.Stride+j]
@@ -68,9 +66,7 @@ func Lqi(A, B, C, Q, R *mat.Dense, opts *RiccatiOpts) (*RiccatiResult, error) {
 
 	baugData := make([]float64, aug*m)
 	bRaw := B.RawMatrix()
-	for i := range n {
-		copy(baugData[i*m:i*m+m], bRaw.Data[i*bRaw.Stride:i*bRaw.Stride+m])
-	}
+	copyStrided(baugData, m, bRaw.Data, bRaw.Stride, n, m)
 	Baug := mat.NewDense(aug, m, baugData)
 
 	return Lqr(Aaug, Baug, Q, R, opts)
@@ -122,10 +118,8 @@ func Lqrd(A, B, Q, R *mat.Dense, dt float64, opts *RiccatiOpts) (*RiccatiResult,
 
 	adData := make([]float64, n*n)
 	bdData := make([]float64, n*m)
-	for i := range n {
-		copy(adData[i*n:], emRaw.Data[i*emRaw.Stride:i*emRaw.Stride+n])
-		copy(bdData[i*m:], emRaw.Data[i*emRaw.Stride+n:i*emRaw.Stride+n+m])
-	}
+	copyStrided(adData, n, emRaw.Data, emRaw.Stride, n, n)
+	copyBlock(bdData, m, 0, 0, emRaw.Data, emRaw.Stride, 0, n, n, m)
 	Ad := mat.NewDense(n, n, adData)
 	Bd := mat.NewDense(n, m, bdData)
 
@@ -243,9 +237,7 @@ func Place(A, B *mat.Dense, poles []complex128) (*mat.Dense, error) {
 
 	t := make([]float64, n*n)
 	aRaw := A.RawMatrix()
-	for i := range n {
-		copy(t[i*n:i*n+n], aRaw.Data[i*aRaw.Stride:i*aRaw.Stride+n])
-	}
+	copyStrided(t, n, aRaw.Data, aRaw.Stride, n, n)
 
 	z := make([]float64, n*n)
 	wr := make([]float64, n)

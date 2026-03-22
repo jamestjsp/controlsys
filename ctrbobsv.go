@@ -23,9 +23,7 @@ func Ctrb(A, B *mat.Dense) (*mat.Dense, error) {
 	cols := n * m
 	data := make([]float64, n*cols)
 	bRaw := B.RawMatrix()
-	for i := range n {
-		copy(data[i*cols:i*cols+m], bRaw.Data[i*bRaw.Stride:i*bRaw.Stride+m])
-	}
+	copyStrided(data, cols, bRaw.Data, bRaw.Stride, n, m)
 
 	aGen := rawToGen(A)
 
@@ -55,9 +53,7 @@ func Obsv(A, C *mat.Dense) (*mat.Dense, error) {
 	rows := n * p
 	data := make([]float64, rows*n)
 	cRaw := C.RawMatrix()
-	for i := range p {
-		copy(data[i*n:i*n+n], cRaw.Data[i*cRaw.Stride:i*cRaw.Stride+n])
-	}
+	copyStrided(data, n, cRaw.Data, cRaw.Stride, p, n)
 
 	aGen := rawToGen(A)
 
@@ -78,9 +74,7 @@ func rawToGen(m *mat.Dense) blas64.General {
 	}
 	n := raw.Rows
 	data := make([]float64, n*raw.Cols)
-	for i := range n {
-		copy(data[i*raw.Cols:i*raw.Cols+raw.Cols], raw.Data[i*raw.Stride:i*raw.Stride+raw.Cols])
-	}
+	copyStrided(data, raw.Cols, raw.Data, raw.Stride, n, raw.Cols)
 	return blas64.General{Rows: n, Cols: raw.Cols, Stride: raw.Cols, Data: data}
 }
 

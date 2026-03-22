@@ -60,12 +60,7 @@ func (sys *System) SetOutputDelay(delay []float64) error {
 
 func (sys *System) SetInternalDelay(tau []float64, B2, C2, D12, D21, D22 *mat.Dense) error {
 	if tau == nil {
-		sys.InternalDelay = nil
-		sys.B2 = nil
-		sys.C2 = nil
-		sys.D12 = nil
-		sys.D21 = nil
-		sys.D22 = nil
+		sys.LFT = nil
 		return nil
 	}
 	n, m, p := sys.Dims()
@@ -81,13 +76,16 @@ func (sys *System) SetInternalDelay(tau []float64, B2, C2, D12, D21, D22 *mat.De
 	if err := validateLFTDims(n, m, p, N, B2, C2, D12, D21, D22); err != nil {
 		return err
 	}
-	sys.InternalDelay = make([]float64, N)
-	copy(sys.InternalDelay, tau)
-	sys.B2 = mat.DenseCopyOf(B2)
-	sys.C2 = mat.DenseCopyOf(C2)
-	sys.D12 = mat.DenseCopyOf(D12)
-	sys.D21 = mat.DenseCopyOf(D21)
-	sys.D22 = mat.DenseCopyOf(D22)
+	tauCopy := make([]float64, N)
+	copy(tauCopy, tau)
+	sys.LFT = &LFTDelay{
+		Tau: tauCopy,
+		B2:  mat.DenseCopyOf(B2),
+		C2:  mat.DenseCopyOf(C2),
+		D12: mat.DenseCopyOf(D12),
+		D21: mat.DenseCopyOf(D21),
+		D22: mat.DenseCopyOf(D22),
+	}
 	return nil
 }
 
@@ -195,7 +193,10 @@ func (sys *System) HasDelay() bool {
 }
 
 func (sys *System) HasInternalDelay() bool {
-	for _, v := range sys.InternalDelay {
+	if sys.LFT == nil {
+		return false
+	}
+	for _, v := range sys.LFT.Tau {
 		if v != 0 {
 			return true
 		}
@@ -321,7 +322,7 @@ func absorbAllDelay(sys *System) (*System, error) {
 }
 
 func absorbInternalDelay(sys *System) (*System, error) {
-	N := len(sys.InternalDelay)
+	N := sys.internalDelayCount()
 	if N == 0 {
 		return sys.Copy(), nil
 	}
@@ -348,12 +349,7 @@ func absorbInternalDiscreteDelay(sys *System) (*System, error) {
 
 	if totalShift == 0 {
 		cp := sys.Copy()
-		cp.InternalDelay = nil
-		cp.B2 = nil
-		cp.C2 = nil
-		cp.D12 = nil
-		cp.D21 = nil
-		cp.D22 = nil
+		cp.LFT = nil
 		return cp, nil
 	}
 
@@ -1500,12 +1496,12 @@ func (sys *System) PullDelaysToLFT() (*System, error) {
 		}
 	}
 
-	N0 := len(sys.InternalDelay)
+	N0 := sys.internalDelayCount()
 	Nnew := len(entries)
 	N := N0 + Nnew
 	taus := make([]float64, 0, N)
 	if N0 > 0 {
-		taus = append(taus, sys.InternalDelay...)
+		taus = append(taus, sys.LFT.Tau...)
 	}
 	for _, e := range entries {
 		taus = append(taus, e.tau)
@@ -1519,12 +1515,12 @@ func (sys *System) PullDelaysToLFT() (*System, error) {
 
 	if N0 > 0 {
 		if n > 0 {
-			setBlock(b2, 0, 0, sys.B2)
-			setBlock(c2, 0, 0, sys.C2)
+			setBlock(b2, 0, 0, sys.LFT.B2)
+			setBlock(c2, 0, 0, sys.LFT.C2)
 		}
-		setBlock(d12, 0, 0, sys.D12)
-		setBlock(d21, 0, 0, sys.D21)
-		setBlock(d22, 0, 0, sys.D22)
+		setBlock(d12, 0, 0, sys.LFT.D12)
+		setBlock(d21, 0, 0, sys.LFT.D21)
+		setBlock(d22, 0, 0, sys.LFT.D22)
 	}
 
 	newB := mat.DenseCopyOf(cur.B)
@@ -1620,17 +1616,19 @@ func (sys *System) PullDelaysToLFT() (*System, error) {
 	d22 = resizeDense(d22, N, N)
 
 	res := &System{
-		A:             denseCopy(cur.A),
-		B:             newB,
-		C:             newC,
-		D:             newD,
-		Dt:            cur.Dt,
-		InternalDelay: taus,
-		B2:            b2,
-		C2:            c2,
-		D12:           d12,
-		D21:           d21,
-		D22:           d22,
+		A:  denseCopy(cur.A),
+		B:  newB,
+		C:  newC,
+		D:  newD,
+		Dt: cur.Dt,
+		LFT: &LFTDelay{
+			Tau: taus,
+			B2:  b2,
+			C2:  c2,
+			D12: d12,
+			D21: d21,
+			D22: d22,
+		},
 	}
 	propagateIONames(res, sys)
 	res.StateName = copyStringSlice(sys.StateName)
@@ -1648,14 +1646,13 @@ func (sys *System) GetDelayModel() (H *System, tau []float64) {
 		// If PullDelaysToLFT fails (e.g. non-decomposable residual), 
 		// we fallback to just extracting InternalDelay if it exists,
 		// or return the original system.
-		if len(sys.InternalDelay) == 0 {
+		if sys.LFT == nil {
 			return sys.Copy(), nil
 		}
-		// Extract existing InternalDelay only
 		n, m, p := sys.Dims()
-		N := len(sys.InternalDelay)
+		N := len(sys.LFT.Tau)
 		tau = make([]float64, N)
-		copy(tau, sys.InternalDelay)
+		copy(tau, sys.LFT.Tau)
 
 		H = &System{
 			A:  denseCopy(sys.A),
@@ -1665,21 +1662,21 @@ func (sys *System) GetDelayModel() (H *System, tau []float64) {
 			Dt: sys.Dt,
 		}
 		setBlock(H.B, 0, 0, sys.B)
-		setBlock(H.B, 0, m, sys.B2)
+		setBlock(H.B, 0, m, sys.LFT.B2)
 		setBlock(H.C, 0, 0, sys.C)
-		setBlock(H.C, p, 0, sys.C2)
+		setBlock(H.C, p, 0, sys.LFT.C2)
 		setBlock(H.D, 0, 0, sys.D)
-		setBlock(H.D, 0, m, sys.D12)
-		setBlock(H.D, p, 0, sys.D21)
-		setBlock(H.D, p, m, sys.D22)
+		setBlock(H.D, 0, m, sys.LFT.D12)
+		setBlock(H.D, p, 0, sys.LFT.D21)
+		setBlock(H.D, p, m, sys.LFT.D22)
 		return H, tau
 	}
 
 	// Get augmented model H from LFT structure
 	n, m, p := lft.Dims()
-	N := len(lft.InternalDelay)
+	N := len(lft.LFT.Tau)
 	tau = make([]float64, N)
-	copy(tau, lft.InternalDelay)
+	copy(tau, lft.LFT.Tau)
 
 	H = &System{
 		A:  denseCopy(lft.A),
@@ -1690,14 +1687,14 @@ func (sys *System) GetDelayModel() (H *System, tau []float64) {
 	}
 	if n > 0 {
 		setBlock(H.B, 0, 0, lft.B)
-		setBlock(H.B, 0, m, lft.B2)
+		setBlock(H.B, 0, m, lft.LFT.B2)
 		setBlock(H.C, 0, 0, lft.C)
-		setBlock(H.C, p, 0, lft.C2)
+		setBlock(H.C, p, 0, lft.LFT.C2)
 	}
 	setBlock(H.D, 0, 0, lft.D)
-	setBlock(H.D, 0, m, lft.D12)
-	setBlock(H.D, p, 0, lft.D21)
-	setBlock(H.D, p, m, lft.D22)
+	setBlock(H.D, 0, m, lft.LFT.D12)
+	setBlock(H.D, p, 0, lft.LFT.D21)
+	setBlock(H.D, p, m, lft.LFT.D22)
 
 	return H, tau
 }
@@ -1792,17 +1789,19 @@ func SetDelayModel(H *System, tau []float64) (*System, error) {
 	}
 
 	result := &System{
-		A:             aMat,
-		B:             bMat,
-		C:             cMat,
-		D:             dMat,
-		Dt:            H.Dt,
-		InternalDelay: tauCopy,
-		B2:            mat.NewDense(n, N, b2Data),
-		C2:            mat.NewDense(N, n, c2Data),
-		D12:           mat.NewDense(p, N, d12Data),
-		D21:           mat.NewDense(N, m, d21Data),
-		D22:           mat.NewDense(N, N, d22Data),
+		A:  aMat,
+		B:  bMat,
+		C:  cMat,
+		D:  dMat,
+		Dt: H.Dt,
+		LFT: &LFTDelay{
+			Tau: tauCopy,
+			B2:  mat.NewDense(n, N, b2Data),
+			C2:  mat.NewDense(N, n, c2Data),
+			D12: mat.NewDense(p, N, d12Data),
+			D21: mat.NewDense(N, m, d21Data),
+			D22: mat.NewDense(N, N, d22Data),
+		},
 	}
 	propagateIONames(result, H)
 	return result, nil
@@ -1912,7 +1911,7 @@ func (sys *System) MinimalLFT() (*System, error) {
 		return sys.Copy(), nil
 	}
 
-	N := len(sys.InternalDelay)
+	N := len(sys.LFT.Tau)
 	n, m, p := sys.Dims()
 
 	keep := make([]int, 0, N)
@@ -1924,12 +1923,7 @@ func (sys *System) MinimalLFT() (*System, error) {
 
 	if len(keep) == 0 {
 		result := sys.Copy()
-		result.InternalDelay = nil
-		result.B2 = nil
-		result.C2 = nil
-		result.D12 = nil
-		result.D21 = nil
-		result.D22 = nil
+		result.LFT = nil
 		return result, nil
 	}
 
@@ -1958,11 +1952,11 @@ func lftSelectChannels(sys *System, keep []int, n, m, p int) *System {
 	newD21 := mat.NewDense(Nk, m, nil)
 	newD22 := mat.NewDense(Nk, Nk, nil)
 
-	b2Raw := sys.B2.RawMatrix()
-	c2Raw := sys.C2.RawMatrix()
-	d12Raw := sys.D12.RawMatrix()
-	d21Raw := sys.D21.RawMatrix()
-	d22Raw := sys.D22.RawMatrix()
+	b2Raw := sys.LFT.B2.RawMatrix()
+	c2Raw := sys.LFT.C2.RawMatrix()
+	d12Raw := sys.LFT.D12.RawMatrix()
+	d21Raw := sys.LFT.D21.RawMatrix()
+	d22Raw := sys.LFT.D22.RawMatrix()
 	nb2 := newB2.RawMatrix()
 	nc2 := newC2.RawMatrix()
 	nd12 := newD12.RawMatrix()
@@ -1970,7 +1964,7 @@ func lftSelectChannels(sys *System, keep []int, n, m, p int) *System {
 	nd22 := newD22.RawMatrix()
 
 	for ki, j := range keep {
-		newTau[ki] = sys.InternalDelay[j]
+		newTau[ki] = sys.LFT.Tau[j]
 		for i := 0; i < n; i++ {
 			nb2.Data[i*nb2.Stride+ki] = b2Raw.Data[i*b2Raw.Stride+j]
 		}
@@ -1989,25 +1983,20 @@ func lftSelectChannels(sys *System, keep []int, n, m, p int) *System {
 	}
 
 	result := sys.Copy()
-	result.InternalDelay = newTau
-	result.B2 = newB2
-	result.C2 = newC2
-	result.D12 = newD12
-	result.D21 = newD21
-	result.D22 = newD22
+	result.LFT = &LFTDelay{Tau: newTau, B2: newB2, C2: newC2, D12: newD12, D21: newD21, D22: newD22}
 	return result
 }
 
 func lftMergeProportional(sys *System, n, m, p int) *System {
 	const tol = 1e-12
-	N := len(sys.InternalDelay)
+	N := len(sys.LFT.Tau)
 	if N < 2 {
 		return sys
 	}
 
-	c2Raw := sys.C2.RawMatrix()
-	d21Raw := sys.D21.RawMatrix()
-	d22Raw := sys.D22.RawMatrix()
+	c2Raw := sys.LFT.C2.RawMatrix()
+	d21Raw := sys.LFT.D21.RawMatrix()
+	d22Raw := sys.LFT.D22.RawMatrix()
 
 	merged := make([]int, N)
 	for i := range merged {
@@ -2026,7 +2015,7 @@ func lftMergeProportional(sys *System, n, m, p int) *System {
 			if merged[j] != j {
 				continue
 			}
-			if math.Abs(sys.InternalDelay[i]-sys.InternalDelay[j]) > tol {
+			if math.Abs(sys.LFT.Tau[i]-sys.LFT.Tau[j]) > tol {
 				continue
 			}
 			if !d22ZeroCrossCoupling(d22Raw, i, j, N, tol) {
@@ -2065,8 +2054,8 @@ func lftMergeProportional(sys *System, n, m, p int) *System {
 		repIdx[r] = ki
 	}
 
-	b2Raw := sys.B2.RawMatrix()
-	d12Raw := sys.D12.RawMatrix()
+	b2Raw := sys.LFT.B2.RawMatrix()
+	d12Raw := sys.LFT.D12.RawMatrix()
 
 	newTau := make([]float64, Nk)
 	newB2 := mat.NewDense(n, Nk, nil)
@@ -2081,7 +2070,7 @@ func lftMergeProportional(sys *System, n, m, p int) *System {
 	nd22 := newD22.RawMatrix()
 
 	for ki, r := range reps {
-		newTau[ki] = sys.InternalDelay[r]
+		newTau[ki] = sys.LFT.Tau[r]
 		for i := 0; i < n; i++ {
 			nc2.Data[ki*nc2.Stride+i] = c2Raw.Data[r*c2Raw.Stride+i]
 		}
@@ -2109,12 +2098,7 @@ func lftMergeProportional(sys *System, n, m, p int) *System {
 	}
 
 	result := sys.Copy()
-	result.InternalDelay = newTau
-	result.B2 = newB2
-	result.C2 = newC2
-	result.D12 = newD12
-	result.D21 = newD21
-	result.D22 = newD22
+	result.LFT = &LFTDelay{Tau: newTau, B2: newB2, C2: newC2, D12: newD12, D21: newD21, D22: newD22}
 	return result
 }
 
@@ -2176,31 +2160,31 @@ func proportionalRows(c2Raw, d21Raw blas64.General, i, j, n, m int, tol float64)
 
 func isZeroGainChannel(sys *System, j, n, m, p, N int) bool {
 	const tol = 1e-15
-	b2Raw := sys.B2.RawMatrix()
+	b2Raw := sys.LFT.B2.RawMatrix()
 	for i := 0; i < n; i++ {
 		if math.Abs(b2Raw.Data[i*b2Raw.Stride+j]) > tol {
 			return false
 		}
 	}
-	d12Raw := sys.D12.RawMatrix()
+	d12Raw := sys.LFT.D12.RawMatrix()
 	for i := 0; i < p; i++ {
 		if math.Abs(d12Raw.Data[i*d12Raw.Stride+j]) > tol {
 			return false
 		}
 	}
-	c2Raw := sys.C2.RawMatrix()
+	c2Raw := sys.LFT.C2.RawMatrix()
 	for i := 0; i < n; i++ {
 		if math.Abs(c2Raw.Data[j*c2Raw.Stride+i]) > tol {
 			return false
 		}
 	}
-	d21Raw := sys.D21.RawMatrix()
+	d21Raw := sys.LFT.D21.RawMatrix()
 	for i := 0; i < m; i++ {
 		if math.Abs(d21Raw.Data[j*d21Raw.Stride+i]) > tol {
 			return false
 		}
 	}
-	d22Raw := sys.D22.RawMatrix()
+	d22Raw := sys.LFT.D22.RawMatrix()
 	for i := 0; i < N; i++ {
 		if math.Abs(d22Raw.Data[j*d22Raw.Stride+i]) > tol {
 			return false
@@ -2213,15 +2197,15 @@ func isZeroGainChannel(sys *System, j, n, m, p, N int) bool {
 }
 
 func (sys *System) ZeroDelayApprox() (*System, error) {
-	if sys.InternalDelay == nil {
+	if sys.LFT == nil {
 		return sys.Copy(), nil
 	}
 
-	N := len(sys.InternalDelay)
+	N := len(sys.LFT.Tau)
 	n, m, p := sys.Dims()
 
 	ImD22 := mat.NewDense(N, N, nil)
-	d22Raw := sys.D22.RawMatrix()
+	d22Raw := sys.LFT.D22.RawMatrix()
 	imRaw := ImD22.RawMatrix()
 	for i := 0; i < N; i++ {
 		for j := 0; j < N; j++ {
@@ -2247,24 +2231,24 @@ func (sys *System) ZeroDelayApprox() (*System, error) {
 	}
 
 	EC2 := mat.NewDense(N, n, nil)
-	EC2.Mul(E, sys.C2)
+	EC2.Mul(E, sys.LFT.C2)
 	ED21 := mat.NewDense(N, m, nil)
-	ED21.Mul(E, sys.D21)
+	ED21.Mul(E, sys.LFT.D21)
 
 	Aa := mat.NewDense(n, n, nil)
-	Aa.Mul(sys.B2, EC2)
+	Aa.Mul(sys.LFT.B2, EC2)
 	Aa.Add(sys.A, Aa)
 
 	Ba := mat.NewDense(n, m, nil)
-	Ba.Mul(sys.B2, ED21)
+	Ba.Mul(sys.LFT.B2, ED21)
 	Ba.Add(sys.B, Ba)
 
 	Ca := mat.NewDense(p, n, nil)
-	Ca.Mul(sys.D12, EC2)
+	Ca.Mul(sys.LFT.D12, EC2)
 	Ca.Add(sys.C, Ca)
 
 	Da := mat.NewDense(p, m, nil)
-	Da.Mul(sys.D12, ED21)
+	Da.Mul(sys.LFT.D12, ED21)
 	Da.Add(sys.D, Da)
 
 	result, err := newNoCopy(Aa, Ba, Ca, Da, sys.Dt)

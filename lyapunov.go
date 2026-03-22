@@ -32,9 +32,7 @@ func Lyap(A, Q *mat.Dense) (*mat.Dense, error) {
 
 	aData := make([]float64, n*n)
 	aRaw := A.RawMatrix()
-	for i := range n {
-		copy(aData[i*n:i*n+n], aRaw.Data[i*aRaw.Stride:i*aRaw.Stride+n])
-	}
+	copyStrided(aData, n, aRaw.Data, aRaw.Stride, n, n)
 
 	wr := make([]float64, n)
 	wi := make([]float64, n)
@@ -118,9 +116,7 @@ func DLyap(A, Q *mat.Dense) (*mat.Dense, error) {
 
 	aData := make([]float64, n*n)
 	aRaw := A.RawMatrix()
-	for i := range n {
-		copy(aData[i*n:i*n+n], aRaw.Data[i*aRaw.Stride:i*aRaw.Stride+n])
-	}
+	copyStrided(aData, n, aRaw.Data, aRaw.Stride, n, n)
 
 	wr := make([]float64, n)
 	wi := make([]float64, n)

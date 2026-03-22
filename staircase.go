@@ -103,26 +103,20 @@ func ControllabilityStaircase(A, B, C *mat.Dense, tol float64) *StaircaseResult 
 		aSub := blas64.General{Rows: n, Cols: bRows, Stride: aRaw.Stride, Data: aRaw.Data[ncont:]}
 		tGen := blas64.General{Rows: n, Cols: bRows, Stride: bRows, Data: tempBuf[:n*bRows]}
 		blas64.Gemm(blas.NoTrans, blas.NoTrans, 1, aSub, uGen, 0, tGen)
-		for i := 0; i < n; i++ {
-			copy(aRaw.Data[i*aRaw.Stride+ncont:i*aRaw.Stride+ncont+bRows], tempBuf[i*bRows:i*bRows+bRows])
-		}
+		copyStrided(aRaw.Data[ncont:], aRaw.Stride, tempBuf, bRows, n, bRows)
 
 		// Step 2: A[ncont:ncont+bRows, :] = U^T * A[ncont:ncont+bRows, :]
 		aSubRows := blas64.General{Rows: bRows, Cols: n, Stride: aRaw.Stride, Data: aRaw.Data[ncont*aRaw.Stride:]}
 		tGenRows := blas64.General{Rows: bRows, Cols: n, Stride: n, Data: tempBuf[:bRows*n]}
 		blas64.Gemm(blas.Trans, blas.NoTrans, 1, uGen, aSubRows, 0, tGenRows)
-		for i := 0; i < bRows; i++ {
-			copy(aRaw.Data[(ncont+i)*aRaw.Stride:(ncont+i)*aRaw.Stride+n], tempBuf[i*n:i*n+n])
-		}
+		copyStrided(aRaw.Data[ncont*aRaw.Stride:], aRaw.Stride, tempBuf, n, bRows, n)
 
 		// B = Q^T * B; only rows [ncont:ncont+bRows] change
 		bRaw := bWork.RawMatrix()
 		bSubRows := blas64.General{Rows: bRows, Cols: m, Stride: bRaw.Stride, Data: bRaw.Data[ncont*bRaw.Stride:]}
 		tGenB := blas64.General{Rows: bRows, Cols: m, Stride: m, Data: tempBuf[:bRows*m]}
 		blas64.Gemm(blas.Trans, blas.NoTrans, 1, uGen, bSubRows, 0, tGenB)
-		for i := 0; i < bRows; i++ {
-			copy(bRaw.Data[(ncont+i)*bRaw.Stride:(ncont+i)*bRaw.Stride+m], tempBuf[i*m:i*m+m])
-		}
+		copyStrided(bRaw.Data[ncont*bRaw.Stride:], bRaw.Stride, tempBuf, m, bRows, m)
 
 		// C = C * Q; only cols [ncont:ncont+bRows] change
 		if cWork != nil {
@@ -130,9 +124,7 @@ func ControllabilityStaircase(A, B, C *mat.Dense, tol float64) *StaircaseResult 
 			cSub := blas64.General{Rows: p, Cols: bRows, Stride: cRaw.Stride, Data: cRaw.Data[ncont:]}
 			tGenC := blas64.General{Rows: p, Cols: bRows, Stride: bRows, Data: tempBuf[:p*bRows]}
 			blas64.Gemm(blas.NoTrans, blas.NoTrans, 1, cSub, uGen, 0, tGenC)
-			for i := 0; i < p; i++ {
-				copy(cRaw.Data[i*cRaw.Stride+ncont:i*cRaw.Stride+ncont+bRows], tempBuf[i*bRows:i*bRows+bRows])
-			}
+			copyStrided(cRaw.Data[ncont:], cRaw.Stride, tempBuf, bRows, p, bRows)
 		}
 
 		ncont += rank
@@ -144,9 +136,7 @@ func ControllabilityStaircase(A, B, C *mat.Dense, tol float64) *StaircaseResult 
 
 		block = mat.NewDense(remaining, rank, nil)
 		blkRaw := block.RawMatrix()
-		for i := 0; i < remaining; i++ {
-			copy(blkRaw.Data[i*blkRaw.Stride:i*blkRaw.Stride+rank], aRaw.Data[(ncont+i)*aRaw.Stride+ncont-rank:(ncont+i)*aRaw.Stride+ncont])
-		}
+		copyBlock(blkRaw.Data, blkRaw.Stride, 0, 0, aRaw.Data, aRaw.Stride, ncont, ncont-rank, remaining, rank)
 	}
 
 	return &StaircaseResult{

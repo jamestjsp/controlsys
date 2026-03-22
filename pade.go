@@ -20,7 +20,7 @@ func (sys *System) Pade(order int) (*System, error) {
 		return nil, fmt.Errorf("Pade: %w", err)
 	}
 
-	N := len(lft.InternalDelay)
+	N := lft.internalDelayCount()
 	if N == 0 {
 		return sys.Copy(), nil
 	}
@@ -29,9 +29,9 @@ func (sys *System) Pade(order int) (*System, error) {
 
 	var delayBank *System
 	for j := 0; j < N; j++ {
-		pd, err := PadeDelay(lft.InternalDelay[j], order)
+		pd, err := PadeDelay(lft.LFT.Tau[j], order)
 		if err != nil {
-			return nil, fmt.Errorf("Pade: delay %d (tau=%v): %w", j, lft.InternalDelay[j], err)
+			return nil, fmt.Errorf("Pade: delay %d (tau=%v): %w", j, lft.LFT.Tau[j], err)
 		}
 		if delayBank == nil {
 			delayBank = pd
@@ -46,11 +46,11 @@ func (sys *System) Pade(order int) (*System, error) {
 	nd, _, _ := delayBank.Dims()
 	nTotal := n + nd
 
-	B2 := lft.B2
-	C2 := lft.C2
-	D12 := lft.D12
-	D21 := lft.D21
-	D22 := lft.D22
+	B2 := lft.LFT.B2
+	C2 := lft.LFT.C2
+	D12 := lft.LFT.D12
+	D21 := lft.LFT.D21
+	D22 := lft.LFT.D22
 
 	Dd := delayBank.D
 	D22Dd := mat.NewDense(N, N, nil)

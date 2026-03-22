@@ -45,9 +45,7 @@ func Gram(sys *System, typ GramType) (*GramResult, error) {
 
 	aRaw := sys.A.RawMatrix()
 	aData := make([]float64, n*n)
-	for i := range n {
-		copy(aData[i*n:i*n+n], aRaw.Data[i*aRaw.Stride:i*aRaw.Stride+n])
-	}
+	copyStrided(aData, n, aRaw.Data, aRaw.Stride, n, n)
 
 	var q []float64
 	var solveA []float64
@@ -97,9 +95,7 @@ func Gram(sys *System, typ GramType) (*GramResult, error) {
 
 	xRaw := X.RawMatrix()
 	lData := make([]float64, n*n)
-	for i := range n {
-		copy(lData[i*n:i*n+n], xRaw.Data[i*xRaw.Stride:i*xRaw.Stride+n])
-	}
+	copyStrided(lData, n, xRaw.Data, xRaw.Stride, n, n)
 	ok := impl.Dpotrf(blas.Upper, n, lData, n)
 	if ok {
 		res.L = mat.NewDense(n, n, lData)

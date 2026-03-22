@@ -433,12 +433,14 @@ func TestPadeIODelay(t *testing.T) {
 
 func TestPadeInternalDelay(t *testing.T) {
 	sys, _ := NewFromSlices(1, 1, 1, []float64{-1}, []float64{1}, []float64{1}, []float64{0}, 0)
-	sys.InternalDelay = []float64{0.5}
-	sys.B2 = mat.NewDense(1, 1, []float64{0.5})
-	sys.C2 = mat.NewDense(1, 1, []float64{1})
-	sys.D12 = mat.NewDense(1, 1, []float64{0})
-	sys.D21 = mat.NewDense(1, 1, []float64{0})
-	sys.D22 = mat.NewDense(1, 1, []float64{0})
+	sys.LFT = &LFTDelay{
+		Tau: []float64{0.5},
+		B2:  mat.NewDense(1, 1, []float64{0.5}),
+		C2:  mat.NewDense(1, 1, []float64{1}),
+		D12: mat.NewDense(1, 1, []float64{0}),
+		D21: mat.NewDense(1, 1, []float64{0}),
+		D22: mat.NewDense(1, 1, []float64{0}),
+	}
 
 	result, err := sys.Pade(3)
 	if err != nil {

@@ -83,16 +83,19 @@ func (sys *System) Undiscretize() (*System, error) {
 			out.OutputDelay[i] = d * sys.Dt
 		}
 	}
-	if sys.InternalDelay != nil {
-		out.InternalDelay = make([]float64, len(sys.InternalDelay))
-		for i, d := range sys.InternalDelay {
-			out.InternalDelay[i] = d * sys.Dt
+	if sys.LFT != nil {
+		tau := make([]float64, len(sys.LFT.Tau))
+		for i, d := range sys.LFT.Tau {
+			tau[i] = d * sys.Dt
 		}
-		out.B2 = mat.DenseCopyOf(sys.B2)
-		out.C2 = mat.DenseCopyOf(sys.C2)
-		out.D12 = mat.DenseCopyOf(sys.D12)
-		out.D21 = mat.DenseCopyOf(sys.D21)
-		out.D22 = mat.DenseCopyOf(sys.D22)
+		out.LFT = &LFTDelay{
+			Tau: tau,
+			B2:  mat.DenseCopyOf(sys.LFT.B2),
+			C2:  mat.DenseCopyOf(sys.LFT.C2),
+			D12: mat.DenseCopyOf(sys.LFT.D12),
+			D21: mat.DenseCopyOf(sys.LFT.D21),
+			D22: mat.DenseCopyOf(sys.LFT.D22),
+		}
 	}
 	propagateNames(out, sys)
 	return out, nil
@@ -419,12 +422,14 @@ func discretizeDelaysAsInternal(disc *System, contInputDelay, contOutputDelay []
 		disc.D = mat.NewDense(p, m, newDData)
 	}
 
-	disc.InternalDelay = internalDelay
-	disc.B2 = mat.NewDense(n, N, b2Data)
-	disc.C2 = mat.NewDense(N, n, c2Data)
-	disc.D12 = mat.NewDense(p, N, d12Data)
-	disc.D21 = mat.NewDense(N, m, d21Data)
-	disc.D22 = mat.NewDense(N, N, d22Data)
+	disc.LFT = &LFTDelay{
+		Tau: internalDelay,
+		B2:  mat.NewDense(n, N, b2Data),
+		C2:  mat.NewDense(N, n, c2Data),
+		D12: mat.NewDense(p, N, d12Data),
+		D21: mat.NewDense(N, m, d21Data),
+		D22: mat.NewDense(N, N, d22Data),
+	}
 
 	return disc, nil
 }
@@ -665,7 +670,7 @@ func (sys *System) DiscretizeZOH(dt float64) (*System, error) {
 }
 
 func discretizeWithInternalDelay(sys *System, dt float64, opts C2DOptions) (*System, error) {
-	if !isStrictlyUpperTriangular(sys.D22) {
+	if sys.LFT != nil && !isStrictlyUpperTriangular(sys.LFT.D22) {
 		return nil, fmt.Errorf("DiscretizeWithOpts: ZOH not supported for GLTI with non-upper-triangular D22: %w", ErrAlgebraicLoop)
 	}
 
@@ -675,10 +680,10 @@ func discretizeWithInternalDelay(sys *System, dt float64, opts C2DOptions) (*Sys
 	}
 
 	n, _, _ := sys.Dims()
-	N := len(sys.InternalDelay)
+	N := sys.internalDelayCount()
 
 	discTau := make([]float64, N)
-	for j, tau := range sys.InternalDelay {
+	for j, tau := range sys.LFT.Tau {
 		samples := tau / dt
 		rounded := math.Round(samples)
 		if math.Abs(samples-rounded) < 1e-9 {
@@ -709,16 +714,20 @@ func discretizeWithInternalDelay(sys *System, dt float64, opts C2DOptions) (*Sys
 		return nil, err
 	}
 
-	disc.InternalDelay = discTau
+	var b2Out *mat.Dense
 	if n > 0 && N > 0 {
-		disc.B2 = Bd2
+		b2Out = Bd2
 	} else {
-		disc.B2 = mat.DenseCopyOf(sys.B2)
+		b2Out = mat.DenseCopyOf(sys.LFT.B2)
 	}
-	disc.C2 = mat.DenseCopyOf(sys.C2)
-	disc.D12 = mat.DenseCopyOf(sys.D12)
-	disc.D21 = mat.DenseCopyOf(sys.D21)
-	disc.D22 = mat.DenseCopyOf(sys.D22)
+	disc.LFT = &LFTDelay{
+		Tau: discTau,
+		B2:  b2Out,
+		C2:  mat.DenseCopyOf(sys.LFT.C2),
+		D12: mat.DenseCopyOf(sys.LFT.D12),
+		D21: mat.DenseCopyOf(sys.LFT.D21),
+		D22: mat.DenseCopyOf(sys.LFT.D22),
+	}
 
 	if sys.Delay != nil {
 		d, convErr := convertDelayToDiscrete(sys.Delay, dt)
@@ -748,14 +757,14 @@ func discretizeWithInternalDelay(sys *System, dt float64, opts C2DOptions) (*Sys
 
 func discretizeZOHAugmented(sys *System, dt float64) (*System, *mat.Dense, error) {
 	n, m, _ := sys.Dims()
-	N := len(sys.InternalDelay)
+	N := sys.internalDelayCount()
 
 	C := denseCopy(sys.C)
 	D := denseCopy(sys.D)
 
 	if n == 0 {
 		out := &System{A: newDense(0, 0), B: denseCopy(sys.B), C: C, D: D, Dt: dt}
-		return out, mat.DenseCopyOf(sys.B2), nil
+		return out, mat.DenseCopyOf(sys.LFT.B2), nil
 	}
 
 	mTotal := m + N
@@ -766,7 +775,7 @@ func discretizeZOHAugmented(sys *System, dt float64) (*System, *mat.Dense, error
 		Ad := mat.NewDense(n, n, nil)
 		Ad.Exp(Adt)
 		out := &System{A: Ad, B: denseCopy(sys.B), C: C, D: D, Dt: dt}
-		return out, mat.DenseCopyOf(sys.B2), nil
+		return out, mat.DenseCopyOf(sys.LFT.B2), nil
 	}
 
 	M := mat.NewDense(nm, nm, nil)
@@ -777,7 +786,7 @@ func discretizeZOHAugmented(sys *System, dt float64) (*System, *mat.Dense, error
 		bRawZ = sys.B.RawMatrix()
 	}
 	if N > 0 {
-		b2RawZ = sys.B2.RawMatrix()
+		b2RawZ = sys.LFT.B2.RawMatrix()
 	}
 
 	for i := 0; i < n; i++ {
@@ -834,7 +843,7 @@ func discretizeZOHAugmented(sys *System, dt float64) (*System, *mat.Dense, error
 
 func discretizeTustinAugmented(sys *System, dt float64) (*System, *mat.Dense, error) {
 	n, _, _ := sys.Dims()
-	N := len(sys.InternalDelay)
+	N := sys.internalDelayCount()
 
 	beta := 2.0 / dt
 	if math.IsInf(beta, 0) {
@@ -849,7 +858,7 @@ func discretizeTustinAugmented(sys *System, dt float64) (*System, *mat.Dense, er
 	disc.Dt = dt
 
 	if n == 0 || N == 0 {
-		return disc, mat.DenseCopyOf(sys.B2), nil
+		return disc, mat.DenseCopyOf(sys.LFT.B2), nil
 	}
 
 	palpha := -beta
@@ -863,7 +872,7 @@ func discretizeTustinAugmented(sys *System, dt float64) (*System, *mat.Dense, er
 	var lu mat.LU
 	lu.Factorize(A)
 
-	B2 := mat.DenseCopyOf(sys.B2)
+	B2 := mat.DenseCopyOf(sys.LFT.B2)
 	if err := lu.SolveTo(B2, false, B2); err != nil {
 		return nil, nil, fmt.Errorf("discretizeTustinAugmented: LU solve for B2 failed: %w", ErrSingularTransform)
 	}
@@ -971,14 +980,14 @@ func (sys *System) DiscretizeImpulse(dt float64) (*System, error) {
 
 func discretizeImpulseAugmented(sys *System, dt float64) (*System, *mat.Dense, error) {
 	n, m, _ := sys.Dims()
-	N := len(sys.InternalDelay)
+	N := sys.internalDelayCount()
 
 	C := denseCopy(sys.C)
 	D := denseCopy(sys.D)
 
 	if n == 0 {
 		out := &System{A: newDense(0, 0), B: denseCopy(sys.B), C: C, D: D, Dt: dt}
-		return out, mat.DenseCopyOf(sys.B2), nil
+		return out, mat.DenseCopyOf(sys.LFT.B2), nil
 	}
 
 	Adt := mat.NewDense(n, n, nil)
@@ -998,7 +1007,7 @@ func discretizeImpulseAugmented(sys *System, dt float64) (*System, *mat.Dense, e
 	var Bd2 *mat.Dense
 	if N > 0 {
 		Bd2 = mat.NewDense(n, N, nil)
-		Bd2.Mul(Ad, sys.B2)
+		Bd2.Mul(Ad, sys.LFT.B2)
 		Bd2.Scale(dt, Bd2)
 	} else {
 		Bd2 = newDense(n, 0)
@@ -1188,7 +1197,7 @@ func fohAugmentStateNames(out, src *System, n, m int) {
 
 func discretizeFOHAugmented(sys *System, dt float64) (*System, *mat.Dense, error) {
 	n, m, p := sys.Dims()
-	N := len(sys.InternalDelay)
+	N := sys.internalDelayCount()
 	mTotal := m + N
 
 	C := denseCopy(sys.C)
@@ -1199,7 +1208,7 @@ func discretizeFOHAugmented(sys *System, dt float64) (*System, *mat.Dense, error
 		if err != nil {
 			return nil, nil, err
 		}
-		return out, mat.DenseCopyOf(sys.B2), nil
+		return out, mat.DenseCopyOf(sys.LFT.B2), nil
 	}
 
 	if mTotal == 0 {
@@ -1208,7 +1217,7 @@ func discretizeFOHAugmented(sys *System, dt float64) (*System, *mat.Dense, error
 		Ad := mat.NewDense(n, n, nil)
 		Ad.Exp(Adt)
 		out := &System{A: Ad, B: denseCopy(sys.B), C: C, D: D, Dt: dt}
-		return out, mat.DenseCopyOf(sys.B2), nil
+		return out, mat.DenseCopyOf(sys.LFT.B2), nil
 	}
 
 	sz := n + 2*mTotal
@@ -1220,7 +1229,7 @@ func discretizeFOHAugmented(sys *System, dt float64) (*System, *mat.Dense, error
 		bRaw = sys.B.RawMatrix()
 	}
 	if N > 0 {
-		b2Raw = sys.B2.RawMatrix()
+		b2Raw = sys.LFT.B2.RawMatrix()
 	}
 
 	for i := 0; i < n; i++ {

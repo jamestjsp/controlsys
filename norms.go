@@ -131,8 +131,8 @@ func HSV(sys *System) ([]float64, error) {
 	aData := make([]float64, n*n)
 	at := aData[:0:0]
 	at = make([]float64, n*n)
+	copyStrided(aData, n, aRaw.Data, aRaw.Stride, n, n)
 	for i := range n {
-		copy(aData[i*n:i*n+n], aRaw.Data[i*aRaw.Stride:i*aRaw.Stride+n])
 		for j := range n {
 			at[i*n+j] = aRaw.Data[j*aRaw.Stride+i]
 		}
@@ -165,9 +165,7 @@ func HSV(sys *System) ([]float64, error) {
 func hsvFromGramians(Wc, Wo *mat.Dense, n int) ([]float64, error) {
 	wcRaw := Wc.RawMatrix()
 	lc := make([]float64, n*n)
-	for i := range n {
-		copy(lc[i*n:i*n+n], wcRaw.Data[i*wcRaw.Stride:i*wcRaw.Stride+n])
-	}
+	copyStrided(lc, n, wcRaw.Data, wcRaw.Stride, n, n)
 
 	if !impl.Dpotrf(blas.Lower, n, lc, n) {
 		return eigenvalueHSV(Wc, Wo, n), nil
@@ -180,9 +178,7 @@ func hsvFromGramians(Wc, Wo *mat.Dense, n int) ([]float64, error) {
 
 	woRaw := Wo.RawMatrix()
 	lo := make([]float64, n*n)
-	for i := range n {
-		copy(lo[i*n:i*n+n], woRaw.Data[i*woRaw.Stride:i*woRaw.Stride+n])
-	}
+	copyStrided(lo, n, woRaw.Data, woRaw.Stride, n, n)
 
 	if !impl.Dpotrf(blas.Lower, n, lo, n) {
 		return eigenvalueHSV(Wc, Wo, n), nil
@@ -446,9 +442,7 @@ func (ws *hamiltonianWS) hasImagEigs(gamma float64) bool {
 		impl.Dpotrs(blas.Upper, m, n, r, m, rinvBt, n)
 
 		h11 := ws.h11
-		for i := range n {
-			copy(h11[i*n:i*n+n], ws.aData[i*ws.aStr:i*ws.aStr+n])
-		}
+		copyStrided(h11, n, ws.aData, ws.aStr, n, n)
 		blas64.Gemm(blas.NoTrans, blas.NoTrans, 1,
 			blas64.General{Rows: n, Cols: m, Stride: ws.bStr, Data: ws.bData},
 			blas64.General{Rows: m, Cols: n, Stride: n, Data: dtc},
@@ -604,9 +598,7 @@ func maxSVDense(D *mat.Dense, p, m int) float64 {
 	}
 	raw := D.RawMatrix()
 	data := make([]float64, p*m)
-	for i := range p {
-		copy(data[i*m:i*m+m], raw.Data[i*raw.Stride:i*raw.Stride+m])
-	}
+	copyStrided(data, m, raw.Data, raw.Stride, p, m)
 	sv := make([]float64, min(p, m))
 	wq := make([]float64, 1)
 	impl.Dgesvd(lapack.SVDNone, lapack.SVDNone, p, m, data, m, sv, nil, 1, nil, 1, wq, -1)

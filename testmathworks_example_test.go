@@ -30,9 +30,9 @@ func TestMathWorksFeedbackExample(t *testing.T) {
 		t.Fatalf("Feedback error: %v", err)
 	}
 
-	if !T.HasInternalDelay() || len(T.InternalDelay) != 1 {
-		t.Errorf("Expected 1 internal delay, got %d", len(T.InternalDelay))
-	} else if T.InternalDelay[0] != 2.1 {
-		t.Errorf("Expected internal delay of 2.1, got %f", T.InternalDelay[0])
+	if !T.HasInternalDelay() || len(T.LFT.Tau) != 1 {
+		t.Errorf("Expected 1 internal delay, got %d", len(T.LFT.Tau))
+	} else if T.LFT.Tau[0] != 2.1 {
+		t.Errorf("Expected internal delay of 2.1, got %f", T.LFT.Tau[0])
 	}
 }

@@ -380,13 +380,13 @@ func TestFeedback_MATLAB_CreatesInternalDelay(t *testing.T) {
 	}
 
 	found := false
-	for _, d := range T.InternalDelay {
+	for _, d := range T.LFT.Tau {
 		if math.Abs(d-2.1) < 1e-10 {
 			found = true
 		}
 	}
 	if !found {
-		t.Errorf("InternalDelay = %v, want to contain 2.1", T.InternalDelay)
+		t.Errorf("InternalDelay = %v, want to contain 2.1", T.LFT.Tau)
 	}
 }
 
@@ -463,13 +463,13 @@ func TestParallel_MATLAB_CreatesInternalDelay(t *testing.T) {
 		t.Fatal("expected internal delay from parallel with mismatched delays")
 	}
 	found := false
-	for _, d := range Hp.InternalDelay {
+	for _, d := range Hp.LFT.Tau {
 		if math.Abs(d-3.4) < 1e-10 {
 			found = true
 		}
 	}
 	if !found {
-		t.Errorf("InternalDelay = %v, want to contain 3.4", Hp.InternalDelay)
+		t.Errorf("InternalDelay = %v, want to contain 3.4", Hp.LFT.Tau)
 	}
 
 	resp, err := Hp.FreqResponse([]float64{0.01})

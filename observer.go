@@ -181,9 +181,7 @@ func Kalmd(sys *System, Qn, Rn *mat.Dense, dt float64) (*RiccatiResult, error) {
 
 	// Qd = Ad * eF[0:n, n:2n]
 	f12Data := make([]float64, n*n)
-	for i := range n {
-		copy(f12Data[i*n:i*n+n], efRaw.Data[i*efRaw.Stride+n:i*efRaw.Stride+nn])
-	}
+	copyBlock(f12Data, n, 0, 0, efRaw.Data, efRaw.Stride, 0, n, n, n)
 	F12 := mat.NewDense(n, n, f12Data)
 	Qd := mat.NewDense(n, n, nil)
 	Qd.Mul(Ad, F12)

@@ -273,7 +273,7 @@ func (sys *System) simulateWithDelay(u *mat.Dense, x0 *mat.VecDense) (*Response,
 
 func (sys *System) simulateWithInternalDelay(u *mat.Dense, x0 *mat.VecDense) (*Response, error) {
 	n, m, p := sys.Dims()
-	N := len(sys.InternalDelay)
+	N := sys.internalDelayCount()
 
 	var steps int
 	if u != nil {
@@ -298,7 +298,7 @@ func (sys *System) simulateWithInternalDelay(u *mat.Dense, x0 *mat.VecDense) (*R
 	delays := make([]int, N)
 	maxDelay := 0
 	for j := 0; j < N; j++ {
-		delays[j] = int(math.Round(sys.InternalDelay[j]))
+		delays[j] = int(math.Round(sys.LFT.Tau[j]))
 		if delays[j] > maxDelay {
 			maxDelay = delays[j]
 		}
@@ -356,14 +356,14 @@ func (sys *System) simulateWithInternalDelay(u *mat.Dense, x0 *mat.VecDense) (*R
 	}
 	if N > 0 {
 		if n > 0 {
-			b2Gen = sys.B2.RawMatrix()
-			c2Gen = sys.C2.RawMatrix()
+			b2Gen = sys.LFT.B2.RawMatrix()
+			c2Gen = sys.LFT.C2.RawMatrix()
 		}
-		d12Gen = sys.D12.RawMatrix()
+		d12Gen = sys.LFT.D12.RawMatrix()
 		if m > 0 {
-			d21Gen = sys.D21.RawMatrix()
+			d21Gen = sys.LFT.D21.RawMatrix()
 		}
-		d22Gen = sys.D22.RawMatrix()
+		d22Gen = sys.LFT.D22.RawMatrix()
 	}
 	ykVec := blas64.Vector{N: p, Inc: 1, Data: ykData}
 	wVec := blas64.Vector{N: N, Inc: 1, Data: wData}

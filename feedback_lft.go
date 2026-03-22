@@ -21,8 +21,13 @@ func feedbackWithLFT(plant, controller *System, sign float64) (*System, error) {
 		return nil, err
 	}
 
-	plantTau := plantLFT.InternalDelay
-	ctrlTau := ctrlLFT.InternalDelay
+	var plantTau, ctrlTau []float64
+	if plantLFT.LFT != nil {
+		plantTau = plantLFT.LFT.Tau
+	}
+	if ctrlLFT.LFT != nil {
+		ctrlTau = ctrlLFT.LFT.Tau
+	}
 
 	pH, _ := plantLFT.GetDelayModel()
 	cH, _ := ctrlLFT.GetDelayModel()
@@ -287,18 +292,6 @@ func feedbackWithLFT(plant, controller *System, sign float64) (*System, error) {
 	result.InputName = copyStringSlice(plant.InputName)
 	result.OutputName = copyStringSlice(plant.OutputName)
 	return result, nil
-}
-
-func extractBlock(m *mat.Dense, r0, c0, rows, cols int) *mat.Dense {
-	if rows == 0 || cols == 0 {
-		return mat.NewDense(max(rows, 1), max(cols, 1), nil)
-	}
-	raw := m.RawMatrix()
-	data := make([]float64, rows*cols)
-	for i := 0; i < rows; i++ {
-		copy(data[i*cols:i*cols+cols], raw.Data[(r0+i)*raw.Stride+c0:(r0+i)*raw.Stride+c0+cols])
-	}
-	return mat.NewDense(rows, cols, data)
 }
 
 func eyeDense(n int) *mat.Dense {

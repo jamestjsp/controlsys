@@ -419,8 +419,8 @@ func TestFeedback_WithDelay(t *testing.T) {
 	if !cl.HasInternalDelay() {
 		t.Error("closed-loop should have internal delays")
 	}
-	if len(cl.InternalDelay) != 1 || cl.InternalDelay[0] != 0.5 {
-		t.Errorf("InternalDelay = %v, want [0.5]", cl.InternalDelay)
+	if len(cl.LFT.Tau) != 1 || cl.LFT.Tau[0] != 0.5 {
+		t.Errorf("InternalDelay = %v, want [0.5]", cl.LFT.Tau)
 	}
 }
 
@@ -699,8 +699,8 @@ func TestSeries_IntermediateDelayNonUniform(t *testing.T) {
 	if !result.HasInternalDelay() {
 		t.Fatal("non-uniform intermediate delays should produce InternalDelay")
 	}
-	if len(result.InternalDelay) != 4 {
-		t.Errorf("InternalDelay count = %d, want 4 (2 output + 2 input)", len(result.InternalDelay))
+	if len(result.LFT.Tau) != 4 {
+		t.Errorf("InternalDelay count = %d, want 4 (2 output + 2 input)", len(result.LFT.Tau))
 	}
 }
 
@@ -763,8 +763,8 @@ func TestParallel_WithMismatchedInputDelay(t *testing.T) {
 	if !result.HasInternalDelay() {
 		t.Fatal("mismatched input delays should produce InternalDelay")
 	}
-	if len(result.InternalDelay) != 1 {
-		t.Errorf("InternalDelay count = %d, want 1 (only difference goes internal)", len(result.InternalDelay))
+	if len(result.LFT.Tau) != 1 {
+		t.Errorf("InternalDelay count = %d, want 1 (only difference goes internal)", len(result.LFT.Tau))
 	}
 	if result.InputDelay == nil || result.InputDelay[0] != 1 {
 		t.Errorf("common InputDelay should stay external: got %v, want [1]", result.InputDelay)
@@ -797,8 +797,8 @@ func TestParallel_WithMismatchedOutputDelay(t *testing.T) {
 	if !result.HasInternalDelay() {
 		t.Fatal("mismatched output delays should produce InternalDelay")
 	}
-	if len(result.InternalDelay) != 1 {
-		t.Errorf("InternalDelay count = %d, want 1 (only difference goes internal)", len(result.InternalDelay))
+	if len(result.LFT.Tau) != 1 {
+		t.Errorf("InternalDelay count = %d, want 1 (only difference goes internal)", len(result.LFT.Tau))
 	}
 	if result.OutputDelay == nil || result.OutputDelay[0] != 2 {
 		t.Errorf("common OutputDelay should stay external: got %v, want [2]", result.OutputDelay)
@@ -1289,11 +1289,11 @@ func TestSeriesLFT_WithExistingInternalDelay(t *testing.T) {
 	if !result.HasInternalDelay() {
 		t.Fatal("should preserve InternalDelay from sys1")
 	}
-	if len(result.InternalDelay) != 1 {
-		t.Errorf("InternalDelay count = %d, want 1", len(result.InternalDelay))
+	if len(result.LFT.Tau) != 1 {
+		t.Errorf("InternalDelay count = %d, want 1", len(result.LFT.Tau))
 	}
-	if result.InternalDelay[0] != 0.5 {
-		t.Errorf("InternalDelay[0] = %v, want 0.5", result.InternalDelay[0])
+	if result.LFT.Tau[0] != 0.5 {
+		t.Errorf("InternalDelay[0] = %v, want 0.5", result.LFT.Tau[0])
 	}
 	n, m, p := result.Dims()
 	if n != 2 || m != 1 || p != 1 {
@@ -1338,17 +1338,17 @@ func TestSeriesLFT_BothWithInternalDelay(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(result.InternalDelay) != 3 {
-		t.Errorf("InternalDelay count = %d, want 3 (1+2)", len(result.InternalDelay))
+	if len(result.LFT.Tau) != 3 {
+		t.Errorf("InternalDelay count = %d, want 3 (1+2)", len(result.LFT.Tau))
 	}
-	if result.InternalDelay[0] != 0.5 {
-		t.Errorf("InternalDelay[0] = %v, want 0.5", result.InternalDelay[0])
+	if result.LFT.Tau[0] != 0.5 {
+		t.Errorf("InternalDelay[0] = %v, want 0.5", result.LFT.Tau[0])
 	}
-	if result.InternalDelay[1] != 1.5 {
-		t.Errorf("InternalDelay[1] = %v, want 1.5", result.InternalDelay[1])
+	if result.LFT.Tau[1] != 1.5 {
+		t.Errorf("InternalDelay[1] = %v, want 1.5", result.LFT.Tau[1])
 	}
-	if result.InternalDelay[2] != 2.0 {
-		t.Errorf("InternalDelay[2] = %v, want 2.0", result.InternalDelay[2])
+	if result.LFT.Tau[2] != 2.0 {
+		t.Errorf("InternalDelay[2] = %v, want 2.0", result.LFT.Tau[2])
 	}
 }
 
@@ -1368,8 +1368,8 @@ func TestParallelLFT_MismatchedIODelay(t *testing.T) {
 	if !result.HasInternalDelay() {
 		t.Fatal("mismatched IO delays should produce InternalDelay")
 	}
-	if len(result.InternalDelay) != 2 {
-		t.Errorf("InternalDelay count = %d, want 2", len(result.InternalDelay))
+	if len(result.LFT.Tau) != 2 {
+		t.Errorf("InternalDelay count = %d, want 2", len(result.LFT.Tau))
 	}
 	_, m, p := result.Dims()
 	if m != 1 || p != 1 {
@@ -1414,14 +1414,14 @@ func TestParallelLFT_WithExistingInternalDelay(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(result.InternalDelay) != 2 {
-		t.Errorf("InternalDelay count = %d, want 2 (1+1)", len(result.InternalDelay))
+	if len(result.LFT.Tau) != 2 {
+		t.Errorf("InternalDelay count = %d, want 2 (1+1)", len(result.LFT.Tau))
 	}
-	if result.InternalDelay[0] != 0.3 {
-		t.Errorf("InternalDelay[0] = %v, want 0.3", result.InternalDelay[0])
+	if result.LFT.Tau[0] != 0.3 {
+		t.Errorf("InternalDelay[0] = %v, want 0.3", result.LFT.Tau[0])
 	}
-	if result.InternalDelay[1] != 0.7 {
-		t.Errorf("InternalDelay[1] = %v, want 0.7", result.InternalDelay[1])
+	if result.LFT.Tau[1] != 0.7 {
+		t.Errorf("InternalDelay[1] = %v, want 0.7", result.LFT.Tau[1])
 	}
 }
 
@@ -1462,17 +1462,17 @@ func TestAppend_WithInternalDelay(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(result.InternalDelay) != 3 {
-		t.Fatalf("InternalDelay count = %d, want 3 (1+2)", len(result.InternalDelay))
+	if len(result.LFT.Tau) != 3 {
+		t.Fatalf("InternalDelay count = %d, want 3 (1+2)", len(result.LFT.Tau))
 	}
-	if result.InternalDelay[0] != 0.5 {
-		t.Errorf("InternalDelay[0] = %v, want 0.5", result.InternalDelay[0])
+	if result.LFT.Tau[0] != 0.5 {
+		t.Errorf("InternalDelay[0] = %v, want 0.5", result.LFT.Tau[0])
 	}
-	if result.InternalDelay[1] != 1.0 {
-		t.Errorf("InternalDelay[1] = %v, want 1.0", result.InternalDelay[1])
+	if result.LFT.Tau[1] != 1.0 {
+		t.Errorf("InternalDelay[1] = %v, want 1.0", result.LFT.Tau[1])
 	}
-	if result.InternalDelay[2] != 2.0 {
-		t.Errorf("InternalDelay[2] = %v, want 2.0", result.InternalDelay[2])
+	if result.LFT.Tau[2] != 2.0 {
+		t.Errorf("InternalDelay[2] = %v, want 2.0", result.LFT.Tau[2])
 	}
 
 	n, m, p := result.Dims()
@@ -1480,21 +1480,21 @@ func TestAppend_WithInternalDelay(t *testing.T) {
 		t.Errorf("dims = (%d,%d,%d), want (2,2,2)", n, m, p)
 	}
 
-	r, c := result.B2.Dims()
+	r, c := result.LFT.B2.Dims()
 	if r != 2 || c != 3 {
 		t.Errorf("B2 dims = %dx%d, want 2x3", r, c)
 	}
-	if result.B2.At(0, 0) != 0.1 {
-		t.Errorf("B2[0,0] = %v, want 0.1", result.B2.At(0, 0))
+	if result.LFT.B2.At(0, 0) != 0.1 {
+		t.Errorf("B2[0,0] = %v, want 0.1", result.LFT.B2.At(0, 0))
 	}
-	if result.B2.At(1, 1) != 0.5 {
-		t.Errorf("B2[1,1] = %v, want 0.5", result.B2.At(1, 1))
+	if result.LFT.B2.At(1, 1) != 0.5 {
+		t.Errorf("B2[1,1] = %v, want 0.5", result.LFT.B2.At(1, 1))
 	}
-	if result.B2.At(0, 1) != 0 {
-		t.Errorf("B2[0,1] = %v, want 0 (block-diagonal)", result.B2.At(0, 1))
+	if result.LFT.B2.At(0, 1) != 0 {
+		t.Errorf("B2[0,1] = %v, want 0 (block-diagonal)", result.LFT.B2.At(0, 1))
 	}
 
-	r, c = result.D22.Dims()
+	r, c = result.LFT.D22.Dims()
 	if r != 3 || c != 3 {
 		t.Errorf("D22 dims = %dx%d, want 3x3", r, c)
 	}
@@ -1547,12 +1547,12 @@ func TestSeriesLFT_Roundtrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(rebuilt.InternalDelay) != 2 {
-		t.Fatalf("rebuilt InternalDelay = %d, want 2", len(rebuilt.InternalDelay))
+	if len(rebuilt.LFT.Tau) != 2 {
+		t.Fatalf("rebuilt InternalDelay = %d, want 2", len(rebuilt.LFT.Tau))
 	}
-	for i, v := range result.InternalDelay {
-		if math.Abs(rebuilt.InternalDelay[i]-v) > 1e-12 {
-			t.Errorf("InternalDelay[%d] = %v, want %v", i, rebuilt.InternalDelay[i], v)
+	for i, v := range result.LFT.Tau {
+		if math.Abs(rebuilt.LFT.Tau[i]-v) > 1e-12 {
+			t.Errorf("InternalDelay[%d] = %v, want %v", i, rebuilt.LFT.Tau[i], v)
 		}
 	}
 }
@@ -1643,15 +1643,15 @@ func TestAppend_MixedInternalAndIO(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(result.InternalDelay) != 1 {
-		t.Errorf("InternalDelay count = %d, want 1", len(result.InternalDelay))
+	if len(result.LFT.Tau) != 1 {
+		t.Errorf("InternalDelay count = %d, want 1", len(result.LFT.Tau))
 	}
-	r, c := result.B2.Dims()
+	r, c := result.LFT.B2.Dims()
 	if r != 2 || c != 1 {
 		t.Errorf("B2 dims = %dx%d, want 2x1", r, c)
 	}
-	if result.B2.At(1, 0) != 0 {
-		t.Errorf("B2[1,0] = %v, want 0 (block-diagonal)", result.B2.At(1, 0))
+	if result.LFT.B2.At(1, 0) != 0 {
+		t.Errorf("B2[1,0] = %v, want 0 (block-diagonal)", result.LFT.B2.At(1, 0))
 	}
 }
 
@@ -1701,8 +1701,8 @@ func TestFeedback_LFT_OutputDelay(t *testing.T) {
 	if !cl.HasInternalDelay() {
 		t.Error("should have internal delays")
 	}
-	if len(cl.InternalDelay) != 1 || cl.InternalDelay[0] != 2 {
-		t.Errorf("InternalDelay = %v, want [2]", cl.InternalDelay)
+	if len(cl.LFT.Tau) != 1 || cl.LFT.Tau[0] != 2 {
+		t.Errorf("InternalDelay = %v, want [2]", cl.LFT.Tau)
 	}
 }
 
@@ -1731,8 +1731,8 @@ func TestFeedback_LFT_BothDelayed(t *testing.T) {
 	if !cl.HasInternalDelay() {
 		t.Error("controller OutputDelay should become internal")
 	}
-	if len(cl.InternalDelay) != 1 {
-		t.Errorf("expected 1 internal delay (controller OutputDelay), got %d", len(cl.InternalDelay))
+	if len(cl.LFT.Tau) != 1 {
+		t.Errorf("expected 1 internal delay (controller OutputDelay), got %d", len(cl.LFT.Tau))
 	}
 	if cl.InputDelay == nil || cl.InputDelay[0] != 2 {
 		t.Errorf("plant InputDelay should stay external: got %v, want [2]", cl.InputDelay)
@@ -1780,8 +1780,8 @@ func TestFeedback_LFT_IODelay(t *testing.T) {
 	if !cl.HasInternalDelay() {
 		t.Error("should have internal delays from IODelay")
 	}
-	if len(cl.InternalDelay) != 1 || cl.InternalDelay[0] != 0.3 {
-		t.Errorf("InternalDelay = %v, want [0.3]", cl.InternalDelay)
+	if len(cl.LFT.Tau) != 1 || cl.LFT.Tau[0] != 0.3 {
+		t.Errorf("InternalDelay = %v, want [0.3]", cl.LFT.Tau)
 	}
 	_, m, p := cl.Dims()
 	if m != 1 || p != 1 {
@@ -1835,14 +1835,14 @@ func TestFeedbackKeepsInputDelay(t *testing.T) {
 		t.Fatal("plant OutputDelay should become internal delay")
 	}
 	found := false
-	for _, tau := range cl.InternalDelay {
+	for _, tau := range cl.LFT.Tau {
 		if tau == 2 {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Errorf("InternalDelay should contain 2 (from OutputDelay), got %v", cl.InternalDelay)
+		t.Errorf("InternalDelay should contain 2 (from OutputDelay), got %v", cl.LFT.Tau)
 	}
 }
 
@@ -2571,31 +2571,31 @@ func TestBlkDiag_ThreeWithInternalDelay(t *testing.T) {
 	if n != 3 || m != 3 || p != 3 {
 		t.Errorf("dims = (%d,%d,%d), want (3,3,3)", n, m, p)
 	}
-	if len(result.InternalDelay) != 3 {
-		t.Fatalf("InternalDelay = %v, want 3 entries", result.InternalDelay)
+	if len(result.LFT.Tau) != 3 {
+		t.Fatalf("InternalDelay = %v, want 3 entries", result.LFT.Tau)
 	}
 	wantTau := []float64{0.5, 1.0, 1.5}
 	for i, w := range wantTau {
-		if result.InternalDelay[i] != w {
-			t.Errorf("tau[%d] = %v, want %v", i, result.InternalDelay[i], w)
+		if result.LFT.Tau[i] != w {
+			t.Errorf("tau[%d] = %v, want %v", i, result.LFT.Tau[i], w)
 		}
 	}
 
-	r, c := result.B2.Dims()
+	r, c := result.LFT.B2.Dims()
 	if r != 3 || c != 3 {
 		t.Errorf("B2 dims = (%d,%d), want (3,3)", r, c)
 	}
 	for i := range 3 {
-		if result.B2.At(i, i) != 0.1 {
-			t.Errorf("B2[%d,%d] = %v, want 0.1", i, i, result.B2.At(i, i))
+		if result.LFT.B2.At(i, i) != 0.1 {
+			t.Errorf("B2[%d,%d] = %v, want 0.1", i, i, result.LFT.B2.At(i, i))
 		}
 	}
 
-	r, c = result.D12.Dims()
+	r, c = result.LFT.D12.Dims()
 	if r != 3 || c != 3 {
 		t.Errorf("D12 dims = (%d,%d), want (3,3)", r, c)
 	}
-	r, c = result.D21.Dims()
+	r, c = result.LFT.D21.Dims()
 	if r != 3 || c != 3 {
 		t.Errorf("D21 dims = (%d,%d), want (3,3)", r, c)
 	}
@@ -2627,8 +2627,8 @@ func TestAppend_MixedLFTAndPlain(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if len(result.InternalDelay) != 1 {
-		t.Errorf("InternalDelay = %v, want [0.5]", result.InternalDelay)
+	if len(result.LFT.Tau) != 1 {
+		t.Errorf("InternalDelay = %v, want [0.5]", result.LFT.Tau)
 	}
 	n, m, p := result.Dims()
 	if n != 2 || m != 2 || p != 2 {

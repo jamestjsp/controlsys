@@ -93,3 +93,23 @@ func symmetrize(data []float64, n, stride int) {
 		}
 	}
 }
+
+func copyStrided(dst []float64, dstStride int, src []float64, srcStride int, rows, cols int) {
+	for i := 0; i < rows; i++ {
+		copy(dst[i*dstStride:i*dstStride+cols], src[i*srcStride:i*srcStride+cols])
+	}
+}
+
+func copyBlock(dst []float64, dstStride, dstR0, dstC0 int, src []float64, srcStride, srcR0, srcC0 int, rows, cols int) {
+	copyStrided(dst[dstR0*dstStride+dstC0:], dstStride, src[srcR0*srcStride+srcC0:], srcStride, rows, cols)
+}
+
+func extractBlock(m *mat.Dense, r0, c0, rows, cols int) *mat.Dense {
+	if rows == 0 || cols == 0 {
+		return mat.NewDense(max(rows, 1), max(cols, 1), nil)
+	}
+	raw := m.RawMatrix()
+	data := make([]float64, rows*cols)
+	copyBlock(data, cols, 0, 0, raw.Data, raw.Stride, r0, c0, rows, cols)
+	return mat.NewDense(rows, cols, data)
+}

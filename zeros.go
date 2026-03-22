@@ -159,21 +159,17 @@ func zerosStaircase(A, B, C, D *mat.Dense, n, m, p int) (afOut, bfOut []float64,
 	cRaw := C.RawMatrix()
 	dRaw := D.RawMatrix()
 
-	for i := 0; i < n; i++ {
-		if m > 0 {
-			copy(bf[i*stride:i*stride+m], bRaw.Data[i*bRaw.Stride:i*bRaw.Stride+m])
-		}
-		if n > 0 {
-			copy(bf[i*stride+m:i*stride+m+n], aRaw.Data[i*aRaw.Stride:i*aRaw.Stride+n])
-		}
+	if m > 0 {
+		copyStrided(bf, stride, bRaw.Data, bRaw.Stride, n, m)
 	}
-	for i := 0; i < p; i++ {
-		if m > 0 {
-			copy(bf[(n+i)*stride:(n+i)*stride+m], dRaw.Data[i*dRaw.Stride:i*dRaw.Stride+m])
-		}
-		if n > 0 {
-			copy(bf[(n+i)*stride+m:(n+i)*stride+m+n], cRaw.Data[i*cRaw.Stride:i*cRaw.Stride+n])
-		}
+	if n > 0 {
+		copyBlock(bf, stride, 0, m, aRaw.Data, aRaw.Stride, 0, 0, n, n)
+	}
+	if m > 0 {
+		copyBlock(bf, stride, n, 0, dRaw.Data, dRaw.Stride, 0, 0, p, m)
+	}
+	if n > 0 {
+		copyBlock(bf, stride, n, m, cRaw.Data, cRaw.Stride, 0, 0, p, n)
 	}
 
 	// Tolerance
@@ -239,9 +235,7 @@ func zerosStaircase(A, B, C, D *mat.Dense, n, m, p int) (afOut, bfOut []float64,
 	if rank != 0 && mu > 0 {
 		// D' block: MU rows × I1 cols, extract for DTZRZF
 		dp := make([]float64, mu*i1)
-		for r := 0; r < mu; r++ {
-			copy(dp[r*i1:r*i1+i1], af[(nu+r)*afStride:(nu+r)*afStride+i1])
-		}
+		copyBlock(dp, i1, 0, 0, af, afStride, nu, 0, mu, i1)
 
 		tauRZ := make([]float64, mu)
 		work := make([]float64, 1)
@@ -260,10 +254,8 @@ func zerosStaircase(A, B, C, D *mat.Dense, n, m, p int) (afOut, bfOut []float64,
 	// Extract Af = af[0:nu, mu:mu+nu] and Bf = bf[0:nu, mu:mu+nu]
 	afOut = make([]float64, nu*nu)
 	bfOut = make([]float64, nu*nu)
-	for r := 0; r < nu; r++ {
-		copy(afOut[r*nu:r*nu+nu], af[r*afStride+mu:r*afStride+mu+nu])
-		copy(bfOut[r*nu:r*nu+nu], bfPencil[r*i1+mu:r*i1+mu+nu])
-	}
+	copyBlock(afOut, nu, 0, 0, af, afStride, 0, mu, nu, nu)
+	copyBlock(bfOut, nu, 0, 0, bfPencil, i1, 0, mu, nu, nu)
 
 	return afOut, bfOut, nu, rank, nil
 }

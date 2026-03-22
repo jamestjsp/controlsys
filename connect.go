@@ -817,16 +817,20 @@ func seriesLFT(sys1, sys2 *System) (*System, error) {
 
 	n1, m1, _ := s1.Dims()
 	n2, _, p2 := s2.Dims()
-	N1 := len(s1.InternalDelay)
-	N2 := len(s2.InternalDelay)
+	N1 := s1.internalDelayCount()
+	N2 := s2.internalDelayCount()
 	N := N1 + N2
 	n := n1 + n2
 	m := m1
 	p := p2
 
 	tau := make([]float64, 0, N)
-	tau = append(tau, s1.InternalDelay...)
-	tau = append(tau, s2.InternalDelay...)
+	if s1.LFT != nil {
+		tau = append(tau, s1.LFT.Tau...)
+	}
+	if s2.LFT != nil {
+		tau = append(tau, s2.LFT.Tau...)
+	}
 
 	A := mat.NewDense(max(n, 1), max(n, 1), nil)
 	B := mat.NewDense(max(n, 1), max(m, 1), nil)
@@ -880,30 +884,30 @@ func seriesLFT(sys1, sys2 *System) (*System, error) {
 
 	if N1 > 0 {
 		if n1 > 0 {
-			setBlock(b2, 0, 0, s1.B2)
+			setBlock(b2, 0, 0, s1.LFT.B2)
 		}
 		if n2 > 0 {
-			setBlock(b2, n1, 0, mulDense(s2.B, s1.D12))
+			setBlock(b2, n1, 0, mulDense(s2.B, s1.LFT.D12))
 		}
 		if n1 > 0 {
-			setBlock(c2, 0, 0, s1.C2)
+			setBlock(c2, 0, 0, s1.LFT.C2)
 		}
-		setBlock(d12, 0, 0, mulDense(s2.D, s1.D12))
-		setBlock(d21, 0, 0, s1.D21)
+		setBlock(d12, 0, 0, mulDense(s2.D, s1.LFT.D12))
+		setBlock(d21, 0, 0, s1.LFT.D21)
 		if N2 > 0 {
-			setBlock(d22, N1, 0, mulDense(s2.D21, s1.D12))
+			setBlock(d22, N1, 0, mulDense(s2.LFT.D21, s1.LFT.D12))
 		}
 	}
 
 	if N2 > 0 {
 		if n2 > 0 {
-			setBlock(b2, n1, N1, s2.B2)
+			setBlock(b2, n1, N1, s2.LFT.B2)
 		}
 		if n1 > 0 {
-			setBlock(c2, N1, n1, s2.C2)
+			setBlock(c2, N1, n1, s2.LFT.C2)
 		}
 		if n2 > 0 {
-			c2sub := mulDense(s2.D21, s1.C)
+			c2sub := mulDense(s2.LFT.D21, s1.C)
 			r, c := c2sub.Dims()
 			for i := 0; i < r; i++ {
 				for j := 0; j < c; j++ {
@@ -911,12 +915,12 @@ func seriesLFT(sys1, sys2 *System) (*System, error) {
 				}
 			}
 		}
-		setBlock(d12, 0, N1, s2.D12)
-		d21sub := mulDense(s2.D21, s1.D)
+		setBlock(d12, 0, N1, s2.LFT.D12)
+		d21sub := mulDense(s2.LFT.D21, s1.D)
 		setBlock(d21, N1, 0, d21sub)
-		setBlock(d22, N1, N1, s2.D22)
+		setBlock(d22, N1, N1, s2.LFT.D22)
 		if N1 > 0 {
-			setBlock(d22, N1, 0, mulDense(s2.D21, s1.D12))
+			setBlock(d22, N1, 0, mulDense(s2.LFT.D21, s1.LFT.D12))
 		}
 	}
 
@@ -929,12 +933,14 @@ func seriesLFT(sys1, sys2 *System) (*System, error) {
 	if err != nil {
 		return nil, err
 	}
-	sys.InternalDelay = tau
-	sys.B2 = b2
-	sys.C2 = c2
-	sys.D12 = d12
-	sys.D21 = d21
-	sys.D22 = d22
+	sys.LFT = &LFTDelay{
+		Tau: tau,
+		B2:  b2,
+		C2:  c2,
+		D12: d12,
+		D21: d21,
+		D22: d22,
+	}
 	sys.InputDelay = savedInput1
 	sys.OutputDelay = savedOutput2
 	sys.InputName = copyStringSlice(sys1.InputName)
@@ -986,16 +992,20 @@ func parallelLFT(sys1, sys2 *System) (*System, error) {
 
 	n1, _, _ := s1.Dims()
 	n2, _, _ := s2.Dims()
-	N1 := len(s1.InternalDelay)
-	N2 := len(s2.InternalDelay)
+	N1 := s1.internalDelayCount()
+	N2 := s2.internalDelayCount()
 	N := N1 + N2
 	n := n1 + n2
 	m := m1
 	p := p1
 
 	tau := make([]float64, 0, N)
-	tau = append(tau, s1.InternalDelay...)
-	tau = append(tau, s2.InternalDelay...)
+	if s1.LFT != nil {
+		tau = append(tau, s1.LFT.Tau...)
+	}
+	if s2.LFT != nil {
+		tau = append(tau, s2.LFT.Tau...)
+	}
 
 	A := mat.NewDense(max(n, 1), max(n, 1), nil)
 	B := mat.NewDense(max(n, 1), max(m, 1), nil)
@@ -1040,26 +1050,26 @@ func parallelLFT(sys1, sys2 *System) (*System, error) {
 
 	if N1 > 0 {
 		if n1 > 0 {
-			setBlock(b2, 0, 0, s1.B2)
+			setBlock(b2, 0, 0, s1.LFT.B2)
 		}
 		if n1 > 0 {
-			setBlock(c2, 0, 0, s1.C2)
+			setBlock(c2, 0, 0, s1.LFT.C2)
 		}
-		setBlock(d12, 0, 0, s1.D12)
-		setBlock(d21, 0, 0, s1.D21)
-		setBlock(d22, 0, 0, s1.D22)
+		setBlock(d12, 0, 0, s1.LFT.D12)
+		setBlock(d21, 0, 0, s1.LFT.D21)
+		setBlock(d22, 0, 0, s1.LFT.D22)
 	}
 
 	if N2 > 0 {
 		if n2 > 0 {
-			setBlock(b2, n1, N1, s2.B2)
+			setBlock(b2, n1, N1, s2.LFT.B2)
 		}
 		if n2 > 0 {
-			setBlock(c2, N1, n1, s2.C2)
+			setBlock(c2, N1, n1, s2.LFT.C2)
 		}
-		setBlock(d12, 0, N1, s2.D12)
-		setBlock(d21, N1, 0, s2.D21)
-		setBlock(d22, N1, N1, s2.D22)
+		setBlock(d12, 0, N1, s2.LFT.D12)
+		setBlock(d21, N1, 0, s2.LFT.D21)
+		setBlock(d22, N1, N1, s2.LFT.D22)
 	}
 
 	b2 = resizeDense(b2, n, N)
@@ -1071,12 +1081,14 @@ func parallelLFT(sys1, sys2 *System) (*System, error) {
 	if err != nil {
 		return nil, err
 	}
-	sys.InternalDelay = tau
-	sys.B2 = b2
-	sys.C2 = c2
-	sys.D12 = d12
-	sys.D21 = d21
-	sys.D22 = d22
+	sys.LFT = &LFTDelay{
+		Tau: tau,
+		B2:  b2,
+		C2:  c2,
+		D12: d12,
+		D21: d21,
+		D22: d22,
+	}
 	sys.InputDelay = commonIn
 	sys.OutputDelay = commonOut
 	sys.InputName = copyStringSlice(sys1.InputName)
@@ -1086,8 +1098,8 @@ func parallelLFT(sys1, sys2 *System) (*System, error) {
 }
 
 func appendInternalDelay(sys, sys1, sys2 *System, n1, n2, m1, m2, p1, p2 int) {
-	N1 := len(sys1.InternalDelay)
-	N2 := len(sys2.InternalDelay)
+	N1 := sys1.internalDelayCount()
+	N2 := sys2.internalDelayCount()
 	if N1 == 0 && N2 == 0 {
 		return
 	}
@@ -1099,10 +1111,10 @@ func appendInternalDelay(sys, sys1, sys2 *System, n1, n2, m1, m2, p1, p2 int) {
 
 	tau := make([]float64, N)
 	if N1 > 0 {
-		copy(tau, sys1.InternalDelay)
+		copy(tau, sys1.LFT.Tau)
 	}
 	if N2 > 0 {
-		copy(tau[N1:], sys2.InternalDelay)
+		copy(tau[N1:], sys2.LFT.Tau)
 	}
 
 	b2 := mat.NewDense(max(n, 1), N, nil)
@@ -1111,43 +1123,45 @@ func appendInternalDelay(sys, sys1, sys2 *System, n1, n2, m1, m2, p1, p2 int) {
 	d21 := mat.NewDense(N, max(m, 1), nil)
 	d22 := mat.NewDense(N, N, nil)
 
-	if N1 > 0 && sys1.B2 != nil {
-		setBlock(b2, 0, 0, sys1.B2)
+	if N1 > 0 && sys1.LFT.B2 != nil {
+		setBlock(b2, 0, 0, sys1.LFT.B2)
 	}
-	if N2 > 0 && sys2.B2 != nil {
-		setBlock(b2, n1, N1, sys2.B2)
+	if N2 > 0 && sys2.LFT.B2 != nil {
+		setBlock(b2, n1, N1, sys2.LFT.B2)
 	}
-	if N1 > 0 && sys1.C2 != nil {
-		setBlock(c2, 0, 0, sys1.C2)
+	if N1 > 0 && sys1.LFT.C2 != nil {
+		setBlock(c2, 0, 0, sys1.LFT.C2)
 	}
-	if N2 > 0 && sys2.C2 != nil {
-		setBlock(c2, N1, n1, sys2.C2)
+	if N2 > 0 && sys2.LFT.C2 != nil {
+		setBlock(c2, N1, n1, sys2.LFT.C2)
 	}
-	if N1 > 0 && sys1.D12 != nil {
-		setBlock(d12, 0, 0, sys1.D12)
+	if N1 > 0 && sys1.LFT.D12 != nil {
+		setBlock(d12, 0, 0, sys1.LFT.D12)
 	}
-	if N2 > 0 && sys2.D12 != nil {
-		setBlock(d12, p1, N1, sys2.D12)
+	if N2 > 0 && sys2.LFT.D12 != nil {
+		setBlock(d12, p1, N1, sys2.LFT.D12)
 	}
-	if N1 > 0 && sys1.D21 != nil {
-		setBlock(d21, 0, 0, sys1.D21)
+	if N1 > 0 && sys1.LFT.D21 != nil {
+		setBlock(d21, 0, 0, sys1.LFT.D21)
 	}
-	if N2 > 0 && sys2.D21 != nil {
-		setBlock(d21, N1, m1, sys2.D21)
+	if N2 > 0 && sys2.LFT.D21 != nil {
+		setBlock(d21, N1, m1, sys2.LFT.D21)
 	}
-	if N1 > 0 && sys1.D22 != nil {
-		setBlock(d22, 0, 0, sys1.D22)
+	if N1 > 0 && sys1.LFT.D22 != nil {
+		setBlock(d22, 0, 0, sys1.LFT.D22)
 	}
-	if N2 > 0 && sys2.D22 != nil {
-		setBlock(d22, N1, N1, sys2.D22)
+	if N2 > 0 && sys2.LFT.D22 != nil {
+		setBlock(d22, N1, N1, sys2.LFT.D22)
 	}
 
-	sys.InternalDelay = tau
-	sys.B2 = resizeDense(b2, n, N)
-	sys.C2 = resizeDense(c2, N, n)
-	sys.D12 = resizeDense(d12, p, N)
-	sys.D21 = resizeDense(d21, N, m)
-	sys.D22 = resizeDense(d22, N, N)
+	sys.LFT = &LFTDelay{
+		Tau: tau,
+		B2:  resizeDense(b2, n, N),
+		C2:  resizeDense(c2, N, n),
+		D12: resizeDense(d12, p, N),
+		D21: resizeDense(d21, N, m),
+		D22: resizeDense(d22, N, N),
+	}
 }
 
 
@@ -1315,7 +1329,7 @@ func BlkDiag(systems ...*System) (*System, error) {
 func blkDiagInternalDelay(sys *System, srcs []*System, ns, ms, ps []int, nTotal, mTotal, pTotal int) {
 	var NTotal int
 	for _, s := range srcs {
-		NTotal += len(s.InternalDelay)
+		NTotal += s.internalDelayCount()
 	}
 	if NTotal == 0 {
 		return
@@ -1323,7 +1337,9 @@ func blkDiagInternalDelay(sys *System, srcs []*System, ns, ms, ps []int, nTotal,
 
 	tau := make([]float64, 0, NTotal)
 	for _, s := range srcs {
-		tau = append(tau, s.InternalDelay...)
+		if s.LFT != nil {
+			tau = append(tau, s.LFT.Tau...)
+		}
 	}
 
 	n := nTotal
@@ -1338,22 +1354,22 @@ func blkDiagInternalDelay(sys *System, srcs []*System, ns, ms, ps []int, nTotal,
 
 	nOff, mOff, pOff, NOff := 0, 0, 0, 0
 	for i, s := range srcs {
-		Ni := len(s.InternalDelay)
+		Ni := s.internalDelayCount()
 		if Ni > 0 {
-			if ns[i] > 0 && s.B2 != nil {
-				setBlock(b2, nOff, NOff, s.B2)
+			if ns[i] > 0 && s.LFT.B2 != nil {
+				setBlock(b2, nOff, NOff, s.LFT.B2)
 			}
-			if ns[i] > 0 && s.C2 != nil {
-				setBlock(c2, NOff, nOff, s.C2)
+			if ns[i] > 0 && s.LFT.C2 != nil {
+				setBlock(c2, NOff, nOff, s.LFT.C2)
 			}
-			if s.D12 != nil {
-				setBlock(d12, pOff, NOff, s.D12)
+			if s.LFT.D12 != nil {
+				setBlock(d12, pOff, NOff, s.LFT.D12)
 			}
-			if s.D21 != nil {
-				setBlock(d21, NOff, mOff, s.D21)
+			if s.LFT.D21 != nil {
+				setBlock(d21, NOff, mOff, s.LFT.D21)
 			}
-			if s.D22 != nil {
-				setBlock(d22, NOff, NOff, s.D22)
+			if s.LFT.D22 != nil {
+				setBlock(d22, NOff, NOff, s.LFT.D22)
 			}
 		}
 		nOff += ns[i]
@@ -1362,12 +1378,14 @@ func blkDiagInternalDelay(sys *System, srcs []*System, ns, ms, ps []int, nTotal,
 		NOff += Ni
 	}
 
-	sys.InternalDelay = tau
-	sys.B2 = resizeDense(b2, n, NTotal)
-	sys.C2 = resizeDense(c2, NTotal, n)
-	sys.D12 = resizeDense(d12, p, NTotal)
-	sys.D21 = resizeDense(d21, NTotal, m)
-	sys.D22 = resizeDense(d22, NTotal, NTotal)
+	sys.LFT = &LFTDelay{
+		Tau: tau,
+		B2:  resizeDense(b2, n, NTotal),
+		C2:  resizeDense(c2, NTotal, n),
+		D12: resizeDense(d12, p, NTotal),
+		D21: resizeDense(d21, NTotal, m),
+		D22: resizeDense(d22, NTotal, NTotal),
+	}
 }
 
 func Connect(sys *System, Q *mat.Dense, inputs, outputs []int) (*System, error) {
@@ -1448,7 +1466,7 @@ func connectWithDelay(sys *System, Q *mat.Dense, inputs, outputs []int) (*System
 		return nil, err
 	}
 
-	N := len(sLFT.InternalDelay)
+	N := sLFT.internalDelayCount()
 	H, tau := sLFT.GetDelayModel()
 
 	nH, _, _ := H.Dims()

@@ -322,7 +322,7 @@ func freqResponseLFT(sys *System, omega []float64, p, m int) (*FreqResponseMatri
 	nw := len(omega)
 	data := make([]complex128, nw*p*m)
 	n, _, _ := sys.Dims()
-	N := len(sys.InternalDelay)
+	N := sys.internalDelayCount()
 	ws := newLFTWorkspace(n, N, p, m)
 
 	for k, w := range omega {
@@ -389,20 +389,20 @@ func evalFrLFTInto(ws *lftWorkspace, sys *System, s complex128, n, N, p, m int) 
 		dData, dStride = dR.Data, dR.Stride
 	}
 
-	b2Raw := sys.B2.RawMatrix()
-	c2Raw := sys.C2.RawMatrix()
+	b2Raw := sys.LFT.B2.RawMatrix()
+	c2Raw := sys.LFT.C2.RawMatrix()
 	var d12Data, d21Data, d22Data []float64
 	var d12Stride, d21Stride, d22Stride int
-	if sys.D12 != nil {
-		r := sys.D12.RawMatrix()
+	if sys.LFT.D12 != nil {
+		r := sys.LFT.D12.RawMatrix()
 		d12Data, d12Stride = r.Data, r.Stride
 	}
-	if sys.D21 != nil {
-		r := sys.D21.RawMatrix()
+	if sys.LFT.D21 != nil {
+		r := sys.LFT.D21.RawMatrix()
 		d21Data, d21Stride = r.Data, r.Stride
 	}
-	if sys.D22 != nil {
-		r := sys.D22.RawMatrix()
+	if sys.LFT.D22 != nil {
+		r := sys.LFT.D22.RawMatrix()
 		d22Data, d22Stride = r.Data, r.Stride
 	}
 
@@ -417,7 +417,7 @@ func evalFrLFTInto(ws *lftWorkspace, sys *System, s complex128, n, N, p, m int) 
 
 	cont := sys.IsContinuous()
 	for j := 0; j < N; j++ {
-		tau := sys.InternalDelay[j]
+		tau := sys.LFT.Tau[j]
 		if cont {
 			ws.delta[j] = cmplx.Exp(-s * complex(tau, 0))
 		} else {
@@ -455,7 +455,7 @@ func evalFrLFTInto(ws *lftWorkspace, sys *System, s complex128, n, N, p, m int) 
 // Returns flat p*m complex slice (row-major).
 func evalFrLFT(sys *System, s complex128, p, m int) ([]complex128, error) {
 	n, _, _ := sys.Dims()
-	N := len(sys.InternalDelay)
+	N := sys.internalDelayCount()
 	ws := newLFTWorkspace(n, N, p, m)
 	if err := evalFrLFTInto(ws, sys, s, n, N, p, m); err != nil {
 		return nil, err

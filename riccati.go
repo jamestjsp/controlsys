@@ -67,9 +67,7 @@ func Care(A, B, Q, R *mat.Dense, opts *RiccatiOpts) (*RiccatiResult, error) {
 	// Cholesky factor R
 	rChol := make([]float64, m*m)
 	rRaw := R.RawMatrix()
-	for i := range m {
-		copy(rChol[i*m:i*m+m], rRaw.Data[i*rRaw.Stride:i*rRaw.Stride+m])
-	}
+	copyStrided(rChol, m, rRaw.Data, rRaw.Stride, m, m)
 	if !impl.Dpotrf(blas.Upper, m, rChol, m) {
 		return nil, ErrSingularR
 	}
@@ -77,14 +75,10 @@ func Care(A, B, Q, R *mat.Dense, opts *RiccatiOpts) (*RiccatiResult, error) {
 	// Working copies of A and Q for cross-term transformation
 	aWork := make([]float64, n*n)
 	aRaw := A.RawMatrix()
-	for i := range n {
-		copy(aWork[i*n:i*n+n], aRaw.Data[i*aRaw.Stride:i*aRaw.Stride+n])
-	}
+	copyStrided(aWork, n, aRaw.Data, aRaw.Stride, n, n)
 	qWork := make([]float64, n*n)
 	qRaw := Q.RawMatrix()
-	for i := range n {
-		copy(qWork[i*n:i*n+n], qRaw.Data[i*qRaw.Stride:i*qRaw.Stride+n])
-	}
+	copyStrided(qWork, n, qRaw.Data, qRaw.Stride, n, n)
 
 	// Compute R⁻¹*B' (m×n): solve R*W = B' via Dpotrs
 	rinvBt := make([]float64, m*n)
@@ -168,10 +162,8 @@ func Care(A, B, Q, R *mat.Dense, opts *RiccatiOpts) (*RiccatiResult, error) {
 	// Extract U11 = vs[0:n, 0:n], U21 = vs[n:2n, 0:n]
 	u11 := make([]float64, n*n)
 	u21 := make([]float64, n*n)
-	for i := range n {
-		copy(u11[i*n:i*n+n], vs[i*nn:i*nn+n])
-		copy(u21[i*n:i*n+n], vs[(n+i)*nn:(n+i)*nn+n])
-	}
+	copyStrided(u11, n, vs, nn, n, n)
+	copyBlock(u21, n, 0, 0, vs, nn, n, 0, n, n)
 
 	// X = U21 * U11⁻¹; since X is symmetric: X = (U11')⁻¹ * U21'
 	// Solve via DGETRS(Trans) instead of explicit inverse
@@ -270,23 +262,17 @@ func Dare(A, B, Q, R *mat.Dense, opts *RiccatiOpts) (*RiccatiResult, error) {
 	// Cholesky factor R
 	rChol := make([]float64, m*m)
 	rRaw := R.RawMatrix()
-	for i := range m {
-		copy(rChol[i*m:i*m+m], rRaw.Data[i*rRaw.Stride:i*rRaw.Stride+m])
-	}
+	copyStrided(rChol, m, rRaw.Data, rRaw.Stride, m, m)
 	if !impl.Dpotrf(blas.Upper, m, rChol, m) {
 		return nil, ErrSingularR
 	}
 
 	aWork := make([]float64, n*n)
 	aRaw := A.RawMatrix()
-	for i := range n {
-		copy(aWork[i*n:i*n+n], aRaw.Data[i*aRaw.Stride:i*aRaw.Stride+n])
-	}
+	copyStrided(aWork, n, aRaw.Data, aRaw.Stride, n, n)
 	qWork := make([]float64, n*n)
 	qRaw := Q.RawMatrix()
-	for i := range n {
-		copy(qWork[i*n:i*n+n], qRaw.Data[i*qRaw.Stride:i*qRaw.Stride+n])
-	}
+	copyStrided(qWork, n, qRaw.Data, qRaw.Stride, n, n)
 
 	bRaw := B.RawMatrix()
 
@@ -406,10 +392,8 @@ func Dare(A, B, Q, R *mat.Dense, opts *RiccatiOpts) (*RiccatiResult, error) {
 	// Extract U11 = vs[0:n, 0:n], U21 = vs[n:2n, 0:n]
 	u11 := make([]float64, n*n)
 	u21 := make([]float64, n*n)
-	for i := range n {
-		copy(u11[i*n:i*n+n], vs[i*nn:i*nn+n])
-		copy(u21[i*n:i*n+n], vs[(n+i)*nn:(n+i)*nn+n])
-	}
+	copyStrided(u11, n, vs, nn, n, n)
+	copyBlock(u21, n, 0, 0, vs, nn, n, 0, n, n)
 
 	ipiv := make([]int, n)
 	if !impl.Dgetrf(n, n, u11, n, ipiv) {
@@ -444,9 +428,7 @@ func Dare(A, B, Q, R *mat.Dense, opts *RiccatiOpts) (*RiccatiResult, error) {
 		0, blas64.General{Rows: m, Cols: n, Data: btx, Stride: n})
 
 	rbar := make([]float64, m*m)
-	for i := range m {
-		copy(rbar[i*m:i*m+m], rRaw.Data[i*rRaw.Stride:i*rRaw.Stride+m])
-	}
+	copyStrided(rbar, m, rRaw.Data, rRaw.Stride, m, m)
 	blas64.Gemm(blas.NoTrans, blas.NoTrans,
 		1, blas64.General{Rows: m, Cols: n, Data: btx, Stride: n},
 		blas64.General{Rows: n, Cols: m, Data: bRaw.Data, Stride: bRaw.Stride},

@@ -2219,30 +2219,30 @@ func TestSetDelayModel_Basic(t *testing.T) {
 	if n != 2 || m != 2 || p != 2 {
 		t.Errorf("dims = (%d, %d, %d), want (2, 2, 2)", n, m, p)
 	}
-	if len(sys.InternalDelay) != 1 || sys.InternalDelay[0] != 1.5 {
-		t.Errorf("InternalDelay = %v, want [1.5]", sys.InternalDelay)
+	if len(sys.LFT.Tau) != 1 || sys.LFT.Tau[0] != 1.5 {
+		t.Errorf("InternalDelay = %v, want [1.5]", sys.LFT.Tau)
 	}
 	if sys.Dt != 0.1 {
 		t.Errorf("Dt = %v, want 0.1", sys.Dt)
 	}
 
-	r, c := sys.B2.Dims()
+	r, c := sys.LFT.B2.Dims()
 	if r != 2 || c != 1 {
 		t.Errorf("B2 dims = %d×%d, want 2×1", r, c)
 	}
-	r, c = sys.C2.Dims()
+	r, c = sys.LFT.C2.Dims()
 	if r != 1 || c != 2 {
 		t.Errorf("C2 dims = %d×%d, want 1×2", r, c)
 	}
-	r, c = sys.D12.Dims()
+	r, c = sys.LFT.D12.Dims()
 	if r != 2 || c != 1 {
 		t.Errorf("D12 dims = %d×%d, want 2×1", r, c)
 	}
-	r, c = sys.D21.Dims()
+	r, c = sys.LFT.D21.Dims()
 	if r != 1 || c != 2 {
 		t.Errorf("D21 dims = %d×%d, want 1×2", r, c)
 	}
-	r, c = sys.D22.Dims()
+	r, c = sys.LFT.D22.Dims()
 	if r != 1 || c != 1 {
 		t.Errorf("D22 dims = %d×%d, want 1×1", r, c)
 	}
@@ -2286,27 +2286,27 @@ func TestGetSetDelayModel_Roundtrip(t *testing.T) {
 	if !matEqual(rebuilt.D, sys.D, 1e-15) {
 		t.Error("D mismatch")
 	}
-	if !matEqual(rebuilt.B2, sys.B2, 1e-15) {
+	if !matEqual(rebuilt.LFT.B2, sys.LFT.B2, 1e-15) {
 		t.Error("B2 mismatch")
 	}
-	if !matEqual(rebuilt.C2, sys.C2, 1e-15) {
+	if !matEqual(rebuilt.LFT.C2, sys.LFT.C2, 1e-15) {
 		t.Error("C2 mismatch")
 	}
-	if !matEqual(rebuilt.D12, sys.D12, 1e-15) {
+	if !matEqual(rebuilt.LFT.D12, sys.LFT.D12, 1e-15) {
 		t.Error("D12 mismatch")
 	}
-	if !matEqual(rebuilt.D21, sys.D21, 1e-15) {
+	if !matEqual(rebuilt.LFT.D21, sys.LFT.D21, 1e-15) {
 		t.Error("D21 mismatch")
 	}
-	if !matEqual(rebuilt.D22, sys.D22, 1e-15) {
+	if !matEqual(rebuilt.LFT.D22, sys.LFT.D22, 1e-15) {
 		t.Error("D22 mismatch")
 	}
 	if rebuilt.Dt != sys.Dt {
 		t.Errorf("Dt = %v, want %v", rebuilt.Dt, sys.Dt)
 	}
-	for i, v := range rebuilt.InternalDelay {
-		if v != sys.InternalDelay[i] {
-			t.Errorf("InternalDelay[%d] = %v, want %v", i, v, sys.InternalDelay[i])
+	for i, v := range rebuilt.LFT.Tau {
+		if v != sys.LFT.Tau[i] {
+			t.Errorf("InternalDelay[%d] = %v, want %v", i, v, sys.LFT.Tau[i])
 		}
 	}
 }
@@ -2319,7 +2319,7 @@ func TestSetDelayModel_EmptyTau(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.InternalDelay != nil {
+	if result.LFT != nil {
 		t.Error("expected nil InternalDelay for empty tau")
 	}
 	n, m, p := result.Dims()
@@ -2364,7 +2364,7 @@ func TestGetDelayModel_DeepCopy(t *testing.T) {
 	H, tau := sys.GetDelayModel()
 
 	tau[0] = 999
-	if sys.InternalDelay[0] == 999 {
+	if sys.LFT.Tau[0] == 999 {
 		t.Error("modifying returned tau affected original")
 	}
 
@@ -2385,7 +2385,7 @@ func TestSetDelayModel_DeepCopy(t *testing.T) {
 	sys, _ := SetDelayModel(H, tau)
 
 	tau[0] = 999
-	if sys.InternalDelay[0] == 999 {
+	if sys.LFT.Tau[0] == 999 {
 		t.Error("modifying input tau affected result")
 	}
 
@@ -2607,14 +2607,8 @@ func TestAbsorbInternalDelay_Roundtrip(t *testing.T) {
 	if absorbed.HasInternalDelay() {
 		t.Error("absorbed system should have no internal delays")
 	}
-	if absorbed.InternalDelay != nil {
-		t.Error("InternalDelay should be nil")
-	}
-	if absorbed.B2 != nil {
-		t.Error("B2 should be nil")
-	}
-	if absorbed.C2 != nil {
-		t.Error("C2 should be nil")
+	if absorbed.LFT != nil {
+		t.Error("LFT should be nil")
 	}
 }
 
@@ -2764,14 +2758,8 @@ func TestAbsorbInternalDelay_PreservesNilLFTFields(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if absorbed.InternalDelay != nil {
-		t.Error("InternalDelay should be nil after absorption")
-	}
-	if absorbed.B2 != nil || absorbed.C2 != nil {
-		t.Error("LFT matrices should be nil after absorption")
-	}
-	if absorbed.D12 != nil || absorbed.D21 != nil || absorbed.D22 != nil {
-		t.Error("LFT D matrices should be nil after absorption")
+	if absorbed.LFT != nil {
+		t.Error("LFT should be nil after absorption")
 	}
 }
 
@@ -2861,40 +2849,40 @@ func TestPullDelaysToLFT_D22CrossCoupling(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if len(lft.InternalDelay) != 2 {
-		t.Fatalf("want 2 internal delays, got %d", len(lft.InternalDelay))
+	if len(lft.LFT.Tau) != 2 {
+		t.Fatalf("want 2 internal delays, got %d", len(lft.LFT.Tau))
 	}
 
 	t.Run("D22_has_cross_coupling", func(t *testing.T) {
-		got := lft.D22.At(1, 0)
+		got := lft.LFT.D22.At(1, 0)
 		if got != 2 {
 			t.Errorf("D22[1,0] = %v, want 2 (feedthrough routed through both delays)", got)
 		}
 	})
 
 	t.Run("D12_no_feedthrough_for_delayed_output", func(t *testing.T) {
-		got := lft.D12.At(0, 0)
+		got := lft.LFT.D12.At(0, 0)
 		if got != 0 {
 			t.Errorf("D12[0,0] = %v, want 0 (output has its own delay)", got)
 		}
 	})
 
 	t.Run("D21_no_feedthrough_for_delayed_input", func(t *testing.T) {
-		got := lft.D21.At(1, 0)
+		got := lft.LFT.D21.At(1, 0)
 		if got != 0 {
 			t.Errorf("D21[1,0] = %v, want 0 (input has its own delay)", got)
 		}
 	})
 
 	t.Run("D21_input_channel_passthrough", func(t *testing.T) {
-		got := lft.D21.At(0, 0)
+		got := lft.LFT.D21.At(0, 0)
 		if got != 1 {
 			t.Errorf("D21[0,0] = %v, want 1", got)
 		}
 	})
 
 	t.Run("D12_output_channel_passthrough", func(t *testing.T) {
-		got := lft.D12.At(0, 1)
+		got := lft.LFT.D12.At(0, 1)
 		if got != 1 {
 			t.Errorf("D12[0,1] = %v, want 1", got)
 		}
@@ -3006,33 +2994,33 @@ func TestPullDelaysToLFT_D22MIMO(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if len(lft.InternalDelay) != 2 {
-		t.Fatalf("want 2 internal delays, got %d", len(lft.InternalDelay))
+	if len(lft.LFT.Tau) != 2 {
+		t.Fatalf("want 2 internal delays, got %d", len(lft.LFT.Tau))
 	}
 
 	t.Run("D22_cross_row1_col0", func(t *testing.T) {
-		got := lft.D22.At(1, 0)
+		got := lft.LFT.D22.At(1, 0)
 		if got != 0.3 {
 			t.Errorf("D22[1,0] = %v, want 0.3", got)
 		}
 	})
 
 	t.Run("D12_row0_has_feedthrough", func(t *testing.T) {
-		got := lft.D12.At(0, 0)
+		got := lft.LFT.D12.At(0, 0)
 		if got != 0.5 {
 			t.Errorf("D12[0,0] = %v, want 0.5 (row 0 has no output delay)", got)
 		}
 	})
 
 	t.Run("D21_col1_has_feedthrough", func(t *testing.T) {
-		got := lft.D21.At(1, 1)
+		got := lft.LFT.D21.At(1, 1)
 		if got != 0.9 {
 			t.Errorf("D21[1,1] = %v, want 0.9 (col 1 has no input delay)", got)
 		}
 	})
 
 	t.Run("D21_col0_no_feedthrough_for_output_delay_row", func(t *testing.T) {
-		got := lft.D21.At(1, 0)
+		got := lft.LFT.D21.At(1, 0)
 		if got != 0 {
 			t.Errorf("D21[1,0] = %v, want 0 (routed through D22)", got)
 		}
@@ -3142,8 +3130,8 @@ func TestPullDelaysToLFT_D22ZeroFeedthrough(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if lft.D22.At(1, 0) != 0 {
-		t.Errorf("D22[1,0] = %v, want 0 (D=0 means no cross-coupling)", lft.D22.At(1, 0))
+	if lft.LFT.D22.At(1, 0) != 0 {
+		t.Errorf("D22[1,0] = %v, want 0 (D=0 means no cross-coupling)", lft.LFT.D22.At(1, 0))
 	}
 }
 
@@ -3187,8 +3175,8 @@ func TestSetDelayModel_AcceptsPositiveTau(t *testing.T) {
 	if err != nil {
 		t.Fatalf("positive tau should succeed, got %v", err)
 	}
-	if sys.InternalDelay[0] != 1.5 {
-		t.Errorf("InternalDelay[0] = %v, want 1.5", sys.InternalDelay[0])
+	if sys.LFT.Tau[0] != 1.5 {
+		t.Errorf("InternalDelay[0] = %v, want 1.5", sys.LFT.Tau[0])
 	}
 }
 
@@ -3210,7 +3198,7 @@ func TestZeroDelayApproxD22Zero(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if approx.InternalDelay != nil {
+	if approx.LFT != nil {
 		t.Error("approx should have no InternalDelay")
 	}
 
@@ -3319,7 +3307,7 @@ func TestZeroDelayApproxMIMO(t *testing.T) {
 	if n != 2 || m != 2 || p != 2 {
 		t.Errorf("dims = (%d,%d,%d), want (2,2,2)", n, m, p)
 	}
-	if approx.InternalDelay != nil {
+	if approx.LFT != nil {
 		t.Error("approx should have no InternalDelay")
 	}
 }
@@ -3773,22 +3761,22 @@ func TestMinimalLFTZeroGainRemoval(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if len(result.InternalDelay) != 2 {
-		t.Fatalf("got %d delays, want 2", len(result.InternalDelay))
+	if len(result.LFT.Tau) != 2 {
+		t.Fatalf("got %d delays, want 2", len(result.LFT.Tau))
 	}
-	if result.InternalDelay[0] != 2 || result.InternalDelay[1] != 4 {
-		t.Errorf("delays = %v, want [2,4]", result.InternalDelay)
+	if result.LFT.Tau[0] != 2 || result.LFT.Tau[1] != 4 {
+		t.Errorf("delays = %v, want [2,4]", result.LFT.Tau)
 	}
 
-	r, c := result.B2.Dims()
+	r, c := result.LFT.B2.Dims()
 	if r != 2 || c != 2 {
 		t.Errorf("B2 dims = %d,%d want 2,2", r, c)
 	}
-	r, c = result.C2.Dims()
+	r, c = result.LFT.C2.Dims()
 	if r != 2 || c != 2 {
 		t.Errorf("C2 dims = %d,%d want 2,2", r, c)
 	}
-	r, c = result.D22.Dims()
+	r, c = result.LFT.D22.Dims()
 	if r != 2 || c != 2 {
 		t.Errorf("D22 dims = %d,%d want 2,2", r, c)
 	}
@@ -3818,8 +3806,8 @@ func TestMinimalLFTAllZeroGain(t *testing.T) {
 	if result.HasInternalDelay() {
 		t.Error("expected all internal delays removed")
 	}
-	if result.B2 != nil || result.C2 != nil || result.D12 != nil || result.D21 != nil || result.D22 != nil {
-		t.Error("expected nil LFT matrices")
+	if result.LFT != nil {
+		t.Error("expected nil LFT")
 	}
 }
 
@@ -3843,13 +3831,13 @@ func TestMinimalLFTNoReduction(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if len(result.InternalDelay) != 2 {
-		t.Fatalf("got %d delays, want 2", len(result.InternalDelay))
+	if len(result.LFT.Tau) != 2 {
+		t.Fatalf("got %d delays, want 2", len(result.LFT.Tau))
 	}
-	if !matEqual(result.B2, sys.B2, 1e-15) {
+	if !matEqual(result.LFT.B2, sys.LFT.B2, 1e-15) {
 		t.Error("B2 changed unexpectedly")
 	}
-	if !matEqual(result.C2, sys.C2, 1e-15) {
+	if !matEqual(result.LFT.C2, sys.LFT.C2, 1e-15) {
 		t.Error("C2 changed unexpectedly")
 	}
 }
@@ -3887,8 +3875,8 @@ func TestMinimalLFTFreqResponse(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if len(reduced.InternalDelay) != 2 {
-		t.Fatalf("expected 2 delays after reduction, got %d", len(reduced.InternalDelay))
+	if len(reduced.LFT.Tau) != 2 {
+		t.Fatalf("expected 2 delays after reduction, got %d", len(reduced.LFT.Tau))
 	}
 
 	freqReduced, err := reduced.FreqResponse(omega)
@@ -3938,8 +3926,8 @@ func TestMinimalLFTMergeDuplicateDelays(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if len(reduced.InternalDelay) != 2 {
-		t.Fatalf("expected 2 delays, got %d: %v", len(reduced.InternalDelay), reduced.InternalDelay)
+	if len(reduced.LFT.Tau) != 2 {
+		t.Fatalf("expected 2 delays, got %d: %v", len(reduced.LFT.Tau), reduced.LFT.Tau)
 	}
 
 	freqReduced, err := reduced.FreqResponse(omega)
@@ -3982,8 +3970,8 @@ func TestMinimalLFTMergeNonProportionalKept(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if len(reduced.InternalDelay) != 2 {
-		t.Fatalf("expected 2 delays (non-proportional), got %d", len(reduced.InternalDelay))
+	if len(reduced.LFT.Tau) != 2 {
+		t.Fatalf("expected 2 delays (non-proportional), got %d", len(reduced.LFT.Tau))
 	}
 }
 

@@ -557,12 +557,14 @@ func TestSimulate_InternalDelay_SISO(t *testing.T) {
 		C:             mat.DenseCopyOf(C),
 		D:             mat.NewDense(1, 1, nil),
 		Dt:            1.0,
-		InternalDelay: []float64{3},
-		B2:            mat.DenseCopyOf(B),
-		C2:            mat.NewDense(1, 2, nil),
-		D12:           mat.DenseCopyOf(D),
-		D21:           mat.NewDense(1, 1, []float64{1}),
-		D22:           mat.NewDense(1, 1, nil),
+		LFT: &LFTDelay{
+			Tau: []float64{3},
+			B2:  mat.DenseCopyOf(B),
+			C2:  mat.NewDense(1, 2, nil),
+			D12: mat.DenseCopyOf(D),
+			D21: mat.NewDense(1, 1, []float64{1}),
+			D22: mat.NewDense(1, 1, nil),
+		},
 	}
 
 	u := mat.NewDense(1, 15, nil)
@@ -600,12 +602,14 @@ func TestSimulate_InternalDelay_MultipleDelays(t *testing.T) {
 		C:             mat.NewDense(1, 2, []float64{1, 1}),
 		D:             mat.NewDense(1, 2, nil),
 		Dt:            1.0,
-		InternalDelay: []float64{2, 5},
-		B2:            mat.NewDense(2, 2, []float64{1, 0, 0, 1}),
-		C2:            mat.NewDense(2, 2, nil),
-		D12:           mat.NewDense(1, 2, nil),
-		D21:           mat.NewDense(2, 2, []float64{1, 0, 0, 1}),
-		D22:           mat.NewDense(2, 2, nil),
+		LFT: &LFTDelay{
+			Tau: []float64{2, 5},
+			B2:  mat.NewDense(2, 2, []float64{1, 0, 0, 1}),
+			C2:  mat.NewDense(2, 2, nil),
+			D12: mat.NewDense(1, 2, nil),
+			D21: mat.NewDense(2, 2, []float64{1, 0, 0, 1}),
+			D22: mat.NewDense(2, 2, nil),
+		},
 	}
 
 	u := mat.NewDense(2, 12, nil)
@@ -643,12 +647,14 @@ func TestSimulate_InternalDelay_WithX0(t *testing.T) {
 		C:             mat.DenseCopyOf(C),
 		D:             mat.NewDense(1, 1, nil),
 		Dt:            1.0,
-		InternalDelay: []float64{2},
-		B2:            mat.DenseCopyOf(B),
-		C2:            mat.NewDense(1, 2, nil),
-		D12:           mat.DenseCopyOf(D),
-		D21:           mat.NewDense(1, 1, []float64{1}),
-		D22:           mat.NewDense(1, 1, nil),
+		LFT: &LFTDelay{
+			Tau: []float64{2},
+			B2:  mat.DenseCopyOf(B),
+			C2:  mat.NewDense(1, 2, nil),
+			D12: mat.DenseCopyOf(D),
+			D21: mat.NewDense(1, 1, []float64{1}),
+			D22: mat.NewDense(1, 1, nil),
+		},
 	}
 
 	x0 := mat.NewVecDense(2, []float64{1.0, -0.5})
@@ -678,12 +684,14 @@ func TestSimulate_InternalDelay_D22Nonzero(t *testing.T) {
 		C:             mat.NewDense(1, 1, []float64{1}),
 		D:             mat.NewDense(1, 1, []float64{0}),
 		Dt:            1.0,
-		InternalDelay: []float64{2},
-		B2:            mat.NewDense(1, 1, []float64{0.3}),
-		C2:            mat.NewDense(1, 1, []float64{0.5}),
-		D12:           mat.NewDense(1, 1, []float64{0.1}),
-		D21:           mat.NewDense(1, 1, []float64{0.2}),
-		D22:           mat.NewDense(1, 1, []float64{0.4}),
+		LFT: &LFTDelay{
+			Tau: []float64{2},
+			B2:  mat.NewDense(1, 1, []float64{0.3}),
+			C2:  mat.NewDense(1, 1, []float64{0.5}),
+			D12: mat.NewDense(1, 1, []float64{0.1}),
+			D21: mat.NewDense(1, 1, []float64{0.2}),
+			D22: mat.NewDense(1, 1, []float64{0.4}),
+		},
 	}
 
 	u := mat.NewDense(1, 8, nil)
@@ -733,12 +741,14 @@ func TestSimulate_InternalDelay_NonUnitDt(t *testing.T) {
 		C:             mat.NewDense(1, 1, []float64{1}),
 		D:             mat.NewDense(1, 1, nil),
 		Dt:            0.1,
-		InternalDelay: []float64{3},
-		B2:            mat.NewDense(1, 1, []float64{1}),
-		C2:            mat.NewDense(1, 1, nil),
-		D12:           mat.NewDense(1, 1, nil),
-		D21:           mat.NewDense(1, 1, []float64{1}),
-		D22:           mat.NewDense(1, 1, nil),
+		LFT: &LFTDelay{
+			Tau: []float64{3},
+			B2:  mat.NewDense(1, 1, []float64{1}),
+			C2:  mat.NewDense(1, 1, nil),
+			D12: mat.NewDense(1, 1, nil),
+			D21: mat.NewDense(1, 1, []float64{1}),
+			D22: mat.NewDense(1, 1, nil),
+		},
 	}
 
 	u := mat.NewDense(1, 10, nil)

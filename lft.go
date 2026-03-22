@@ -266,8 +266,8 @@ func lftWithDelay(M, Delta *System, nu, ny int) (*System, error) {
 		return nil, err
 	}
 
-	NM := len(mLFT.InternalDelay)
-	ND := len(dLFT.InternalDelay)
+	NM := mLFT.internalDelayCount()
+	ND := dLFT.internalDelayCount()
 	N := NM + ND
 
 	mH, _ := mLFT.GetDelayModel()
@@ -517,8 +517,12 @@ func lftWithDelay(M, Delta *System, nu, ny int) (*System, error) {
 	H := &System{A: Acl, B: Bcl, C: Ccl, D: Dcl, Dt: M.Dt}
 
 	tau := make([]float64, N)
-	copy(tau, mLFT.InternalDelay)
-	copy(tau[NM:], dLFT.InternalDelay)
+	if mLFT.LFT != nil {
+		copy(tau, mLFT.LFT.Tau)
+	}
+	if dLFT.LFT != nil {
+		copy(tau[NM:], dLFT.LFT.Tau)
+	}
 
 	result, err := SetDelayModel(H, tau)
 	if err != nil {

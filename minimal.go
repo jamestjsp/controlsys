@@ -158,17 +158,7 @@ func zeroOrderResult(sys *System, m, p int) *ReduceResult {
 }
 
 func extractSubmatrix(m *mat.Dense, r0, r1, c0, c1 int) *mat.Dense {
-	rows := r1 - r0
-	cols := c1 - c0
-	if rows <= 0 || cols <= 0 {
-		return &mat.Dense{}
-	}
-	raw := m.RawMatrix()
-	data := make([]float64, rows*cols)
-	for i := 0; i < rows; i++ {
-		copy(data[i*cols:], raw.Data[(r0+i)*raw.Stride+c0:(r0+i)*raw.Stride+c0+cols])
-	}
-	return mat.NewDense(rows, cols, data)
+	return extractBlock(m, r0, c0, r1-r0, c1-c0)
 }
 
 func pertransposeSquare(a *mat.Dense, n int) {
