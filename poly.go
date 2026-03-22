@@ -3,6 +3,8 @@ package controlsys
 import (
 	"errors"
 	"math"
+
+	"gonum.org/v1/gonum/mat"
 )
 
 // Poly represents a polynomial in descending power:
@@ -153,6 +155,49 @@ func (p Poly) ScaleTo(dst Poly, s float64) Poly {
 		dst[i] = v * s
 	}
 	return dst
+}
+
+func (p Poly) Roots() ([]complex128, error) {
+	start := 0
+	for start < len(p) && p[start] == 0 {
+		start++
+	}
+	p = p[start:]
+
+	deg := len(p) - 1
+	if deg <= 0 {
+		return nil, nil
+	}
+
+	if deg == 1 {
+		return []complex128{complex(-p[1]/p[0], 0)}, nil
+	}
+
+	lead := p[0]
+	data := make([]float64, deg*deg)
+	for i := 0; i < deg; i++ {
+		data[i*deg+deg-1] = -p[deg-i] / lead
+		if i > 0 {
+			data[i*deg+i-1] = 1
+		}
+	}
+	comp := mat.NewDense(deg, deg, data)
+
+	var eig mat.Eigen
+	if !eig.Factorize(comp, mat.EigenNone) {
+		return nil, ErrSingularTransform
+	}
+	roots := eig.Values(nil)
+
+	machEps := math.Float64frombits(0x3CB0000000000000) // 2^-52
+	for i, r := range roots {
+		if imag(r) != 0 && math.Abs(imag(r)) < math.Abs(real(r))*100*machEps {
+			roots[i] = complex(real(r), 0)
+		}
+	}
+
+	sortZeros(roots)
+	return roots, nil
 }
 
 func (p Poly) Equal(q Poly, tol float64) bool {
