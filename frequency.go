@@ -49,7 +49,7 @@ func (sys *System) FreqResponse(omega []float64) (*FreqResponseMatrix, error) {
 		if err != nil {
 			return nil, err
 		}
-		applyIODelayPhase(sys, omega, resp.Data, p, m)
+		applyIODelayPhase(sys, omega, resp.Data, p, m, true)
 		resp.InputName = copyStringSlice(sys.InputName)
 		resp.OutputName = copyStringSlice(sys.OutputName)
 		return resp, nil
@@ -74,7 +74,7 @@ func (sys *System) FreqResponse(omega []float64) (*FreqResponseMatrix, error) {
 		res.TF.evalInto(s, data[k*pm:(k+1)*pm])
 	}
 
-	applyIODelayPhase(sys, omega, data, p, m)
+	applyIODelayPhase(sys, omega, data, p, m, false)
 
 	return &FreqResponseMatrix{
 		Data: data, NFreq: nw, P: p, M: m,
@@ -177,11 +177,17 @@ func (sys *System) EvalFr(s complex128) ([][]complex128, error) {
 	}
 	vals := res.TF.Eval(s)
 
-	hasIODelay := sys.InputDelay != nil || sys.OutputDelay != nil || sys.Delay != nil
+	hasIODelay := sys.InputDelay != nil || sys.OutputDelay != nil
 	if hasIODelay {
 		for i := 0; i < p; i++ {
 			for j := 0; j < m; j++ {
-				tau := ioDelayTotal(sys, i, j)
+				var tau float64
+				if sys.InputDelay != nil {
+					tau += sys.InputDelay[j]
+				}
+				if sys.OutputDelay != nil {
+					tau += sys.OutputDelay[i]
+				}
 				if tau != 0 {
 					if sys.IsContinuous() {
 						vals[i][j] *= cmplx.Exp(-s * complex(tau, 0))
@@ -272,8 +278,8 @@ func ioDelayTotal(sys *System, i, j int) float64 {
 	return tau
 }
 
-func applyIODelayPhase(sys *System, omega []float64, data []complex128, p, m int) {
-	hasIODelay := sys.InputDelay != nil || sys.OutputDelay != nil || sys.Delay != nil
+func applyIODelayPhase(sys *System, omega []float64, data []complex128, p, m int, includeDelayMatrix bool) {
+	hasIODelay := sys.InputDelay != nil || sys.OutputDelay != nil || (includeDelayMatrix && sys.Delay != nil)
 	if !hasIODelay {
 		return
 	}
@@ -286,7 +292,16 @@ func applyIODelayPhase(sys *System, omega []float64, data []complex128, p, m int
 		}
 		for i := 0; i < p; i++ {
 			for j := 0; j < m; j++ {
-				tau := ioDelayTotal(sys, i, j)
+				var tau float64
+				if sys.InputDelay != nil {
+					tau += sys.InputDelay[j]
+				}
+				if sys.OutputDelay != nil {
+					tau += sys.OutputDelay[i]
+				}
+				if includeDelayMatrix && sys.Delay != nil {
+					tau += sys.Delay.At(i, j)
+				}
 				if tau != 0 {
 					off := (k*p+i)*m + j
 					if sys.IsContinuous() {
