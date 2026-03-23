@@ -98,6 +98,36 @@ func TestNewGain(t *testing.T) {
 	}
 }
 
+func TestNewCopiesInputMatrices(t *testing.T) {
+	A := mat.NewDense(2, 2, []float64{0, 1, -2, -3})
+	B := mat.NewDense(2, 1, []float64{0, 1})
+	C := mat.NewDense(1, 2, []float64{1, 0})
+	D := mat.NewDense(1, 1, []float64{0})
+
+	sys, err := New(A, B, C, D, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	A.Set(0, 0, 99)
+	B.Set(0, 0, 99)
+	C.Set(0, 0, 99)
+	D.Set(0, 0, 99)
+
+	if got := sys.A.At(0, 0); got != 0 {
+		t.Fatalf("A alias detected: got %v, want 0", got)
+	}
+	if got := sys.B.At(0, 0); got != 0 {
+		t.Fatalf("B alias detected: got %v, want 0", got)
+	}
+	if got := sys.C.At(0, 0); got != 1 {
+		t.Fatalf("C alias detected: got %v, want 1", got)
+	}
+	if got := sys.D.At(0, 0); got != 0 {
+		t.Fatalf("D alias detected: got %v, want 0", got)
+	}
+}
+
 func TestNewFromSlices(t *testing.T) {
 	sys, err := NewFromSlices(2, 1, 1,
 		[]float64{0, 1, -2, -3},
@@ -123,6 +153,50 @@ func TestNewFromSlicesGain(t *testing.T) {
 	n, m, p := sys.Dims()
 	if n != 0 || m != 2 || p != 1 {
 		t.Errorf("Dims() = (%d,%d,%d), want (0,2,1)", n, m, p)
+	}
+}
+
+func TestNewFromSlicesCopiesInputSlices(t *testing.T) {
+	a := []float64{0, 1, -2, -3}
+	b := []float64{0, 1}
+	c := []float64{1, 0}
+	d := []float64{0}
+
+	sys, err := NewFromSlices(2, 1, 1, a, b, c, d, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	a[0] = 99
+	b[0] = 99
+	c[0] = 99
+	d[0] = 99
+
+	if got := sys.A.At(0, 0); got != 0 {
+		t.Fatalf("A alias detected: got %v, want 0", got)
+	}
+	if got := sys.B.At(0, 0); got != 0 {
+		t.Fatalf("B alias detected: got %v, want 0", got)
+	}
+	if got := sys.C.At(0, 0); got != 1 {
+		t.Fatalf("C alias detected: got %v, want 1", got)
+	}
+	if got := sys.D.At(0, 0); got != 0 {
+		t.Fatalf("D alias detected: got %v, want 0", got)
+	}
+}
+
+func TestNewGainCopiesInputMatrix(t *testing.T) {
+	D := mat.NewDense(1, 2, []float64{3, 4})
+
+	sys, err := NewGain(D, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	D.Set(0, 0, 99)
+	if got := sys.D.At(0, 0); got != 3 {
+		t.Fatalf("D alias detected: got %v, want 3", got)
 	}
 }
 

@@ -29,6 +29,26 @@ func TestNewWithDelay(t *testing.T) {
 	}
 }
 
+func TestNewWithDelayCopiesDelayMatrix(t *testing.T) {
+	delay := mat.NewDense(1, 1, []float64{3})
+	sys, err := NewWithDelay(
+		mat.NewDense(1, 1, []float64{0.5}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{0}),
+		delay,
+		1.0,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	delay.Set(0, 0, 99)
+	if got := sys.Delay.At(0, 0); got != 3 {
+		t.Fatalf("delay alias detected: got %v, want 3", got)
+	}
+}
+
 func TestNewWithDelayNil(t *testing.T) {
 	A := mat.NewDense(1, 1, []float64{0.5})
 	B := mat.NewDense(1, 1, []float64{1})
@@ -59,6 +79,20 @@ func TestSetDelayNegative(t *testing.T) {
 	err := sys.SetDelay(mat.NewDense(1, 1, []float64{-1}))
 	if !errors.Is(err, ErrNegativeDelay) {
 		t.Errorf("expected ErrNegativeDelay, got %v", err)
+	}
+}
+
+func TestSetDelayCopiesInputMatrix(t *testing.T) {
+	sys, _ := NewFromSlices(1, 1, 1,
+		[]float64{0.5}, []float64{1}, []float64{1}, []float64{0}, 1.0)
+	delay := mat.NewDense(1, 1, []float64{2})
+	if err := sys.SetDelay(delay); err != nil {
+		t.Fatal(err)
+	}
+
+	delay.Set(0, 0, 99)
+	if got := sys.Delay.At(0, 0); got != 2 {
+		t.Fatalf("delay alias detected: got %v, want 2", got)
 	}
 }
 

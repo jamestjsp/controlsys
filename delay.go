@@ -26,7 +26,7 @@ func (sys *System) SetDelay(delay *mat.Dense) error {
 	if err := validateDelay(delay, p, m, sys.Dt); err != nil {
 		return err
 	}
-	sys.Delay = delay
+	sys.Delay = copyDelayOrNil(delay)
 	return nil
 }
 
@@ -1643,7 +1643,7 @@ func (sys *System) GetDelayModel() (H *System, tau []float64) {
 	// Pull all delays into LFT
 	lft, err := sys.PullDelaysToLFT()
 	if err != nil {
-		// If PullDelaysToLFT fails (e.g. non-decomposable residual), 
+		// If PullDelaysToLFT fails (e.g. non-decomposable residual),
 		// we fallback to just extracting InternalDelay if it exists,
 		// or return the original system.
 		if sys.LFT == nil {
