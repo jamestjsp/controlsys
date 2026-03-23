@@ -18,7 +18,7 @@ func TestLqe_Scalar(t *testing.T) {
 	Qn := mat.NewDense(1, 1, []float64{1})
 	Rn := mat.NewDense(1, 1, []float64{1})
 
-	res, err := Lqe(A, G, C, Qn, Rn)
+	res, err := Lqe(A, G, C, Qn, Rn, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,7 +37,7 @@ func TestLqe_DoubleIntegrator(t *testing.T) {
 	Qn := mat.NewDense(2, 2, []float64{1, 0, 0, 1})
 	Rn := mat.NewDense(1, 1, []float64{1})
 
-	res, err := Lqe(A, G, C, Qn, Rn)
+	res, err := Lqe(A, G, C, Qn, Rn, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,7 +67,7 @@ func TestLqe_NonSquareG(t *testing.T) {
 	Qn := mat.NewDense(1, 1, []float64{1})
 	Rn := mat.NewDense(1, 1, []float64{1})
 
-	res, err := Lqe(A, G, C, Qn, Rn)
+	res, err := Lqe(A, G, C, Qn, Rn, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +84,7 @@ func TestLqe_NonSymmetricA(t *testing.T) {
 	Qn := mat.NewDense(2, 2, []float64{1, 0, 0, 1})
 	Rn := mat.NewDense(1, 1, []float64{1})
 
-	res, err := Lqe(A, G, C, Qn, Rn)
+	res, err := Lqe(A, G, C, Qn, Rn, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,14 +107,14 @@ func TestLqe_DimErrors(t *testing.T) {
 	C := mat.NewDense(1, 2, nil)
 	Qn := mat.NewDense(2, 2, nil)
 	Rn := mat.NewDense(1, 1, []float64{1})
-	_, err := Lqe(A, G, C, Qn, Rn)
+	_, err := Lqe(A, G, C, Qn, Rn, nil)
 	if !errors.Is(err, ErrDimensionMismatch) {
 		t.Errorf("expected ErrDimensionMismatch, got %v", err)
 	}
 }
 
 func TestLqe_Empty(t *testing.T) {
-	res, err := Lqe(&mat.Dense{}, &mat.Dense{}, &mat.Dense{}, &mat.Dense{}, &mat.Dense{})
+	res, err := Lqe(&mat.Dense{}, &mat.Dense{}, &mat.Dense{}, &mat.Dense{}, &mat.Dense{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -135,13 +135,13 @@ func TestKalman_Continuous(t *testing.T) {
 	Qn := mat.NewDense(1, 1, []float64{1})
 	Rn := mat.NewDense(1, 1, []float64{1})
 
-	res, err := Kalman(sys, Qn, Rn)
+	res, err := Kalman(sys, Qn, Rn, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Compare with direct Lqe(A, B, C, Qn, Rn)
-	res2, err := Lqe(A, B, C, Qn, Rn)
+	res2, err := Lqe(A, B, C, Qn, Rn, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -164,7 +164,7 @@ func TestKalman_Discrete(t *testing.T) {
 	Qn := mat.NewDense(1, 1, []float64{1})
 	Rn := mat.NewDense(1, 1, []float64{1})
 
-	res, err := Kalman(sys, Qn, Rn)
+	res, err := Kalman(sys, Qn, Rn, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -187,7 +187,7 @@ func TestKalman_NoStates(t *testing.T) {
 	sys, _ := NewGain(D, 0)
 	Qn := mat.NewDense(1, 1, []float64{1})
 	Rn := mat.NewDense(1, 1, []float64{1})
-	_, err := Kalman(sys, Qn, Rn)
+	_, err := Kalman(sys, Qn, Rn, nil)
 	if !errors.Is(err, ErrDimensionMismatch) {
 		t.Errorf("expected ErrDimensionMismatch, got %v", err)
 	}
@@ -205,7 +205,7 @@ func TestKalmd_DoubleIntegrator(t *testing.T) {
 	Rn := mat.NewDense(1, 1, []float64{1})
 	dt := 0.01
 
-	res, err := Kalmd(sys, Qn, Rn, dt)
+	res, err := Kalmd(sys, Qn, Rn, dt, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -231,7 +231,7 @@ func TestKalmd_WrongDomain(t *testing.T) {
 	sys, _ := New(A, B, C, D, 0.1)
 	Qn := mat.NewDense(1, 1, []float64{1})
 	Rn := mat.NewDense(1, 1, []float64{1})
-	_, err := Kalmd(sys, Qn, Rn, 0.1)
+	_, err := Kalmd(sys, Qn, Rn, 0.1, nil)
 	if !errors.Is(err, ErrWrongDomain) {
 		t.Errorf("expected ErrWrongDomain, got %v", err)
 	}
@@ -245,7 +245,7 @@ func TestKalmd_InvalidDt(t *testing.T) {
 	sys, _ := New(A, B, C, D, 0)
 	Qn := mat.NewDense(1, 1, []float64{1})
 	Rn := mat.NewDense(1, 1, []float64{1})
-	_, err := Kalmd(sys, Qn, Rn, -1)
+	_, err := Kalmd(sys, Qn, Rn, -1, nil)
 	if !errors.Is(err, ErrInvalidSampleTime) {
 		t.Errorf("expected ErrInvalidSampleTime, got %v", err)
 	}
@@ -326,7 +326,7 @@ func TestEstim_StableClosedLoop(t *testing.T) {
 	G := mat.NewDense(2, 2, []float64{1, 0, 0, 1})
 	Qn := mat.NewDense(2, 2, []float64{1, 0, 0, 1})
 	Rn := mat.NewDense(1, 1, []float64{1})
-	res, _ := Lqe(A, G, C, Qn, Rn)
+	res, _ := Lqe(A, G, C, Qn, Rn, nil)
 	L := res.K
 
 	est, err := Estim(sys, L)
@@ -463,7 +463,7 @@ func TestReg_LQG_Integration(t *testing.T) {
 	// Kalman gain
 	Qn := mat.NewDense(1, 1, []float64{1})
 	Rn := mat.NewDense(1, 1, []float64{1})
-	kalRes, err := Kalman(sys, Qn, Rn)
+	kalRes, err := Kalman(sys, Qn, Rn, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

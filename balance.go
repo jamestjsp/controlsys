@@ -46,8 +46,18 @@ func Balreal(sys *System) (*BalrealResult, error) {
 	bRaw := sys.B.RawMatrix()
 	cRaw := sys.C.RawMatrix()
 
-	aData := make([]float64, n*n)
-	at := make([]float64, n*n)
+	bufSize := 14*n*n + n*m + p*n + n
+	ws := make([]float64, bufSize)
+	wi := 0
+
+	alloc := func(size int) []float64 {
+		res := ws[wi : wi+size]
+		wi += size
+		return res
+	}
+
+	aData := alloc(n * n)
+	at := alloc(n * n)
 	copyStrided(aData, n, aRaw.Data, aRaw.Stride, n, n)
 	for i := range n {
 		for j := range n {
@@ -55,14 +65,14 @@ func Balreal(sys *System) (*BalrealResult, error) {
 		}
 	}
 
-	bbt := make([]float64, n*n)
+	bbt := alloc(n * n)
 	blas64.Gemm(blas.NoTrans, blas.Trans, 1,
 		blas64.General{Rows: n, Cols: m, Stride: bRaw.Stride, Data: bRaw.Data},
 		blas64.General{Rows: n, Cols: m, Stride: bRaw.Stride, Data: bRaw.Data},
 		0, blas64.General{Rows: n, Cols: n, Stride: n, Data: bbt})
 	symmetrize(bbt, n, n)
 
-	ctc := make([]float64, n*n)
+	ctc := alloc(n * n)
 	blas64.Gemm(blas.Trans, blas.NoTrans, 1,
 		blas64.General{Rows: p, Cols: n, Stride: cRaw.Stride, Data: cRaw.Data},
 		blas64.General{Rows: p, Cols: n, Stride: cRaw.Stride, Data: cRaw.Data},
@@ -91,7 +101,7 @@ func Balreal(sys *System) (*BalrealResult, error) {
 	}
 
 	wcRaw := Wc.RawMatrix()
-	lc := make([]float64, n*n)
+	lc := alloc(n * n)
 	copyStrided(lc, n, wcRaw.Data, wcRaw.Stride, n, n)
 	if !impl.Dpotrf(blas.Lower, n, lc, n) {
 		return nil, ErrNotMinimal
@@ -103,7 +113,7 @@ func Balreal(sys *System) (*BalrealResult, error) {
 	}
 
 	woRaw := Wo.RawMatrix()
-	lo := make([]float64, n*n)
+	lo := alloc(n * n)
 	copyStrided(lo, n, woRaw.Data, woRaw.Stride, n, n)
 	if !impl.Dpotrf(blas.Lower, n, lo, n) {
 		return nil, ErrNotMinimal
@@ -114,15 +124,15 @@ func Balreal(sys *System) (*BalrealResult, error) {
 		}
 	}
 
-	mData := make([]float64, n*n)
+	mData := alloc(n * n)
 	lcGen := blas64.General{Rows: n, Cols: n, Stride: n, Data: lc}
 	loGen := blas64.General{Rows: n, Cols: n, Stride: n, Data: lo}
 	blas64.Gemm(blas.Trans, blas.NoTrans, 1, loGen, lcGen,
 		0, blas64.General{Rows: n, Cols: n, Stride: n, Data: mData})
 
-	s := make([]float64, n)
-	uData := make([]float64, n*n)
-	vtData := make([]float64, n*n)
+	s := alloc(n)
+	uData := alloc(n * n)
+	vtData := alloc(n * n)
 	wq := make([]float64, 1)
 	impl.Dgesvd(lapack.SVDAll, lapack.SVDAll, n, n, mData, n, s,
 		uData, n, vtData, n, wq, -1)
@@ -132,7 +142,7 @@ func Balreal(sys *System) (*BalrealResult, error) {
 
 	// V = Vt' — scale columns of Vt' by 1/sqrt(σ) → vScaled
 	// T = Lc * vScaled
-	vScaled := make([]float64, n*n)
+	vScaled := alloc(n * n)
 	for i := range n {
 		invSqrt := 1.0 / math.Sqrt(s[i])
 		for j := range n {
@@ -140,7 +150,7 @@ func Balreal(sys *System) (*BalrealResult, error) {
 		}
 	}
 
-	tData := make([]float64, n*n)
+	tData := alloc(n * n)
 	blas64.Gemm(blas.NoTrans, blas.NoTrans, 1, lcGen,
 		blas64.General{Rows: n, Cols: n, Stride: n, Data: vScaled},
 		0, blas64.General{Rows: n, Cols: n, Stride: n, Data: tData})
@@ -155,7 +165,7 @@ func Balreal(sys *System) (*BalrealResult, error) {
 		}
 	}
 
-	tinvData := make([]float64, n*n)
+	tinvData := alloc(n * n)
 	blas64.Gemm(blas.Trans, blas.Trans, 1,
 		blas64.General{Rows: n, Cols: n, Stride: n, Data: uData},
 		loGen,
@@ -166,24 +176,24 @@ func Balreal(sys *System) (*BalrealResult, error) {
 	tiGen := blas64.General{Rows: n, Cols: n, Stride: n, Data: tinvData}
 
 	// Ab = Tinv * A * T
-	tmp := make([]float64, n*n)
+	tmp := alloc(n * n)
 	blas64.Gemm(blas.NoTrans, blas.NoTrans, 1, tiGen,
 		blas64.General{Rows: n, Cols: n, Stride: aRaw.Stride, Data: aRaw.Data},
 		0, blas64.General{Rows: n, Cols: n, Stride: n, Data: tmp})
-	abData := make([]float64, n*n)
+	abData := alloc(n * n)
 	blas64.Gemm(blas.NoTrans, blas.NoTrans, 1,
 		blas64.General{Rows: n, Cols: n, Stride: n, Data: tmp},
 		tGen,
 		0, blas64.General{Rows: n, Cols: n, Stride: n, Data: abData})
 
 	// Bb = Tinv * B
-	bbData := make([]float64, n*m)
+	bbData := alloc(n * m)
 	blas64.Gemm(blas.NoTrans, blas.NoTrans, 1, tiGen,
 		blas64.General{Rows: n, Cols: m, Stride: bRaw.Stride, Data: bRaw.Data},
 		0, blas64.General{Rows: n, Cols: m, Stride: m, Data: bbData})
 
 	// Cb = C * T
-	cbData := make([]float64, p*n)
+	cbData := alloc(p * n)
 	blas64.Gemm(blas.NoTrans, blas.NoTrans, 1,
 		blas64.General{Rows: p, Cols: n, Stride: cRaw.Stride, Data: cRaw.Data},
 		tGen,

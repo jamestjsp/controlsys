@@ -997,9 +997,11 @@ func benchLqr(b *testing.B, n, m int) {
 	for i := range m {
 		R.Set(i, i, 1)
 	}
+	ws := NewRiccatiWorkspace(n, m)
+	opts := &RiccatiOpts{Workspace: ws}
 	b.ResetTimer()
 	for range b.N {
-		Lqr(A, B, Q, R, nil)
+		Lqr(A, B, Q, R, opts)
 	}
 }
 
@@ -1017,9 +1019,11 @@ func benchKalman(b *testing.B, n, m, p int) {
 	for i := range p {
 		Rn.Set(i, i, 1)
 	}
+	ws := NewRiccatiWorkspace(n, p)
+	opts := &RiccatiOpts{Workspace: ws}
 	b.ResetTimer()
 	for range b.N {
-		Kalman(sys, Qn, Rn)
+		Kalman(sys, Qn, Rn, opts)
 	}
 }
 

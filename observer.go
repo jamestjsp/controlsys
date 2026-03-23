@@ -13,7 +13,7 @@ import (
 // and returns observer gain L (n×p) such that eig(A - L*C) is stable.
 //
 // A is n×n, G is n×g (noise input), C is p×n, Qn is g×g, Rn is p×p.
-func Lqe(A, G, C, Qn, Rn *mat.Dense) (*RiccatiResult, error) {
+func Lqe(A, G, C, Qn, Rn *mat.Dense, opts *RiccatiOpts) (*RiccatiResult, error) {
 	na, nac := A.Dims()
 	if na != nac {
 		return nil, ErrDimensionMismatch
@@ -76,7 +76,7 @@ func Lqe(A, G, C, Qn, Rn *mat.Dense) (*RiccatiResult, error) {
 	}
 	Ct := mat.NewDense(n, p, ctData)
 
-	res, err := Care(At, Ct, GQnGt, Rn, nil)
+	res, err := Care(At, Ct, GQnGt, Rn, opts)
 	if err != nil {
 		return nil, fmt.Errorf("Lqe: %w", err)
 	}
@@ -92,7 +92,7 @@ func Lqe(A, G, C, Qn, Rn *mat.Dense) (*RiccatiResult, error) {
 // Automatically handles continuous (CARE) and discrete (DARE) systems.
 //
 // Qn is m×m (process noise covariance), Rn is p×p (measurement noise covariance).
-func Kalman(sys *System, Qn, Rn *mat.Dense) (*RiccatiResult, error) {
+func Kalman(sys *System, Qn, Rn *mat.Dense, opts *RiccatiOpts) (*RiccatiResult, error) {
 	n, m, p := sys.Dims()
 	if n == 0 {
 		return nil, fmt.Errorf("Kalman: system has no states: %w", ErrDimensionMismatch)
@@ -107,12 +107,12 @@ func Kalman(sys *System, Qn, Rn *mat.Dense) (*RiccatiResult, error) {
 	}
 
 	if sys.IsContinuous() {
-		return Lqe(sys.A, sys.B, sys.C, Qn, Rn)
+		return Lqe(sys.A, sys.B, sys.C, Qn, Rn, opts)
 	}
 
 	GQnGt, At, Ct := dualRiccatiSetup(sys.A, sys.B, sys.C, Qn, n, m, p)
 
-	res, err := Dare(At, Ct, GQnGt, Rn, nil)
+	res, err := Dare(At, Ct, GQnGt, Rn, opts)
 	if err != nil {
 		return nil, fmt.Errorf("Kalman: %w", err)
 	}
@@ -126,7 +126,7 @@ func Kalman(sys *System, Qn, Rn *mat.Dense) (*RiccatiResult, error) {
 // using Van Loan's method for noise covariance discretization.
 //
 // sys must be continuous. Qn is m×m, Rn is p×p, dt > 0.
-func Kalmd(sys *System, Qn, Rn *mat.Dense, dt float64) (*RiccatiResult, error) {
+func Kalmd(sys *System, Qn, Rn *mat.Dense, dt float64, opts *RiccatiOpts) (*RiccatiResult, error) {
 	if sys.IsDiscrete() {
 		return nil, fmt.Errorf("Kalmd: %w", ErrWrongDomain)
 	}
