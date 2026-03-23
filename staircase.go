@@ -47,9 +47,6 @@ func ControllabilityStaircase(A, B, C *mat.Dense, tol float64) *StaircaseResult 
 	ncont := 0
 	var blockSizes []int
 
-	block := mat.DenseCopyOf(bWork)
-	absFloor := tol * denseNorm(aWork)
-
 	bufSize := n * n
 	if nm := n * m; nm > bufSize {
 		bufSize = nm
@@ -58,6 +55,14 @@ func ControllabilityStaircase(A, B, C *mat.Dense, tol float64) *StaircaseResult 
 		bufSize = pn
 	}
 	tempBuf := make([]float64, bufSize)
+	blockBuf := make([]float64, bufSize)
+	
+	bRawInit := bWork.RawMatrix()
+	copyBlock(blockBuf, m, 0, 0, bRawInit.Data, bRawInit.Stride, 0, 0, n, m)
+	block := mat.NewDense(n, m, blockBuf[:n*m])
+
+	absFloor := tol * denseNorm(aWork)
+
 	var svd mat.SVD
 	var uFull mat.Dense
 
@@ -134,7 +139,7 @@ func ControllabilityStaircase(A, B, C *mat.Dense, tol float64) *StaircaseResult 
 			break
 		}
 
-		block = mat.NewDense(remaining, rank, nil)
+		block = mat.NewDense(remaining, rank, blockBuf[:remaining*rank])
 		blkRaw := block.RawMatrix()
 		copyBlock(blkRaw.Data, blkRaw.Stride, 0, 0, aRaw.Data, aRaw.Stride, ncont, ncont-rank, remaining, rank)
 	}
