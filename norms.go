@@ -528,46 +528,18 @@ func hinfLowerBound(sys *System, m, p int) (gammaLow, omegaPeak float64) {
 		freqs = append(freqs, w)
 	}
 
-	for _, w := range freqs {
-		sv := evalMaxSV(sys, w, p, m)
-		if sv > gammaLow {
-			gammaLow = sv
-			omegaPeak = w
+	sigma, err := sys.Sigma(freqs, 0)
+	if err == nil && sigma != nil && sigma.NSV() > 0 {
+		for i, w := range freqs {
+			sv := sigma.At(i, 0)
+			if sv > gammaLow {
+				gammaLow = sv
+				omegaPeak = w
+			}
 		}
 	}
 
 	return gammaLow, omegaPeak
-}
-
-func evalMaxSV(sys *System, w float64, p, m int) float64 {
-	s := complex(0, w)
-	G, err := sys.EvalFr(s)
-	if err != nil {
-		return 0
-	}
-
-	if p == 1 && m == 1 {
-		return cmplx.Abs(G[0][0])
-	}
-
-	rData := make([]float64, 2*p*m)
-	for i := range p {
-		for j := range m {
-			rData[i*m+j] = real(G[i][j])
-			rData[(p+i)*m+j] = imag(G[i][j])
-		}
-	}
-
-	sv := make([]float64, min(2*p, m))
-	wq := make([]float64, 1)
-	impl.Dgesvd(lapack.SVDNone, lapack.SVDNone, 2*p, m, rData, m, sv, nil, 1, nil, 1, wq, -1)
-	work := make([]float64, int(wq[0]))
-	impl.Dgesvd(lapack.SVDNone, lapack.SVDNone, 2*p, m, rData, m, sv, nil, 1, nil, 1, work, len(work))
-
-	if len(sv) == 0 {
-		return 0
-	}
-	return sv[0]
 }
 
 func allZeroDense(m *mat.Dense) bool {
