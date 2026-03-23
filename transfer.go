@@ -369,6 +369,10 @@ func vPolyRecurrence(aData []float64, n, nobs int) []Poly {
 	scaleBuf := make(Poly, 0, nobs+1)
 	linPoly := Poly{1, 0}
 
+	poolSize := (nobs + 1) * (nobs + 2) / 2
+	pool := make([]float64, poolSize)
+	offset := 0
+
 	for k := 1; k <= nobs; k++ {
 		r := nobs - k
 		linPoly[1] = -aData[r*n+r]
@@ -380,8 +384,9 @@ func vPolyRecurrence(aData []float64, n, nobs int) []Poly {
 				addBuf, mulBuf = mulBuf, mulBuf.AddTo(addBuf, scaleBuf)
 			}
 		}
-		wPolys[k] = make(Poly, len(mulBuf))
+		wPolys[k] = pool[offset : offset+len(mulBuf)]
 		copy(wPolys[k], mulBuf)
+		offset += len(mulBuf)
 	}
 
 	return wPolys

@@ -865,9 +865,11 @@ func benchCare(b *testing.B, n, m int) {
 	for i := range m {
 		R.Set(i, i, 1)
 	}
+	ws := NewRiccatiWorkspace(n, m)
+	opts := &RiccatiOpts{Workspace: ws}
 	b.ResetTimer()
 	for range b.N {
-		Care(A, B, Q, R, nil)
+		Care(A, B, Q, R, opts)
 	}
 }
 
@@ -883,9 +885,11 @@ func benchDare(b *testing.B, n, m int) {
 	for i := range m {
 		R.Set(i, i, 1)
 	}
+	ws := NewRiccatiWorkspace(n, m)
+	opts := &RiccatiOpts{Workspace: ws}
 	b.ResetTimer()
 	for range b.N {
-		Dare(A, B, Q, R, nil)
+		Dare(A, B, Q, R, opts)
 	}
 }
 

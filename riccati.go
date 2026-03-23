@@ -7,8 +7,72 @@ import (
 	"gonum.org/v1/gonum/mat"
 )
 
+type RiccatiWorkspace struct {
+	rChol  []float64
+	aWork  []float64
+	qWork  []float64
+	rinvBt []float64
+	rinvSt []float64
+	g      []float64
+	h      []float64
+	wr     []float64
+	wi     []float64
+	vs     []float64
+	bwork  []bool
+	work   []float64
+	u11    []float64
+	u21    []float64
+	ipiv   []int
+	xData  []float64
+	eig    []complex128
+	kData  []float64
+	ait    []float64
+	aipiv  []int
+	aiWork []float64
+	aitq   []float64
+	gait   []float64
+	gaitq  []float64
+	z      []float64
+	btx    []float64
+	rbar   []float64
+}
+
+func NewRiccatiWorkspace(n, m int) *RiccatiWorkspace {
+	nn := 2 * n
+	return &RiccatiWorkspace{
+		rChol:  make([]float64, m*m),
+		aWork:  make([]float64, n*n),
+		qWork:  make([]float64, n*n),
+		rinvBt: make([]float64, m*n),
+		rinvSt: make([]float64, m*n),
+		g:      make([]float64, n*n),
+		h:      make([]float64, nn*nn),
+		wr:     make([]float64, nn),
+		wi:     make([]float64, nn),
+		vs:     make([]float64, nn*nn),
+		bwork:  make([]bool, nn),
+		work:   make([]float64, nn*50),
+		u11:    make([]float64, n*n),
+		u21:    make([]float64, n*n),
+		ipiv:   make([]int, n),
+		xData:  make([]float64, n*n),
+		eig:    make([]complex128, n),
+		kData:  make([]float64, m*n),
+		ait:    make([]float64, n*n),
+		aipiv:  make([]int, n),
+		aiWork: make([]float64, n*50),
+		aitq:   make([]float64, n*n),
+		gait:   make([]float64, n*n),
+		gaitq:  make([]float64, n*n),
+		z:      make([]float64, nn*nn),
+		btx:    make([]float64, m*n),
+		rbar:   make([]float64, m*m),
+	}
+}
+
 type RiccatiOpts struct {
-	S *mat.Dense
+	S         *mat.Dense
+	Workspace *RiccatiWorkspace
 }
 
 type RiccatiResult struct {
@@ -64,8 +128,15 @@ func Care(A, B, Q, R *mat.Dense, opts *RiccatiOpts) (*RiccatiResult, error) {
 		S = opts.S
 	}
 
+	var ws *RiccatiWorkspace
+	if opts != nil && opts.Workspace != nil {
+		ws = opts.Workspace
+	} else {
+		ws = NewRiccatiWorkspace(n, m)
+	}
+
 	// Cholesky factor R
-	rChol := make([]float64, m*m)
+	rChol := ws.rChol[:m*m]
 	rRaw := R.RawMatrix()
 	copyStrided(rChol, m, rRaw.Data, rRaw.Stride, m, m)
 	if !impl.Dpotrf(blas.Upper, m, rChol, m) {
@@ -73,15 +144,15 @@ func Care(A, B, Q, R *mat.Dense, opts *RiccatiOpts) (*RiccatiResult, error) {
 	}
 
 	// Working copies of A and Q for cross-term transformation
-	aWork := make([]float64, n*n)
+	aWork := ws.aWork[:n*n]
 	aRaw := A.RawMatrix()
 	copyStrided(aWork, n, aRaw.Data, aRaw.Stride, n, n)
-	qWork := make([]float64, n*n)
+	qWork := ws.qWork[:n*n]
 	qRaw := Q.RawMatrix()
 	copyStrided(qWork, n, qRaw.Data, qRaw.Stride, n, n)
 
 	// Compute R⁻¹*B' (m×n): solve R*W = B' via Dpotrs
-	rinvBt := make([]float64, m*n)
+	rinvBt := ws.rinvBt[:m*n]
 	bRaw := B.RawMatrix()
 	for i := range n {
 		for j := range m {
@@ -93,7 +164,7 @@ func Care(A, B, Q, R *mat.Dense, opts *RiccatiOpts) (*RiccatiResult, error) {
 	if S != nil {
 		// Ã = A - B*R⁻¹*S'
 		// Z = R⁻¹*S' (m×n): solve R*Z = S'
-		rinvSt := make([]float64, m*n)
+		rinvSt := ws.rinvSt[:m*n]
 		sRaw := S.RawMatrix()
 		for i := range n {
 			for j := range m {
@@ -117,7 +188,7 @@ func Care(A, B, Q, R *mat.Dense, opts *RiccatiOpts) (*RiccatiResult, error) {
 	}
 
 	// G = B * R⁻¹ * B' (n×n symmetric)
-	g := make([]float64, n*n)
+	g := ws.g[:n*n]
 	blas64.Gemm(blas.NoTrans, blas.NoTrans,
 		1, blas64.General{Rows: n, Cols: m, Data: bRaw.Data, Stride: bRaw.Stride},
 		blas64.General{Rows: m, Cols: n, Data: rinvBt, Stride: n},
@@ -126,7 +197,7 @@ func Care(A, B, Q, R *mat.Dense, opts *RiccatiOpts) (*RiccatiResult, error) {
 
 	// Form 2n×2n Hamiltonian: H = [[A, -G], [-Q, -A']]
 	nn := 2 * n
-	h := make([]float64, nn*nn)
+	h := ws.h[:nn*nn]
 	for i := range n {
 		for j := range n {
 			h[i*nn+j] = aWork[i*n+j]
@@ -137,10 +208,10 @@ func Care(A, B, Q, R *mat.Dense, opts *RiccatiOpts) (*RiccatiResult, error) {
 	}
 
 	// Schur decomposition with sorting: Re(λ) < 0 to top-left
-	wr := make([]float64, nn)
-	wi := make([]float64, nn)
-	vs := make([]float64, nn*nn)
-	bwork := make([]bool, nn)
+	wr := ws.wr[:nn]
+	wi := ws.wi[:nn]
+	vs := ws.vs[:nn*nn]
+	bwork := ws.bwork[:nn]
 
 	selctg := func(wr, wi float64) bool { return wr < 0 }
 
@@ -148,7 +219,11 @@ func Care(A, B, Q, R *mat.Dense, opts *RiccatiOpts) (*RiccatiResult, error) {
 	impl.Dgees(lapack.SchurHess, lapack.SortSelected, selctg,
 		nn, h, nn, wr, wi, vs, nn, workQuery, -1, bwork)
 	lwork := int(workQuery[0])
-	work := make([]float64, lwork)
+	work := ws.work
+	if len(work) < lwork {
+		work = make([]float64, lwork)
+		ws.work = work
+	}
 
 	sdim, ok := impl.Dgees(lapack.SchurHess, lapack.SortSelected, selctg,
 		nn, h, nn, wr, wi, vs, nn, work, lwork, bwork)
@@ -160,14 +235,14 @@ func Care(A, B, Q, R *mat.Dense, opts *RiccatiOpts) (*RiccatiResult, error) {
 	}
 
 	// Extract U11 = vs[0:n, 0:n], U21 = vs[n:2n, 0:n]
-	u11 := make([]float64, n*n)
-	u21 := make([]float64, n*n)
+	u11 := ws.u11[:n*n]
+	u21 := ws.u21[:n*n]
 	copyStrided(u11, n, vs, nn, n, n)
 	copyBlock(u21, n, 0, 0, vs, nn, n, 0, n, n)
 
 	// X = U21 * U11⁻¹; since X is symmetric: X = (U11')⁻¹ * U21'
 	// Solve via DGETRS(Trans) instead of explicit inverse
-	ipiv := make([]int, n)
+	ipiv := ws.ipiv[:n]
 	if !impl.Dgetrf(n, n, u11, n, ipiv) {
 		return nil, ErrNoStabilizing
 	}
@@ -175,7 +250,7 @@ func Care(A, B, Q, R *mat.Dense, opts *RiccatiOpts) (*RiccatiResult, error) {
 	anorm := impl.Dlange(lapack.MaxColumnSum, n, n, u11, n, work[:n])
 	rcnd := impl.Dgecon(lapack.MaxColumnSum, n, u11, n, anorm, work[:4*n], make([]int, n))
 
-	xData := make([]float64, n*n)
+	xData := ws.xData[:n*n]
 	for i := range n {
 		for j := range n {
 			xData[i*n+j] = u21[j*n+i]
@@ -187,14 +262,14 @@ func Care(A, B, Q, R *mat.Dense, opts *RiccatiOpts) (*RiccatiResult, error) {
 	X := mat.NewDense(n, n, xData)
 
 	// Closed-loop eigenvalues
-	eig := make([]complex128, n)
+	eig := ws.eig[:n]
 	for i := range n {
 		eig[i] = complex(wr[i], wi[i])
 	}
 
 	// Gain K = R⁻¹ * (B'X + S')
 	// kData = B'*X (m×n)
-	kData := make([]float64, m*n)
+	kData := ws.kData[:m*n]
 	blas64.Gemm(blas.Trans, blas.NoTrans,
 		1, blas64.General{Rows: n, Cols: m, Data: bRaw.Data, Stride: bRaw.Stride},
 		blas64.General{Rows: n, Cols: n, Data: xData, Stride: n},
@@ -259,25 +334,32 @@ func Dare(A, B, Q, R *mat.Dense, opts *RiccatiOpts) (*RiccatiResult, error) {
 		S = opts.S
 	}
 
+	var ws *RiccatiWorkspace
+	if opts != nil && opts.Workspace != nil {
+		ws = opts.Workspace
+	} else {
+		ws = NewRiccatiWorkspace(n, m)
+	}
+
 	// Cholesky factor R
-	rChol := make([]float64, m*m)
+	rChol := ws.rChol[:m*m]
 	rRaw := R.RawMatrix()
 	copyStrided(rChol, m, rRaw.Data, rRaw.Stride, m, m)
 	if !impl.Dpotrf(blas.Upper, m, rChol, m) {
 		return nil, ErrSingularR
 	}
 
-	aWork := make([]float64, n*n)
+	aWork := ws.aWork[:n*n]
 	aRaw := A.RawMatrix()
 	copyStrided(aWork, n, aRaw.Data, aRaw.Stride, n, n)
-	qWork := make([]float64, n*n)
+	qWork := ws.qWork[:n*n]
 	qRaw := Q.RawMatrix()
 	copyStrided(qWork, n, qRaw.Data, qRaw.Stride, n, n)
 
 	bRaw := B.RawMatrix()
 
 	// R⁻¹*B' (m×n)
-	rinvBt := make([]float64, m*n)
+	rinvBt := ws.rinvBt[:m*n]
 	for i := range n {
 		for j := range m {
 			rinvBt[j*n+i] = bRaw.Data[i*bRaw.Stride+j]
@@ -286,7 +368,7 @@ func Dare(A, B, Q, R *mat.Dense, opts *RiccatiOpts) (*RiccatiResult, error) {
 	impl.Dpotrs(blas.Upper, m, n, rChol, m, rinvBt, n)
 
 	if S != nil {
-		rinvSt := make([]float64, m*n)
+		rinvSt := ws.rinvSt[:m*n]
 		sRaw := S.RawMatrix()
 		for i := range n {
 			for j := range m {
@@ -308,7 +390,7 @@ func Dare(A, B, Q, R *mat.Dense, opts *RiccatiOpts) (*RiccatiResult, error) {
 	}
 
 	// G = B * R⁻¹ * B'
-	g := make([]float64, n*n)
+	g := ws.g[:n*n]
 	blas64.Gemm(blas.NoTrans, blas.NoTrans,
 		1, blas64.General{Rows: n, Cols: m, Data: bRaw.Data, Stride: bRaw.Stride},
 		blas64.General{Rows: m, Cols: n, Data: rinvBt, Stride: n},
@@ -318,43 +400,47 @@ func Dare(A, B, Q, R *mat.Dense, opts *RiccatiOpts) (*RiccatiResult, error) {
 	// Form symplectic matrix Z = M⁻¹*L (requires A invertible):
 	// Z = [[A + G*Ait*Q, -G*Ait], [-Ait*Q, Ait]]  where Ait = (A')⁻¹
 	// Compute Ait = (A')⁻¹ via LU factorization of A'
-	ait := make([]float64, n*n)
+	ait := ws.ait[:n*n]
 	for i := range n {
 		for j := range n {
 			ait[i*n+j] = aWork[j*n+i]
 		}
 	}
-	aipiv := make([]int, n)
+	aipiv := ws.aipiv[:n]
 	if !impl.Dgetrf(n, n, ait, n, aipiv) {
 		return nil, ErrNoStabilizing
 	}
 	aiWorkQ := make([]float64, 1)
 	impl.Dgetri(n, ait, n, aipiv, aiWorkQ, -1)
-	aiWork := make([]float64, int(aiWorkQ[0]))
+	aiWork := ws.aiWork
+	if len(aiWork) < int(aiWorkQ[0]) {
+		aiWork = make([]float64, int(aiWorkQ[0]))
+		ws.aiWork = aiWork
+	}
 	impl.Dgetri(n, ait, n, aipiv, aiWork, len(aiWork))
 
 	// Ait*Q (n×n)
-	aitq := make([]float64, n*n)
+	aitq := ws.aitq[:n*n]
 	blas64.Gemm(blas.NoTrans, blas.NoTrans,
 		1, blas64.General{Rows: n, Cols: n, Data: ait, Stride: n},
 		blas64.General{Rows: n, Cols: n, Data: qWork, Stride: n},
 		0, blas64.General{Rows: n, Cols: n, Data: aitq, Stride: n})
 
 	// G*Ait (n×n)
-	gait := make([]float64, n*n)
+	gait := ws.gait[:n*n]
 	blas64.Gemm(blas.NoTrans, blas.NoTrans,
 		1, blas64.General{Rows: n, Cols: n, Data: g, Stride: n},
 		blas64.General{Rows: n, Cols: n, Data: ait, Stride: n},
 		0, blas64.General{Rows: n, Cols: n, Data: gait, Stride: n})
 
-	gaitq := make([]float64, n*n)
+	gaitq := ws.gaitq[:n*n]
 	blas64.Gemm(blas.NoTrans, blas.NoTrans,
 		1, blas64.General{Rows: n, Cols: n, Data: gait, Stride: n},
 		blas64.General{Rows: n, Cols: n, Data: qWork, Stride: n},
 		0, blas64.General{Rows: n, Cols: n, Data: gaitq, Stride: n})
 
 	nn := 2 * n
-	z := make([]float64, nn*nn)
+	z := ws.z[:nn*nn]
 	for i := range n {
 		for j := range n {
 			z[i*nn+j] = aWork[i*n+j] + gaitq[i*n+j]
@@ -365,10 +451,10 @@ func Dare(A, B, Q, R *mat.Dense, opts *RiccatiOpts) (*RiccatiResult, error) {
 	}
 
 	// Schur decomposition with sorting: |λ| < 1 to top-left
-	wr := make([]float64, nn)
-	wi := make([]float64, nn)
-	vs := make([]float64, nn*nn)
-	bwork := make([]bool, nn)
+	wr := ws.wr[:nn]
+	wi := ws.wi[:nn]
+	vs := ws.vs[:nn*nn]
+	bwork := ws.bwork[:nn]
 
 	selctg := func(wr, wi float64) bool {
 		return wr*wr+wi*wi < 1
@@ -378,7 +464,11 @@ func Dare(A, B, Q, R *mat.Dense, opts *RiccatiOpts) (*RiccatiResult, error) {
 	impl.Dgees(lapack.SchurHess, lapack.SortSelected, selctg,
 		nn, z, nn, wr, wi, vs, nn, workQuery, -1, bwork)
 	lwork := int(workQuery[0])
-	work := make([]float64, lwork)
+	work := ws.work
+	if len(work) < lwork {
+		work = make([]float64, lwork)
+		ws.work = work
+	}
 
 	sdim, ok := impl.Dgees(lapack.SchurHess, lapack.SortSelected, selctg,
 		nn, z, nn, wr, wi, vs, nn, work, lwork, bwork)
@@ -390,12 +480,12 @@ func Dare(A, B, Q, R *mat.Dense, opts *RiccatiOpts) (*RiccatiResult, error) {
 	}
 
 	// Extract U11 = vs[0:n, 0:n], U21 = vs[n:2n, 0:n]
-	u11 := make([]float64, n*n)
-	u21 := make([]float64, n*n)
+	u11 := ws.u11[:n*n]
+	u21 := ws.u21[:n*n]
 	copyStrided(u11, n, vs, nn, n, n)
 	copyBlock(u21, n, 0, 0, vs, nn, n, 0, n, n)
 
-	ipiv := make([]int, n)
+	ipiv := ws.ipiv[:n]
 	if !impl.Dgetrf(n, n, u11, n, ipiv) {
 		return nil, ErrNoStabilizing
 	}
@@ -403,7 +493,7 @@ func Dare(A, B, Q, R *mat.Dense, opts *RiccatiOpts) (*RiccatiResult, error) {
 	anorm := impl.Dlange(lapack.MaxColumnSum, n, n, u11, n, work[:n])
 	rcnd := impl.Dgecon(lapack.MaxColumnSum, n, u11, n, anorm, work[:4*n], make([]int, n))
 
-	xData := make([]float64, n*n)
+	xData := ws.xData[:n*n]
 	for i := range n {
 		for j := range n {
 			xData[i*n+j] = u21[j*n+i]
@@ -415,19 +505,19 @@ func Dare(A, B, Q, R *mat.Dense, opts *RiccatiOpts) (*RiccatiResult, error) {
 	X := mat.NewDense(n, n, xData)
 
 	// Closed-loop eigenvalues
-	eig := make([]complex128, n)
+	eig := ws.eig[:n]
 	for i := range n {
 		eig[i] = complex(wr[i], wi[i])
 	}
 
 	// Gain K = (R + B'XB)⁻¹ * (B'XA + S')
-	btx := make([]float64, m*n)
+	btx := ws.btx[:m*n]
 	blas64.Gemm(blas.Trans, blas.NoTrans,
 		1, blas64.General{Rows: n, Cols: m, Data: bRaw.Data, Stride: bRaw.Stride},
 		blas64.General{Rows: n, Cols: n, Data: xData, Stride: n},
 		0, blas64.General{Rows: m, Cols: n, Data: btx, Stride: n})
 
-	rbar := make([]float64, m*m)
+	rbar := ws.rbar[:m*m]
 	copyStrided(rbar, m, rRaw.Data, rRaw.Stride, m, m)
 	blas64.Gemm(blas.NoTrans, blas.NoTrans,
 		1, blas64.General{Rows: m, Cols: n, Data: btx, Stride: n},
@@ -439,7 +529,7 @@ func Dare(A, B, Q, R *mat.Dense, opts *RiccatiOpts) (*RiccatiResult, error) {
 	}
 
 	// BtXA = BtX * A (m×n)
-	kData := make([]float64, m*n)
+	kData := ws.kData[:m*n]
 	blas64.Gemm(blas.NoTrans, blas.NoTrans,
 		1, blas64.General{Rows: m, Cols: n, Data: btx, Stride: n},
 		blas64.General{Rows: n, Cols: n, Data: aRaw.Data, Stride: aRaw.Stride},
