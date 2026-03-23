@@ -6,6 +6,7 @@ import (
 	"math/cmplx"
 
 	"gonum.org/v1/gonum/blas"
+	"gonum.org/v1/gonum/blas/blas64"
 	gonumLapack "gonum.org/v1/gonum/lapack/gonum"
 	"gonum.org/v1/gonum/mat"
 )
@@ -110,13 +111,18 @@ func (sys *System) TransferFunction(opts *TransferFuncOpts) (*TransferFuncResult
 	}
 	rowDeg := make([]int, p)
 
+	var dRaw blas64.General
+	if sys.D != nil {
+		dRaw = sys.D.RawMatrix()
+	}
+
 	if n == 0 || p == 0 || m == 0 {
 		for i := 0; i < p; i++ {
 			tf.Den[i] = []float64{1}
 			tf.Num[i] = make([][]float64, m)
 			for j := 0; j < m; j++ {
 				if p > 0 && m > 0 {
-					tf.Num[i][j] = []float64{sys.D.At(i, j)}
+					tf.Num[i][j] = []float64{dRaw.Data[i*dRaw.Stride+j]}
 				} else {
 					tf.Num[i][j] = []float64{0}
 				}
@@ -135,7 +141,7 @@ func (sys *System) TransferFunction(opts *TransferFuncOpts) (*TransferFuncResult
 			tf.Den[i] = []float64{1}
 			tf.Num[i] = make([][]float64, m)
 			for j := 0; j < m; j++ {
-				tf.Num[i][j] = []float64{sys.D.At(i, j)}
+				tf.Num[i][j] = []float64{dRaw.Data[i*dRaw.Stride+j]}
 			}
 		}
 		tf.InputName = copyStringSlice(sys.InputName)
@@ -162,7 +168,7 @@ func (sys *System) TransferFunction(opts *TransferFuncOpts) (*TransferFuncResult
 		tf.Num[i] = make([][]float64, m)
 		for j := 0; j < m; j++ {
 			num := numCoeffs[j]
-			dij := sys.D.At(i, j)
+			dij := dRaw.Data[i*dRaw.Stride+j]
 			if dij != 0 {
 				numWithD := Poly(num).Add(Poly(den).Scale(dij))
 				tf.Num[i][j] = []float64(numWithD)
@@ -482,10 +488,11 @@ func (tf *TransferFunc) StateSpace(opts *StateSpaceOpts) (*StateSpaceResult, err
 
 	if totalN == 0 {
 		D := mat.NewDense(p, m, nil)
+		dRaw := D.RawMatrix()
 		for i := 0; i < p; i++ {
 			scale := 1.0 / tf.Den[i][0]
 			for j := 0; j < m; j++ {
-				D.Set(i, j, scale*tf.Num[i][j][0])
+				dRaw.Data[i*dRaw.Stride+j] = scale * tf.Num[i][j][0]
 			}
 		}
 		sys, _ := NewGain(D, tf.Dt)
@@ -502,13 +509,18 @@ func (tf *TransferFunc) StateSpace(opts *StateSpaceOpts) (*StateSpaceResult, err
 	C := mat.NewDense(p, totalN, nil)
 	D := mat.NewDense(p, m, nil)
 
+	aRaw := A.RawMatrix()
+	bRaw := B.RawMatrix()
+	cRaw := C.RawMatrix()
+	dRaw := D.RawMatrix()
+
 	ja := 0
 	for i := 0; i < p; i++ {
 		di := degrees[i]
 		if di == 0 {
 			scale := 1.0 / tf.Den[i][0]
 			for j := 0; j < m; j++ {
-				D.Set(i, j, scale*tf.Num[i][j][0])
+				dRaw.Data[i*dRaw.Stride+j] = scale * tf.Num[i][j][0]
 			}
 			continue
 		}
@@ -551,7 +563,7 @@ func (tf *TransferFunc) StateSpace(opts *StateSpaceOpts) (*StateSpaceResult, err
 		scale := 1.0 / leading
 
 		for k := 0; k < di-1; k++ {
-			A.Set(ja+k+1, ja+k, 1)
+			aRaw.Data[(ja+k+1)*aRaw.Stride+(ja+k)] = 1
 		}
 
 		// Pad numerator to di+1 coefficients (left-pad with zeros)
@@ -570,22 +582,22 @@ func (tf *TransferFunc) StateSpace(opts *StateSpaceOpts) (*StateSpaceResult, err
 		for k := 0; k < di; k++ {
 			row := ja + di - 1 - k
 			temp := -scale * tf.Den[i][k+1]
-			A.Set(row, ja+di-1, temp)
+			aRaw.Data[row*aRaw.Stride+(ja+di-1)] = temp
 			for j := 0; j < m; j++ {
-				B.Set(row, j, padNum[j][k+1]+temp*padNum[j][0])
+				bRaw.Data[row*bRaw.Stride+j] = padNum[j][k+1] + temp*padNum[j][0]
 			}
 		}
 
 		if ja+di < totalN {
-			A.Set(ja+di, ja+di-1, 0)
+			aRaw.Data[(ja+di)*aRaw.Stride+(ja+di-1)] = 0
 		}
 
 		for j := 0; j < m; j++ {
-			D.Set(i, j, scale*padNum[j][0])
+			dRaw.Data[i*dRaw.Stride+j] = scale * padNum[j][0]
 		}
 
 		// C row
-		C.Set(i, ja+di-1, scale)
+		cRaw.Data[i*cRaw.Stride+(ja+di-1)] = scale
 
 		ja += di
 	}

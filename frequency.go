@@ -5,6 +5,7 @@ import (
 	"math"
 	"math/cmplx"
 
+	"gonum.org/v1/gonum/blas/blas64"
 	"gonum.org/v1/gonum/lapack"
 )
 
@@ -107,7 +108,7 @@ func (sys *System) Bode(omega []float64, nPoints int) (*BodeResult, error) {
 		for i := 0; i < p; i++ {
 			for j := 0; j < m; j++ {
 				off := (k*p+i)*m + j
-				h := resp.At(k, i, j)
+				h := resp.Data[off]
 				magDB[off] = 20 * math.Log10(cmplx.Abs(h))
 				phase[off] = cmplx.Phase(h) * 180 / math.Pi
 			}
@@ -273,7 +274,8 @@ func ioDelayTotal(sys *System, i, j int) float64 {
 		tau += sys.OutputDelay[i]
 	}
 	if sys.Delay != nil {
-		tau += sys.Delay.At(i, j)
+		dRaw := sys.Delay.RawMatrix()
+		tau += dRaw.Data[i*dRaw.Stride+j]
 	}
 	return tau
 }
@@ -283,6 +285,12 @@ func applyIODelayPhase(sys *System, omega []float64, data []complex128, p, m int
 	if !hasIODelay {
 		return
 	}
+	
+	var dRaw blas64.General
+	if includeDelayMatrix && sys.Delay != nil {
+		dRaw = sys.Delay.RawMatrix()
+	}
+
 	for k, w := range omega {
 		var s complex128
 		if sys.IsContinuous() {
@@ -300,7 +308,7 @@ func applyIODelayPhase(sys *System, omega []float64, data []complex128, p, m int
 					tau += sys.OutputDelay[i]
 				}
 				if includeDelayMatrix && sys.Delay != nil {
-					tau += sys.Delay.At(i, j)
+					tau += dRaw.Data[i*dRaw.Stride+j]
 				}
 				if tau != 0 {
 					off := (k*p+i)*m + j

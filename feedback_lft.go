@@ -56,8 +56,9 @@ func feedbackWithLFT(plant, controller *System, sign float64) (*System, error) {
 	M := mat.NewDense(p1, p1, nil)
 	M.Mul(D1ee, D2ee)
 	M.Scale(isign, M)
+	mRaw := M.RawMatrix()
 	for i := 0; i < p1; i++ {
-		M.Set(i, i, M.At(i, i)+1)
+		mRaw.Data[i*mRaw.Stride+i] += 1
 	}
 
 	var lu mat.LU
