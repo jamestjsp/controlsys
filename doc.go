@@ -4,8 +4,7 @@
 // frequency response analysis, discretization, simulation, and
 // model reduction.
 //
-// Constructors defensively copy caller-owned matrices and slices so a
-// System can be treated as a stable value after creation. Methods that
-// configure delays, names, or notes mutate the receiver, so shared
-// systems should be copied with Copy before concurrent mutation.
+// Methods that configure delays, names, or notes mutate the receiver,
+// so shared systems should be copied with Copy before concurrent
+// mutation.
 package controlsys

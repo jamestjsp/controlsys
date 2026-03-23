@@ -245,7 +245,7 @@ func NewFromSlices(n, m, p int, a, b, c, d []float64, dt float64) (*System, erro
 		return NewGain(Dm, dt)
 	}
 
-	return New(A, B, C, D, dt)
+	return newNoCopy(A, B, C, D, dt)
 }
 
 func (sys *System) Copy() *System {

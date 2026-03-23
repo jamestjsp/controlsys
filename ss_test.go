@@ -156,36 +156,6 @@ func TestNewFromSlicesGain(t *testing.T) {
 	}
 }
 
-func TestNewFromSlicesCopiesInputSlices(t *testing.T) {
-	a := []float64{0, 1, -2, -3}
-	b := []float64{0, 1}
-	c := []float64{1, 0}
-	d := []float64{0}
-
-	sys, err := NewFromSlices(2, 1, 1, a, b, c, d, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	a[0] = 99
-	b[0] = 99
-	c[0] = 99
-	d[0] = 99
-
-	if got := sys.A.At(0, 0); got != 0 {
-		t.Fatalf("A alias detected: got %v, want 0", got)
-	}
-	if got := sys.B.At(0, 0); got != 0 {
-		t.Fatalf("B alias detected: got %v, want 0", got)
-	}
-	if got := sys.C.At(0, 0); got != 1 {
-		t.Fatalf("C alias detected: got %v, want 1", got)
-	}
-	if got := sys.D.At(0, 0); got != 0 {
-		t.Fatalf("D alias detected: got %v, want 0", got)
-	}
-}
-
 func TestNewGainCopiesInputMatrix(t *testing.T) {
 	D := mat.NewDense(1, 2, []float64{3, 4})
 
@@ -195,6 +165,20 @@ func TestNewGainCopiesInputMatrix(t *testing.T) {
 	}
 
 	D.Set(0, 0, 99)
+	if got := sys.D.At(0, 0); got != 3 {
+		t.Fatalf("D alias detected: got %v, want 3", got)
+	}
+}
+
+func TestNewFromSlicesGainOnlyCopiesInputSlice(t *testing.T) {
+	d := []float64{3, 4}
+
+	sys, err := NewFromSlices(0, 2, 1, nil, nil, nil, d, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	d[0] = 99
 	if got := sys.D.At(0, 0); got != 3 {
 		t.Fatalf("D alias detected: got %v, want 3", got)
 	}

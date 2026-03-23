@@ -17,30 +17,12 @@ go get github.com/jamestjsp/controlsys
 
 ## Production Readiness
 
-This package is suitable for production use when you need numerically robust LTI modeling and analysis in Go. However, it is still a numerical library rather than a turn-key control platform. In practice that means the main production questions are dependency management, numerical validation, and API discipline rather than service-style concerns like logging or network hardening.
+This package is intended to be usable in production control and estimation code, with the usual caveat that numerical software still needs application-specific validation.
 
-### What is already in good shape
-
-- **Input validation:** constructors and most mutating APIs reject dimension mismatches, invalid sample times, negative delays, mixed delay models, and unsupported control-design inputs.
-- **Defensive copies at API boundaries:** constructors and delay/name setters copy caller-owned matrices and slices so a system is not accidentally corrupted by later mutations to the original inputs.
-- **Verification coverage:** the repository includes focused unit tests, cross-validation tests, MATLAB/MathWorks reference checks, examples, benchmarks, `go vet`, and CI race-test coverage.
-- **Operational simplicity:** the dependency surface is intentionally small and the package is pure Go aside from LAPACK-backed numerical routines provided by gonum.
-
-### Known production caveats
-
-- **Forked gonum dependency:** consumers must intentionally pin the gonum fork in their own module. That should be treated as a supply-chain decision and reviewed the same way you would review any vendored numerical runtime.
-- **Numerical sensitivity is model-dependent:** ill-conditioned realizations, nearly uncontrollable or nearly unobservable systems, and repeated or clustered poles can produce results that are mathematically valid but sensitive to perturbations. Validate critical models against trusted references.
-- **Transport delays are specialized:** continuous delays often require Pade approximation, while discrete fractional delays rely on Thiran-style approximations. Choose the delay model deliberately and verify frequency-domain behavior for the operating range you care about.
-- **Mutable systems are not implicitly synchronized:** analysis methods are safe for read-only use, but setters mutate the receiver in place. If a model is shared across goroutines, treat it as immutable or clone it first with `Copy`.
-- **Versioning discipline matters:** if you deploy this in a control or estimation stack, pin an explicit module version and rerun your plant- and controller-specific validation on upgrades.
-
-### Recommended release checklist for downstream users
-
-1. Pin both `controlsys` and the gonum fork to explicit versions.
-2. Run `go vet ./...` and `go test -v -count=1 -race ./...` in your consuming application.
-3. Add model-specific regression tests using non-symmetric `A` matrices so transposition bugs cannot hide behind diagonal fixtures.
-4. Benchmark the exact operations that sit on your control loop or planning path with `go test -bench=. -benchmem`.
-5. Compare poles, zeros, margins, and representative time responses against an external reference for every mission-critical plant.
+- Pin both `controlsys` and the required gonum fork to explicit versions.
+- Validate mission-critical models against an external reference, especially for ill-conditioned realizations and delay-heavy systems.
+- `System` values are mutable. Use `Copy` before sharing a model across goroutines that may mutate names, delays, notes, or other receiver state.
+- The repository CI runs `go vet ./...` and `go test -v -count=1 -race ./...`; those are the recommended baseline checks for downstream integrations.
 
 ## Features
 
