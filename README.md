@@ -17,7 +17,7 @@ go get github.com/jamestjsp/controlsys
 
 ## Production Readiness
 
-This package is suitable for production use when you need numerically robust LTI modeling and analysis in Go, but it is still a numerical library rather than a turn-key control platform. In practice that means the main production questions are dependency management, numerical validation, and API discipline rather than service-style concerns like logging or network hardening.
+This package is suitable for production use when you need numerically robust LTI modeling and analysis in Go. However, it is still a numerical library rather than a turn-key control platform. In practice that means the main production questions are dependency management, numerical validation, and API discipline rather than service-style concerns like logging or network hardening.
 
 ### What is already in good shape
 
