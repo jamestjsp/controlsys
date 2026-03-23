@@ -10,7 +10,7 @@ import (
 // LFTDelay holds the internal delay representation using a linear
 // fractional transformation (LFT) structure.
 type LFTDelay struct {
-	Tau                    []float64
+	Tau                   []float64
 	B2, C2, D12, D21, D22 *mat.Dense
 }
 
@@ -189,11 +189,12 @@ func NewGain(D *mat.Dense, dt float64) (*System, error) {
 	if D == nil {
 		return nil, fmt.Errorf("D matrix required for gain system: %w", ErrDimensionMismatch)
 	}
+	p, m := D.Dims()
 	return &System{
 		A:  &mat.Dense{},
 		B:  &mat.Dense{},
 		C:  &mat.Dense{},
-		D:  D,
+		D:  denseCopySafe(D, p, m),
 		Dt: dt,
 	}, nil
 }
@@ -241,10 +242,7 @@ func NewFromSlices(n, m, p int, a, b, c, d []float64, dt float64) (*System, erro
 		} else {
 			Dm = &mat.Dense{}
 		}
-		return &System{
-			A: &mat.Dense{}, B: &mat.Dense{}, C: &mat.Dense{},
-			D: Dm, Dt: dt,
-		}, nil
+		return NewGain(Dm, dt)
 	}
 
 	return newNoCopy(A, B, C, D, dt)

@@ -10,10 +10,19 @@ Supports continuous and discrete LTI models with MIMO capability.
 go get github.com/jamestjsp/controlsys
 ```
 
-> **Note:** This package depends on a [gonum fork](https://github.com/jamestjsp/gonum) for additional LAPACK routines. Add this to your `go.mod`:
+> **Note:** This package depends on a [gonum fork](https://github.com/jamestjsp/gonum) for additional LAPACK routines. Because `replace` directives do not propagate to downstream modules, applications that import `controlsys` must add this to their own `go.mod`:
 > ```
 > replace gonum.org/v1/gonum => github.com/jamestjsp/gonum v0.17.2-fork
 > ```
+
+## Production Readiness
+
+This package is intended to be usable in production control and estimation code, with the usual caveat that numerical software still needs application-specific validation.
+
+- Pin both `controlsys` and the required gonum fork to explicit versions.
+- Validate mission-critical models against an external reference, especially for ill-conditioned realizations and delay-heavy systems.
+- `System` values are mutable. Use `Copy` before sharing a model across goroutines that may mutate names, delays, notes, or other receiver state.
+- The repository CI runs `go vet ./...` and `go test -v -count=1 -race ./...`; those are the recommended baseline checks for downstream integrations.
 
 ## Features
 
@@ -107,7 +116,7 @@ func main() {
 | `Dlqr` | Discrete-time LQR regulator |
 | `Lqe` | Kalman filter (observer) gain |
 | `Lqi` | LQR with integral action |
-| `Pole` | Pole placement |
+| `Place` | Pole placement |
 | `Care` | Continuous algebraic Riccati equation |
 | `Dare` | Discrete algebraic Riccati equation |
 
