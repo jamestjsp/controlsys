@@ -104,6 +104,17 @@ func copyBlock(dst []float64, dstStride, dstR0, dstC0 int, src []float64, srcStr
 	copyStrided(dst[dstR0*dstStride+dstC0:], dstStride, src[srcR0*srcStride+srcC0:], srcStride, rows, cols)
 }
 
+func transposeDenseInto(dst []float64, src *mat.Dense) *mat.Dense {
+	r, c := src.Dims()
+	raw := src.RawMatrix()
+	for i := range r {
+		for j := range c {
+			dst[j*r+i] = raw.Data[i*raw.Stride+j]
+		}
+	}
+	return mat.NewDense(c, r, dst)
+}
+
 func extractBlock(m *mat.Dense, r0, c0, rows, cols int) *mat.Dense {
 	if rows == 0 || cols == 0 {
 		return mat.NewDense(max(rows, 1), max(cols, 1), nil)

@@ -56,9 +56,9 @@ func H2Norm(sys *System) (float64, error) {
 
 	var X *mat.Dense
 	if sys.IsContinuous() {
-		X, err = Lyap(At, Q)
+		X, err = Lyap(At, Q, nil)
 	} else {
-		X, err = DLyap(At, Q)
+		X, err = DLyap(At, Q, nil)
 	}
 	if err != nil {
 		return 0, err
@@ -143,17 +143,17 @@ func HSV(sys *System) ([]float64, error) {
 
 	var Wc, Wo *mat.Dense
 	if sys.IsContinuous() {
-		Wc, err = Lyap(A, mat.NewDense(n, n, bbt))
+		Wc, err = Lyap(A, mat.NewDense(n, n, bbt), nil)
 		if err != nil {
 			return nil, err
 		}
-		Wo, err = Lyap(At, mat.NewDense(n, n, ctc))
+		Wo, err = Lyap(At, mat.NewDense(n, n, ctc), nil)
 	} else {
-		Wc, err = DLyap(A, mat.NewDense(n, n, bbt))
+		Wc, err = DLyap(A, mat.NewDense(n, n, bbt), nil)
 		if err != nil {
 			return nil, err
 		}
-		Wo, err = DLyap(At, mat.NewDense(n, n, ctc))
+		Wo, err = DLyap(At, mat.NewDense(n, n, ctc), nil)
 	}
 	if err != nil {
 		return nil, err

@@ -9,12 +9,69 @@ import (
 	"gonum.org/v1/gonum/mat"
 )
 
+// LyapunovWorkspace pre-allocates buffers for repeated Lyap/DLyap calls.
+// The returned *mat.Dense shares backing storage with the workspace;
+// callers who keep results across calls must copy them.
+type LyapunovWorkspace struct {
+	aData      []float64
+	wr, wi     []float64
+	vs         []float64
+	work       []float64
+	tmp, w     []float64
+	blocks     []int
+	blockStart []int
+	buf        []float64
+}
+
+type LyapunovOpts struct {
+	Workspace *LyapunovWorkspace
+}
+
+func reuseSlice(ws **LyapunovWorkspace, n int, field func(*LyapunovWorkspace) *[]float64) []float64 {
+	if *ws != nil {
+		p := field(*ws)
+		if len(*p) >= n {
+			return (*p)[:n]
+		}
+		*p = make([]float64, n)
+		return *p
+	}
+	return make([]float64, n)
+}
+
+func reuseSliceMin(ws **LyapunovWorkspace, n int, field func(*LyapunovWorkspace) *[]float64) []float64 {
+	if *ws != nil {
+		p := field(*ws)
+		if len(*p) >= n {
+			return (*p)[:n]
+		}
+		*p = make([]float64, n)
+		return *p
+	}
+	return make([]float64, n)
+}
+
+func NewLyapunovWorkspace(n int) *LyapunovWorkspace {
+	return &LyapunovWorkspace{
+		aData:      make([]float64, n*n),
+		wr:         make([]float64, n),
+		wi:         make([]float64, n),
+		vs:         make([]float64, n*n),
+		work:       make([]float64, n*50),
+		tmp:        make([]float64, n*n),
+		w:          make([]float64, n*n),
+		blocks:     make([]int, 0, n),
+		blockStart: make([]int, 0, n),
+		buf:        make([]float64, n*2),
+	}
+}
+
 // Lyap solves the continuous Lyapunov equation
 //
 //	A*X + X*A' + Q = 0
 //
 // A is n×n, Q is n×n symmetric. Returns X (n×n symmetric).
-func Lyap(A, Q *mat.Dense) (*mat.Dense, error) {
+func Lyap(A, Q *mat.Dense, opts *LyapunovOpts) (*mat.Dense, error) {
 	n, nc := A.Dims()
 	if n != nc {
 		return nil, ErrDimensionMismatch
@@ -30,19 +87,25 @@ func Lyap(A, Q *mat.Dense) (*mat.Dense, error) {
 		return nil, ErrNotSymmetric
 	}
 
-	aData := make([]float64, n*n)
+	var ws *LyapunovWorkspace
+	if opts != nil {
+		ws = opts.Workspace
+	}
+
+	nn := n * n
+	aData := reuseSlice(&ws, nn, func(w *LyapunovWorkspace) *[]float64 { return &w.aData })
 	aRaw := A.RawMatrix()
 	copyStrided(aData, n, aRaw.Data, aRaw.Stride, n, n)
 
-	wr := make([]float64, n)
-	wi := make([]float64, n)
-	vs := make([]float64, n*n)
+	wr := reuseSlice(&ws, n, func(w *LyapunovWorkspace) *[]float64 { return &w.wr })
+	wi := reuseSlice(&ws, n, func(w *LyapunovWorkspace) *[]float64 { return &w.wi })
+	vs := reuseSlice(&ws, nn, func(w *LyapunovWorkspace) *[]float64 { return &w.vs })
 
-	workQuery := make([]float64, 1)
+	var workQuery [1]float64
 	impl.Dgees(lapack.SchurHess, lapack.SortNone, nil,
-		n, aData, n, wr, wi, vs, n, workQuery, -1, nil)
+		n, aData, n, wr, wi, vs, n, workQuery[:], -1, nil)
 	lwork := int(workQuery[0])
-	work := make([]float64, lwork)
+	work := reuseSliceMin(&ws, lwork, func(w *LyapunovWorkspace) *[]float64 { return &w.work })
 
 	_, ok := impl.Dgees(lapack.SchurHess, lapack.SortNone, nil,
 		n, aData, n, wr, wi, vs, n, work, lwork, nil)
@@ -50,9 +113,8 @@ func Lyap(A, Q *mat.Dense) (*mat.Dense, error) {
 		return nil, ErrSchurFailed
 	}
 
-	// W = U' * (-Q) * U: tmp = (-Q) * U, then W = U' * tmp
-	tmp := make([]float64, n*n)
-	w := make([]float64, n*n)
+	tmp := reuseSlice(&ws, nn, func(w *LyapunovWorkspace) *[]float64 { return &w.tmp })
+	w := reuseSlice(&ws, nn, func(w *LyapunovWorkspace) *[]float64 { return &w.w })
 	qRaw := Q.RawMatrix()
 
 	blas64.Gemm(blas.NoTrans, blas.NoTrans,
@@ -98,7 +160,7 @@ func Lyap(A, Q *mat.Dense) (*mat.Dense, error) {
 //	A*X*A' - X + Q = 0
 //
 // A is n×n, Q is n×n symmetric. Returns X (n×n symmetric).
-func DLyap(A, Q *mat.Dense) (*mat.Dense, error) {
+func DLyap(A, Q *mat.Dense, opts *LyapunovOpts) (*mat.Dense, error) {
 	n, nc := A.Dims()
 	if n != nc {
 		return nil, ErrDimensionMismatch
@@ -114,19 +176,25 @@ func DLyap(A, Q *mat.Dense) (*mat.Dense, error) {
 		return nil, ErrNotSymmetric
 	}
 
-	aData := make([]float64, n*n)
+	var ws *LyapunovWorkspace
+	if opts != nil {
+		ws = opts.Workspace
+	}
+
+	nn := n * n
+	aData := reuseSlice(&ws, nn, func(w *LyapunovWorkspace) *[]float64 { return &w.aData })
 	aRaw := A.RawMatrix()
 	copyStrided(aData, n, aRaw.Data, aRaw.Stride, n, n)
 
-	wr := make([]float64, n)
-	wi := make([]float64, n)
-	vs := make([]float64, n*n)
+	wr := reuseSlice(&ws, n, func(w *LyapunovWorkspace) *[]float64 { return &w.wr })
+	wi := reuseSlice(&ws, n, func(w *LyapunovWorkspace) *[]float64 { return &w.wi })
+	vs := reuseSlice(&ws, nn, func(w *LyapunovWorkspace) *[]float64 { return &w.vs })
 
-	workQuery := make([]float64, 1)
+	var workQuery [1]float64
 	impl.Dgees(lapack.SchurHess, lapack.SortNone, nil,
-		n, aData, n, wr, wi, vs, n, workQuery, -1, nil)
+		n, aData, n, wr, wi, vs, n, workQuery[:], -1, nil)
 	lwork := int(workQuery[0])
-	work := make([]float64, lwork)
+	work := reuseSliceMin(&ws, lwork, func(w *LyapunovWorkspace) *[]float64 { return &w.work })
 
 	_, ok := impl.Dgees(lapack.SchurHess, lapack.SortNone, nil,
 		n, aData, n, wr, wi, vs, n, work, lwork, nil)
@@ -134,9 +202,8 @@ func DLyap(A, Q *mat.Dense) (*mat.Dense, error) {
 		return nil, ErrSchurFailed
 	}
 
-	// W = U' * (-Q) * U
-	tmp := make([]float64, n*n)
-	w := make([]float64, n*n)
+	tmp := reuseSlice(&ws, nn, func(w *LyapunovWorkspace) *[]float64 { return &w.tmp })
+	w := reuseSlice(&ws, nn, func(w *LyapunovWorkspace) *[]float64 { return &w.w })
 	qRaw := Q.RawMatrix()
 
 	blas64.Gemm(blas.NoTrans, blas.NoTrans,
@@ -149,7 +216,6 @@ func DLyap(A, Q *mat.Dense) (*mat.Dense, error) {
 		blas64.General{Rows: n, Cols: n, Data: tmp, Stride: n},
 		0, blas64.General{Rows: n, Cols: n, Data: w, Stride: n})
 
-	// Solve T*Y*T' - Y = W via discrete block solver
 	scale, err := solveDiscreteSchurLyap(n, aData, n, w, n)
 	if err != nil {
 		return nil, err

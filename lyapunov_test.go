@@ -31,7 +31,7 @@ func dlyapResidual(A, X, Q *mat.Dense) float64 {
 func TestLyap_1x1(t *testing.T) {
 	A := mat.NewDense(1, 1, []float64{-2})
 	Q := mat.NewDense(1, 1, []float64{4})
-	X, err := Lyap(A, Q)
+	X, err := Lyap(A, Q, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,7 +44,7 @@ func TestLyap_1x1(t *testing.T) {
 func TestLyap_2x2_Diagonal(t *testing.T) {
 	A := mat.NewDense(2, 2, []float64{-1, 0, 0, -2})
 	Q := mat.NewDense(2, 2, []float64{1, 0, 0, 1})
-	X, err := Lyap(A, Q)
+	X, err := Lyap(A, Q, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,7 +60,7 @@ func TestLyap_2x2_Diagonal(t *testing.T) {
 func TestLyap_2x2_NonSymmetricA(t *testing.T) {
 	A := mat.NewDense(2, 2, []float64{-1, 2, 0, -3})
 	Q := mat.NewDense(2, 2, []float64{1, 0, 0, 1})
-	X, err := Lyap(A, Q)
+	X, err := Lyap(A, Q, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,7 +81,7 @@ func TestLyap_3x3_ComplexEigs(t *testing.T) {
 		1, 3, 1,
 		0, 1, 2,
 	})
-	X, err := Lyap(A, Q)
+	X, err := Lyap(A, Q, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,7 +113,7 @@ func TestLyap_10x10(t *testing.T) {
 	}
 	Q := mat.NewDense(n, n, qData)
 
-	X, err := Lyap(A, Q)
+	X, err := Lyap(A, Q, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,7 +127,7 @@ func TestLyap_10x10(t *testing.T) {
 func TestLyap_Empty(t *testing.T) {
 	A := &mat.Dense{}
 	Q := &mat.Dense{}
-	X, err := Lyap(A, Q)
+	X, err := Lyap(A, Q, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,7 +141,7 @@ func TestLyap_Singular(t *testing.T) {
 	// A has eigenvalues +1, -1: sum = 0
 	A := mat.NewDense(2, 2, []float64{0, 1, 1, 0})
 	Q := mat.NewDense(2, 2, []float64{1, 0, 0, 1})
-	_, err := Lyap(A, Q)
+	_, err := Lyap(A, Q, nil)
 	if !errors.Is(err, ErrSingularEquation) {
 		t.Errorf("expected ErrSingularEquation, got %v", err)
 	}
@@ -150,7 +150,7 @@ func TestLyap_Singular(t *testing.T) {
 func TestLyap_NotSymmetricQ(t *testing.T) {
 	A := mat.NewDense(2, 2, []float64{-1, 0, 0, -2})
 	Q := mat.NewDense(2, 2, []float64{1, 0.5, 0, 1})
-	_, err := Lyap(A, Q)
+	_, err := Lyap(A, Q, nil)
 	if !errors.Is(err, ErrNotSymmetric) {
 		t.Errorf("expected ErrNotSymmetric, got %v", err)
 	}
@@ -159,7 +159,7 @@ func TestLyap_NotSymmetricQ(t *testing.T) {
 func TestLyap_DimMismatch(t *testing.T) {
 	A := mat.NewDense(2, 2, []float64{-1, 0, 0, -2})
 	Q := mat.NewDense(3, 3, nil)
-	_, err := Lyap(A, Q)
+	_, err := Lyap(A, Q, nil)
 	if !errors.Is(err, ErrDimensionMismatch) {
 		t.Errorf("expected ErrDimensionMismatch, got %v", err)
 	}
@@ -170,7 +170,7 @@ func TestLyap_DimMismatch(t *testing.T) {
 func TestDLyap_1x1(t *testing.T) {
 	A := mat.NewDense(1, 1, []float64{0.5})
 	Q := mat.NewDense(1, 1, []float64{1})
-	X, err := DLyap(A, Q)
+	X, err := DLyap(A, Q, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -184,7 +184,7 @@ func TestDLyap_1x1(t *testing.T) {
 func TestDLyap_2x2_Diagonal(t *testing.T) {
 	A := mat.NewDense(2, 2, []float64{0.5, 0, 0, 0.8})
 	Q := mat.NewDense(2, 2, []float64{1, 0, 0, 1})
-	X, err := DLyap(A, Q)
+	X, err := DLyap(A, Q, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -201,7 +201,7 @@ func TestDLyap_2x2_Diagonal(t *testing.T) {
 func TestDLyap_2x2_NonSymmetricA(t *testing.T) {
 	A := mat.NewDense(2, 2, []float64{0.5, 0.3, 0, 0.8})
 	Q := mat.NewDense(2, 2, []float64{1, 0.2, 0.2, 1})
-	X, err := DLyap(A, Q)
+	X, err := DLyap(A, Q, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -224,7 +224,7 @@ func TestDLyap_3x3_Mixed(t *testing.T) {
 		0.5, 3, 0.2,
 		0.1, 0.2, 1,
 	})
-	X, err := DLyap(A, Q)
+	X, err := DLyap(A, Q, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -256,7 +256,7 @@ func TestDLyap_10x10(t *testing.T) {
 	}
 	Q := mat.NewDense(n, n, qData)
 
-	X, err := DLyap(A, Q)
+	X, err := DLyap(A, Q, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -268,7 +268,7 @@ func TestDLyap_10x10(t *testing.T) {
 }
 
 func TestDLyap_Empty(t *testing.T) {
-	X, err := DLyap(&mat.Dense{}, &mat.Dense{})
+	X, err := DLyap(&mat.Dense{}, &mat.Dense{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -282,7 +282,7 @@ func TestDLyap_Singular(t *testing.T) {
 	// A=diag(2, 0.5): eigenvalues product = 1
 	A := mat.NewDense(2, 2, []float64{2, 0, 0, 0.5})
 	Q := mat.NewDense(2, 2, []float64{1, 0, 0, 1})
-	_, err := DLyap(A, Q)
+	_, err := DLyap(A, Q, nil)
 	if !errors.Is(err, ErrSingularEquation) {
 		t.Errorf("expected ErrSingularEquation, got %v", err)
 	}
@@ -304,7 +304,7 @@ func TestDLyap_AllBlockCombos(t *testing.T) {
 	}
 	Q := mat.NewDense(5, 5, qData)
 
-	X, err := DLyap(A, Q)
+	X, err := DLyap(A, Q, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -328,7 +328,7 @@ func TestDLyap_Reference(t *testing.T) {
 		-24, -32, -8,
 		-15, -8, -40,
 	})
-	X, err := DLyap(At, negC)
+	X, err := DLyap(At, negC, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -362,7 +362,7 @@ func TestLyap_Reference_Continuous(t *testing.T) {
 		0.5, 4, 0.2,
 		0.3, 0.2, 6,
 	})
-	X, err := Lyap(A, Q)
+	X, err := Lyap(A, Q, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

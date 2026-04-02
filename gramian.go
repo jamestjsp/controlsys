@@ -83,9 +83,9 @@ func Gram(sys *System, typ GramType) (*GramResult, error) {
 
 	var X *mat.Dense
 	if sys.IsContinuous() {
-		X, err = Lyap(Aarg, Q)
+		X, err = Lyap(Aarg, Q, nil)
 	} else {
-		X, err = DLyap(Aarg, Q)
+		X, err = DLyap(Aarg, Q, nil)
 	}
 	if err != nil {
 		return nil, err

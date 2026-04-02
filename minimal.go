@@ -74,9 +74,10 @@ func (sys *System) Reduce(opts *ReduceOpts) (*ReduceResult, error) {
 			bc := extractSubmatrix(B, 0, ncont, 0, m)
 			cc := extractSubmatrix(C, 0, p, 0, ncont)
 
-			acT := mat.DenseCopyOf(ac.T())
-			ccT := mat.DenseCopyOf(cc.T())
-			bcT := mat.DenseCopyOf(bc.T())
+			slab1 := make([]float64, ncont*ncont+ncont*p+m*ncont)
+			acT := transposeDenseInto(slab1[:ncont*ncont], ac)
+			ccT := transposeDenseInto(slab1[ncont*ncont:ncont*ncont+ncont*p], cc)
+			bcT := transposeDenseInto(slab1[ncont*ncont+ncont*p:], bc)
 
 			dualRes := ControllabilityStaircase(acT, ccT, bcT, opts.Tol)
 			nobs := dualRes.NCont
@@ -86,15 +87,11 @@ func (sys *System) Reduce(opts *ReduceOpts) (*ReduceResult, error) {
 			} else {
 				nr = nobs
 
-				// Undo duality: transpose the observable block
 				aObsDual := extractSubmatrix(dualRes.A, 0, nobs, 0, nobs)
-				aObs := mat.DenseCopyOf(aObsDual.T())
-
-				// B_min = dualRes.C[:,:nobs]' (nobs×m)
-				bObs := mat.DenseCopyOf(extractSubmatrix(dualRes.C, 0, m, 0, nobs).T())
-
-				// C_min = dualRes.B[:nobs,:]' (p×nobs)
-				cObs := mat.DenseCopyOf(extractSubmatrix(dualRes.B, 0, nobs, 0, p).T())
+				slab2 := make([]float64, nobs*nobs+nobs*m+p*nobs)
+				aObs := transposeDenseInto(slab2[:nobs*nobs], aObsDual)
+				bObs := transposeDenseInto(slab2[nobs*nobs:nobs*nobs+nobs*m], extractSubmatrix(dualRes.C, 0, m, 0, nobs))
+				cObs := transposeDenseInto(slab2[nobs*nobs+nobs*m:], extractSubmatrix(dualRes.B, 0, nobs, 0, p))
 
 				// Pertranspose for upper block Hessenberg: P*A*P, P*B, C*P
 				pertransposeSquare(aObs, nobs)

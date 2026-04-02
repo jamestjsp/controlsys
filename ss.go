@@ -23,6 +23,7 @@ type System struct {
 	B           *mat.Dense
 	C           *mat.Dense
 	D           *mat.Dense
+	E           *mat.Dense // descriptor matrix; nil = identity (standard state-space)
 	Delay       *mat.Dense // p×m IODelay; nil = no delay
 	InputDelay  []float64  // length m; nil = zeros
 	OutputDelay []float64  // length p; nil = zeros
@@ -35,6 +36,8 @@ type System struct {
 	StateName  []string
 	Notes      string
 }
+
+func (sys *System) IsDescriptor() bool { return sys.E != nil }
 
 func (sys *System) internalDelayCount() int {
 	if sys.LFT == nil {
@@ -68,6 +71,9 @@ func (sys *System) Poles() ([]complex128, error) {
 	if n == 0 {
 		return nil, nil
 	}
+	if sys.E != nil {
+		return generalizedPoles(sys.A, sys.E, n)
+	}
 	var eig mat.Eigen
 	ok := eig.Factorize(sys.A, mat.EigenNone)
 	if !ok {
@@ -75,6 +81,7 @@ func (sys *System) Poles() ([]complex128, error) {
 	}
 	return eig.Values(nil), nil
 }
+
 
 func (sys *System) IsStable() (bool, error) {
 	poles, err := sys.Poles()
@@ -254,6 +261,7 @@ func (sys *System) Copy() *System {
 		B:     denseCopy(sys.B),
 		C:     denseCopy(sys.C),
 		D:     denseCopy(sys.D),
+		E:     copyDescriptorE(sys.E),
 		Delay: copyDelayOrNil(sys.Delay),
 		Dt:    sys.Dt,
 	}

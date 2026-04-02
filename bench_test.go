@@ -836,7 +836,7 @@ func benchLyap(b *testing.B, n int) {
 	Q := benchSymPD(n)
 	b.ResetTimer()
 	for range b.N {
-		Lyap(A, Q)
+		Lyap(A, Q, nil)
 	}
 }
 
@@ -849,7 +849,7 @@ func benchDLyap(b *testing.B, n int) {
 	Q := benchSymPD(n)
 	b.ResetTimer()
 	for range b.N {
-		DLyap(A, Q)
+		DLyap(A, Q, nil)
 	}
 }
 

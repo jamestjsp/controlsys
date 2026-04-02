@@ -35,6 +35,7 @@ type RiccatiWorkspace struct {
 	z      []float64
 	btx    []float64
 	rbar   []float64
+	iwork  []int
 }
 
 func NewRiccatiWorkspace(n, m int) *RiccatiWorkspace {
@@ -67,6 +68,7 @@ func NewRiccatiWorkspace(n, m int) *RiccatiWorkspace {
 		z:      make([]float64, nn*nn),
 		btx:    make([]float64, m*n),
 		rbar:   make([]float64, m*m),
+		iwork:  make([]int, n),
 	}
 }
 
@@ -215,9 +217,9 @@ func Care(A, B, Q, R *mat.Dense, opts *RiccatiOpts) (*RiccatiResult, error) {
 
 	selctg := func(wr, wi float64) bool { return wr < 0 }
 
-	workQuery := make([]float64, 1)
+	var workQuery [1]float64
 	impl.Dgees(lapack.SchurHess, lapack.SortSelected, selctg,
-		nn, h, nn, wr, wi, vs, nn, workQuery, -1, bwork)
+		nn, h, nn, wr, wi, vs, nn, workQuery[:], -1, bwork)
 	lwork := int(workQuery[0])
 	work := ws.work
 	if len(work) < lwork {
@@ -248,7 +250,8 @@ func Care(A, B, Q, R *mat.Dense, opts *RiccatiOpts) (*RiccatiResult, error) {
 	}
 
 	anorm := impl.Dlange(lapack.MaxColumnSum, n, n, u11, n, work[:n])
-	rcnd := impl.Dgecon(lapack.MaxColumnSum, n, u11, n, anorm, work[:4*n], make([]int, n))
+	iwork := ws.iwork[:n]
+	rcnd := impl.Dgecon(lapack.MaxColumnSum, n, u11, n, anorm, work[:4*n], iwork)
 
 	xData := ws.xData[:n*n]
 	for i := range n {
@@ -276,9 +279,10 @@ func Care(A, B, Q, R *mat.Dense, opts *RiccatiOpts) (*RiccatiResult, error) {
 		0, blas64.General{Rows: m, Cols: n, Data: kData, Stride: n})
 	if S != nil {
 		sRaw := S.RawMatrix()
-		for i := range n {
-			for j := range m {
-				kData[j*n+i] += sRaw.Data[i*sRaw.Stride+j]
+		for j := range m {
+			row := kData[j*n:]
+			for i := range n {
+				row[i] += sRaw.Data[i*sRaw.Stride+j]
 			}
 		}
 	}
@@ -410,8 +414,8 @@ func Dare(A, B, Q, R *mat.Dense, opts *RiccatiOpts) (*RiccatiResult, error) {
 	if !impl.Dgetrf(n, n, ait, n, aipiv) {
 		return nil, ErrNoStabilizing
 	}
-	aiWorkQ := make([]float64, 1)
-	impl.Dgetri(n, ait, n, aipiv, aiWorkQ, -1)
+	var aiWorkQ [1]float64
+	impl.Dgetri(n, ait, n, aipiv, aiWorkQ[:], -1)
 	aiWork := ws.aiWork
 	if len(aiWork) < int(aiWorkQ[0]) {
 		aiWork = make([]float64, int(aiWorkQ[0]))
@@ -460,10 +464,10 @@ func Dare(A, B, Q, R *mat.Dense, opts *RiccatiOpts) (*RiccatiResult, error) {
 		return wr*wr+wi*wi < 1
 	}
 
-	workQuery := make([]float64, 1)
+	var workQuery2 [1]float64
 	impl.Dgees(lapack.SchurHess, lapack.SortSelected, selctg,
-		nn, z, nn, wr, wi, vs, nn, workQuery, -1, bwork)
-	lwork := int(workQuery[0])
+		nn, z, nn, wr, wi, vs, nn, workQuery2[:], -1, bwork)
+	lwork := int(workQuery2[0])
 	work := ws.work
 	if len(work) < lwork {
 		work = make([]float64, lwork)
@@ -491,7 +495,8 @@ func Dare(A, B, Q, R *mat.Dense, opts *RiccatiOpts) (*RiccatiResult, error) {
 	}
 
 	anorm := impl.Dlange(lapack.MaxColumnSum, n, n, u11, n, work[:n])
-	rcnd := impl.Dgecon(lapack.MaxColumnSum, n, u11, n, anorm, work[:4*n], make([]int, n))
+	iwork2 := ws.iwork[:n]
+	rcnd := impl.Dgecon(lapack.MaxColumnSum, n, u11, n, anorm, work[:4*n], iwork2)
 
 	xData := ws.xData[:n*n]
 	for i := range n {
@@ -536,9 +541,10 @@ func Dare(A, B, Q, R *mat.Dense, opts *RiccatiOpts) (*RiccatiResult, error) {
 		0, blas64.General{Rows: m, Cols: n, Data: kData, Stride: n})
 	if S != nil {
 		sRaw := S.RawMatrix()
-		for i := range n {
-			for j := range m {
-				kData[j*n+i] += sRaw.Data[i*sRaw.Stride+j]
+		for j := range m {
+			row := kData[j*n:]
+			for i := range n {
+				row[i] += sRaw.Data[i*sRaw.Stride+j]
 			}
 		}
 	}

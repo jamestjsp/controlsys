@@ -84,17 +84,17 @@ func Balreal(sys *System) (*BalrealResult, error) {
 
 	var Wc, Wo *mat.Dense
 	if sys.IsContinuous() {
-		Wc, err = Lyap(A, mat.NewDense(n, n, bbt))
+		Wc, err = Lyap(A, mat.NewDense(n, n, bbt), nil)
 		if err != nil {
 			return nil, err
 		}
-		Wo, err = Lyap(At, mat.NewDense(n, n, ctc))
+		Wo, err = Lyap(At, mat.NewDense(n, n, ctc), nil)
 	} else {
-		Wc, err = DLyap(A, mat.NewDense(n, n, bbt))
+		Wc, err = DLyap(A, mat.NewDense(n, n, bbt), nil)
 		if err != nil {
 			return nil, err
 		}
-		Wo, err = DLyap(At, mat.NewDense(n, n, ctc))
+		Wo, err = DLyap(At, mat.NewDense(n, n, ctc), nil)
 	}
 	if err != nil {
 		return nil, err
@@ -318,24 +318,26 @@ func Modred(sys *System, elim []int, method BalredMethod) (*System, error) {
 	aRaw := sys.A.RawMatrix()
 	ap := make([]float64, n*n)
 	for i := range n {
+		srcRow := aRaw.Data[perm[i]*aRaw.Stride:]
+		dstOff := i * n
 		for j := range n {
-			ap[i*n+j] = aRaw.Data[perm[i]*aRaw.Stride+perm[j]]
+			ap[dstOff+j] = srcRow[perm[j]]
 		}
 	}
 
 	bRaw := sys.B.RawMatrix()
 	bp := make([]float64, n*m)
 	for i := range n {
-		for j := range m {
-			bp[i*m+j] = bRaw.Data[perm[i]*bRaw.Stride+j]
-		}
+		copy(bp[i*m:i*m+m], bRaw.Data[perm[i]*bRaw.Stride:perm[i]*bRaw.Stride+m])
 	}
 
 	cRaw := sys.C.RawMatrix()
 	cp := make([]float64, p*n)
 	for i := range p {
+		srcRow := cRaw.Data[i*cRaw.Stride:]
+		dstOff := i * n
 		for j := range n {
-			cp[i*n+j] = cRaw.Data[i*cRaw.Stride+perm[j]]
+			cp[dstOff+j] = srcRow[perm[j]]
 		}
 	}
 
@@ -379,7 +381,11 @@ func singularPerturbation(
 	C2 := extractSubmatrix(Cb, 0, p, r, n)
 
 	n2 := n - r
-	a22Data := make([]float64, n2*n2)
+	slab := make([]float64, n2*n2+n2*r+n2*m+r*r+r*m+p*r+p*m)
+	off := 0
+	take := func(sz int) []float64 { s := slab[off : off+sz]; off += sz; return s }
+
+	a22Data := take(n2 * n2)
 	a22Raw := A22.RawMatrix()
 	copyStrided(a22Data, n2, a22Raw.Data, a22Raw.Stride, n2, n2)
 
@@ -388,13 +394,12 @@ func singularPerturbation(
 		return nil, hsv, ErrSingularA22
 	}
 
-	// Solve A22 * X = A21  and  A22 * Y = B2
-	rhs1 := make([]float64, n2*r)
+	rhs1 := take(n2 * r)
 	a21Raw := A21.RawMatrix()
 	copyStrided(rhs1, r, a21Raw.Data, a21Raw.Stride, n2, r)
 	impl.Dgetrs(blas.NoTrans, n2, r, a22Data, n2, ipiv, rhs1, r)
 
-	rhs2 := make([]float64, n2*m)
+	rhs2 := take(n2 * m)
 	b2Raw := B2.RawMatrix()
 	copyStrided(rhs2, m, b2Raw.Data, b2Raw.Stride, n2, m)
 	impl.Dgetrs(blas.NoTrans, n2, m, a22Data, n2, ipiv, rhs2, m)
@@ -406,29 +411,25 @@ func singularPerturbation(
 	c2Raw := C2.RawMatrix()
 	c2Gen := blas64.General{Rows: p, Cols: n2, Stride: c2Raw.Stride, Data: c2Raw.Data}
 
-	// Ar = A11 - A12 * inv(A22) * A21 → copy A11, then Gemm with beta=1, alpha=-1
-	arData := make([]float64, r*r)
+	arData := take(r * r)
 	a11Raw := A11.RawMatrix()
 	copyStrided(arData, r, a11Raw.Data, a11Raw.Stride, r, r)
 	blas64.Gemm(blas.NoTrans, blas.NoTrans, -1, a12Gen, invA22_A21,
 		1, blas64.General{Rows: r, Cols: r, Stride: r, Data: arData})
 
-	// Br = B1 - A12 * inv(A22) * B2
-	brData := make([]float64, r*m)
+	brData := take(r * m)
 	b1Raw := B1.RawMatrix()
 	copyStrided(brData, m, b1Raw.Data, b1Raw.Stride, r, m)
 	blas64.Gemm(blas.NoTrans, blas.NoTrans, -1, a12Gen, invA22_B2,
 		1, blas64.General{Rows: r, Cols: m, Stride: m, Data: brData})
 
-	// Cr = C1 - C2 * inv(A22) * A21
-	crData := make([]float64, p*r)
+	crData := take(p * r)
 	c1Raw := C1.RawMatrix()
 	copyStrided(crData, r, c1Raw.Data, c1Raw.Stride, p, r)
 	blas64.Gemm(blas.NoTrans, blas.NoTrans, -1, c2Gen, invA22_A21,
 		1, blas64.General{Rows: p, Cols: r, Stride: r, Data: crData})
 
-	// Dr = D - C2 * inv(A22) * B2
-	drData := make([]float64, p*m)
+	drData := take(p * m)
 	dRaw := Db.RawMatrix()
 	copyStrided(drData, m, dRaw.Data, dRaw.Stride, p, m)
 	blas64.Gemm(blas.NoTrans, blas.NoTrans, -1, c2Gen, invA22_B2,

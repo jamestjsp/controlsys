@@ -1,6 +1,9 @@
 package controlsys
 
 import (
+	"math"
+	"math/cmplx"
+
 	"gonum.org/v1/gonum/blas"
 	"gonum.org/v1/gonum/blas/blas64"
 	"gonum.org/v1/gonum/mat"
@@ -153,4 +156,66 @@ func ObsvF(A, B, C *mat.Dense) (*StaircaseResult, error) {
 
 	_ = p
 	return res, nil
+}
+
+func IsStabilizable(A, B *mat.Dense, continuous bool) (bool, error) {
+	n, nc := A.Dims()
+	if n != nc {
+		return false, ErrDimensionMismatch
+	}
+	br, _ := B.Dims()
+	if br != n {
+		return false, ErrDimensionMismatch
+	}
+	if n == 0 {
+		return true, nil
+	}
+
+	res, err := CtrbF(A, B, nil)
+	if err != nil {
+		return false, err
+	}
+	if res.NCont == n {
+		return true, nil
+	}
+
+	nc2 := n - res.NCont
+	auc := mat.NewDense(nc2, nc2, nil)
+	aRaw := res.A.RawMatrix()
+	for i := range nc2 {
+		for j := range nc2 {
+			auc.Set(i, j, aRaw.Data[(res.NCont+i)*aRaw.Stride+(res.NCont+j)])
+		}
+	}
+
+	var eig mat.Eigen
+	if !eig.Factorize(auc, mat.EigenNone) {
+		return false, ErrSchurFailed
+	}
+	vals := eig.Values(nil)
+
+	for _, v := range vals {
+		if continuous {
+			if real(v) >= 0 {
+				return false, nil
+			}
+		} else {
+			if cmplx.Abs(v) >= 1-math.SmallestNonzeroFloat64 {
+				return false, nil
+			}
+		}
+	}
+	return true, nil
+}
+
+func IsDetectable(A, C *mat.Dense, continuous bool) (bool, error) {
+	n, nc := A.Dims()
+	if n != nc {
+		return false, ErrDimensionMismatch
+	}
+	_, cc := C.Dims()
+	if cc != n {
+		return false, ErrDimensionMismatch
+	}
+	return IsStabilizable(mat.DenseCopyOf(A.T()), mat.DenseCopyOf(C.T()), continuous)
 }

@@ -430,19 +430,14 @@ func placeAssign2x2(t, z, bhat, fData, fBuf []float64, pool []complex128, n, m, 
 			fBlock[j*2+1] = b1*a0 + c1s*a1
 		}
 
-		for i := range n {
-			for s := range 2 {
-				col := k + s
-				for j := range m {
-					t[i*n+col] -= bhat[i*m+j] * fBlock[j*2+s]
-				}
-			}
-		}
+		blas64.Gemm(blas.NoTrans, blas.NoTrans, -1,
+			blas64.General{Rows: n, Cols: m, Data: bhat, Stride: m},
+			blas64.General{Rows: m, Cols: 2, Data: fBlock, Stride: 2},
+			1, blas64.General{Rows: n, Cols: 2, Data: t[k:], Stride: n})
 
 		for j := range m {
 			for col := range n {
-				fData[j*n+col] += fBlock[j*2] * z[col*n+k]
-				fData[j*n+col] += fBlock[j*2+1] * z[col*n+k+1]
+				fData[j*n+col] += fBlock[j*2]*z[col*n+k] + fBlock[j*2+1]*z[col*n+k+1]
 			}
 		}
 	}

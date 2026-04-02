@@ -200,6 +200,51 @@ func (p Poly) Roots() ([]complex128, error) {
 	return roots, nil
 }
 
+func (p Poly) Sub(q Poly) Poly {
+	n := len(p)
+	m := len(q)
+	if n == 0 {
+		r := make(Poly, m)
+		for i, v := range q {
+			r[i] = -v
+		}
+		return r
+	}
+	if m == 0 {
+		r := make(Poly, n)
+		copy(r, p)
+		return r
+	}
+	size := n
+	if m > size {
+		size = m
+	}
+	r := make(Poly, size)
+	for i := range r {
+		var pv, qv float64
+		if i >= size-n {
+			pv = p[i-(size-n)]
+		}
+		if i >= size-m {
+			qv = q[i-(size-m)]
+		}
+		r[i] = pv - qv
+	}
+	return r
+}
+
+func (p Poly) Derivative() Poly {
+	if len(p) <= 1 {
+		return Poly{0}
+	}
+	deg := len(p) - 1
+	r := make(Poly, deg)
+	for i := 0; i < deg; i++ {
+		r[i] = p[i] * float64(deg-i)
+	}
+	return r
+}
+
 func (p Poly) Equal(q Poly, tol float64) bool {
 	if len(p) != len(q) {
 		return false

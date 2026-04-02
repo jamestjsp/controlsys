@@ -315,6 +315,99 @@ func TestObsv_1x1(t *testing.T) {
 	}
 }
 
+func TestIsStabilizable_FullyControllable(t *testing.T) {
+	A := mat.NewDense(2, 2, []float64{0, 1, -2, -3})
+	B := mat.NewDense(2, 1, []float64{0, 1})
+	ok, err := IsStabilizable(A, B, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok {
+		t.Error("expected stabilizable (fully controllable)")
+	}
+}
+
+func TestIsStabilizable_StableUncontrollable(t *testing.T) {
+	A := mat.NewDense(2, 2, []float64{-1, 0, 0, -2})
+	B := mat.NewDense(2, 1, []float64{1, 0})
+	ok, err := IsStabilizable(A, B, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok {
+		t.Error("expected stabilizable (uncontrollable mode is stable)")
+	}
+}
+
+func TestIsStabilizable_UnstableUncontrollable(t *testing.T) {
+	A := mat.NewDense(2, 2, []float64{1, 0, 0, -2})
+	B := mat.NewDense(2, 1, []float64{0, 1})
+	ok, err := IsStabilizable(A, B, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok {
+		t.Error("expected NOT stabilizable (uncontrollable mode is unstable)")
+	}
+}
+
+func TestIsStabilizable_Discrete(t *testing.T) {
+	A := mat.NewDense(2, 2, []float64{0.5, 0, 0, 1.5})
+	B := mat.NewDense(2, 1, []float64{0, 1})
+	ok, err := IsStabilizable(A, B, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok {
+		t.Error("expected stabilizable (uncontrollable mode |0.5| < 1)")
+	}
+
+	A2 := mat.NewDense(2, 2, []float64{1.5, 0, 0, 0.5})
+	B2 := mat.NewDense(2, 1, []float64{0, 1})
+	ok2, err := IsStabilizable(A2, B2, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok2 {
+		t.Error("expected NOT stabilizable (uncontrollable mode |1.5| >= 1)")
+	}
+}
+
+func TestIsDetectable_Dual(t *testing.T) {
+	A := mat.NewDense(2, 2, []float64{0, 1, -2, -3})
+	C := mat.NewDense(1, 2, []float64{1, 0})
+	ok, err := IsDetectable(A, C, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok {
+		t.Error("expected detectable (fully observable)")
+	}
+}
+
+func TestIsDetectable_Undetectable(t *testing.T) {
+	A := mat.NewDense(2, 2, []float64{1, 0, 0, -1})
+	C := mat.NewDense(1, 2, []float64{0, 1})
+	ok, err := IsDetectable(A, C, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok {
+		t.Error("expected NOT detectable (unobservable mode is unstable)")
+	}
+}
+
+func TestIsStabilizable_DimError(t *testing.T) {
+	_, err := IsStabilizable(mat.NewDense(2, 3, nil), mat.NewDense(2, 1, nil), true)
+	if err != ErrDimensionMismatch {
+		t.Errorf("non-square A: got %v, want ErrDimensionMismatch", err)
+	}
+	_, err = IsStabilizable(mat.NewDense(2, 2, nil), mat.NewDense(3, 1, nil), true)
+	if err != ErrDimensionMismatch {
+		t.Errorf("B rows mismatch: got %v, want ErrDimensionMismatch", err)
+	}
+}
+
 func assertMatNearT(t *testing.T, label string, got, want *mat.Dense, tol float64) {
 	t.Helper()
 	gr, gc := got.Dims()
