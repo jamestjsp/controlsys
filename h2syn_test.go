@@ -167,6 +167,31 @@ func TestH2Syn_D11NonZero(t *testing.T) {
 	}
 }
 
+func TestH2Syn_D22NonZero(t *testing.T) {
+	A := mat.NewDense(2, 2, []float64{0, 1, -2, -1})
+	B := mat.NewDense(2, 2, []float64{0, 0, 1, 1})
+	C := mat.NewDense(3, 2, []float64{
+		1, 0,
+		0, 0,
+		1, 0,
+	})
+	D := mat.NewDense(3, 2, []float64{
+		0, 0,
+		0, 1,
+		0.1, 0.25,
+	})
+
+	P, err := New(A, B, C, D, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = H2Syn(P, 1, 1)
+	if !errors.Is(err, ErrH2DirectFeedthrough) {
+		t.Errorf("got %v, want ErrH2DirectFeedthrough", err)
+	}
+}
+
 func TestH2Syn_Unstabilizable(t *testing.T) {
 	A := mat.NewDense(2, 2, []float64{1, 0, 0, 2})
 	B := mat.NewDense(2, 2, []float64{0, 0, 0, 0})

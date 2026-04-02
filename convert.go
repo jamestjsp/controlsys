@@ -130,7 +130,7 @@ func bilinear(sys *System, palpha, pbeta, alpha, beta float64) (*System, error) 
 
 	var lu mat.LU
 	lu.Factorize(A)
-	if lu.Det() == 0 {
+	if luNearSingular(&lu) {
 		return nil, fmt.Errorf("bilinear: (palpha·I + A) is singular: %w", ErrSingularTransform)
 	}
 
@@ -884,7 +884,6 @@ func discretizeTustinAugmented(sys *System, dt float64) (*System, *mat.Dense, er
 
 	return disc, B2, nil
 }
-
 
 func isStrictlyUpperTriangular(m *mat.Dense) bool {
 	if m == nil {

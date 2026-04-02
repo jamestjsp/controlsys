@@ -39,6 +39,18 @@ func reuseSlice(ws **LyapunovWorkspace, n int, field func(*LyapunovWorkspace) *[
 	return make([]float64, n)
 }
 
+func reuseIntSlice(ws *LyapunovWorkspace, n int, field func(*LyapunovWorkspace) *[]int) []int {
+	if ws != nil {
+		p := field(ws)
+		if cap(*p) < n {
+			*p = make([]int, 0, n)
+		} else {
+			*p = (*p)[:0]
+		}
+		return *p
+	}
+	return make([]int, 0, n)
+}
 
 func NewLyapunovWorkspace(n int) *LyapunovWorkspace {
 	return &LyapunovWorkspace{
@@ -205,7 +217,7 @@ func DLyap(A, Q *mat.Dense, opts *LyapunovOpts) (*mat.Dense, error) {
 		blas64.General{Rows: n, Cols: n, Data: tmp, Stride: n},
 		0, blas64.General{Rows: n, Cols: n, Data: w, Stride: n})
 
-	scale, err := solveDiscreteSchurLyap(n, aData, n, w, n)
+	scale, err := solveDiscreteSchurLyap(n, aData, n, w, n, ws)
 	if err != nil {
 		return nil, err
 	}
@@ -234,13 +246,13 @@ func DLyap(A, Q *mat.Dense, opts *LyapunovOpts) (*mat.Dense, error) {
 // solveDiscreteSchurLyap solves T*Y*T' - Y = C in-place (C overwritten with Y).
 // T is n×n upper quasi-triangular (real Schur form). Returns scale factor.
 // Only the upper triangle of C is used/written; the lower triangle is ignored.
-func solveDiscreteSchurLyap(n int, t []float64, ldt int, c []float64, ldc int) (float64, error) {
+func solveDiscreteSchurLyap(n int, t []float64, ldt int, c []float64, ldc int, ws *LyapunovWorkspace) (float64, error) {
 	if n == 0 {
 		return 1, nil
 	}
 
-	blocks := make([]int, 0, n)
-	blockStart := make([]int, 0, n)
+	blocks := reuseIntSlice(ws, n, func(w *LyapunovWorkspace) *[]int { return &w.blocks })
+	blockStart := reuseIntSlice(ws, n, func(w *LyapunovWorkspace) *[]int { return &w.blockStart })
 	i := 0
 	for i < n {
 		if i+1 < n && t[(i+1)*ldt+i] != 0 {
@@ -272,7 +284,15 @@ func solveDiscreteSchurLyap(n int, t []float64, ldt int, c []float64, ldc int) (
 		return c[k*ldc+i]
 	}
 
-	buf := make([]float64, n*2)
+	var buf []float64
+	if ws != nil {
+		if len(ws.buf) < n*2 {
+			ws.buf = make([]float64, n*2)
+		}
+		buf = ws.buf[:n*2]
+	} else {
+		buf = make([]float64, n*2)
+	}
 
 	for lb := nblk - 1; lb >= 0; lb-- {
 		j1 := blockStart[lb]

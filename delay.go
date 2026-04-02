@@ -2216,7 +2216,7 @@ func (sys *System) ZeroDelayApprox() (*System, error) {
 
 	var lu mat.LU
 	lu.Factorize(ImD22)
-	if lu.Det() == 0 {
+	if luNearSingular(&lu) {
 		return nil, ErrAlgebraicLoop
 	}
 

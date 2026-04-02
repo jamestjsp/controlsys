@@ -188,7 +188,7 @@ func solveLFTLoop(D22M, DDelta *mat.Dense, w int) (*mat.Dense, error) {
 
 	var lu mat.LU
 	lu.Factorize(loop)
-	if lu.Det() == 0 {
+	if luNearSingular(&lu) {
 		return nil, fmt.Errorf("lft: (I - D22*D_Delta) singular: %w", ErrAlgebraicLoop)
 	}
 
