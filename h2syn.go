@@ -130,14 +130,6 @@ func H2Syn(P *System, nmeas, ncont int) (*H2SynResult, error) {
 		Ck = denseCopy(F)
 		Dk = mat.NewDense(m2, p2, nil)
 	} else {
-		// D22 != 0: need feedthrough compensation
-		// Dk = 0 (we absorb D22 into the controller structure)
-		// Ak = A + B2*F - L*C2 + B2*D22_inv_term...
-		// For simplicity, use the standard LFT-based formula:
-		// Ak = A + B2*F + L*C2 + L*D22*F  ... no, standard form:
-		// Controller without D22: maps y -> u
-		// With D22: u = F*xhat, y = C2*x + D22*u => y - D22*F*xhat = C2*(x-xhat) + C2*xhat
-		// Standard approach: Ak = A + B2*F - L*(C2 + D22*F)
 		DF := mulDense(D22, F)
 		C2eff := mat.NewDense(p2, n, nil)
 		C2eff.Add(C2, DF)

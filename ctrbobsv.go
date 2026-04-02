@@ -1,7 +1,6 @@
 package controlsys
 
 import (
-	"math"
 	"math/cmplx"
 
 	"gonum.org/v1/gonum/blas"
@@ -108,7 +107,7 @@ func ObsvF(A, B, C *mat.Dense) (*StaircaseResult, error) {
 	if n != nc {
 		return nil, ErrDimensionMismatch
 	}
-	p, cc := C.Dims()
+	_, cc := C.Dims()
 	if cc != n {
 		return nil, ErrDimensionMismatch
 	}
@@ -154,7 +153,6 @@ func ObsvF(A, B, C *mat.Dense) (*StaircaseResult, error) {
 		res.C = &mat.Dense{}
 	}
 
-	_ = p
 	return res, nil
 }
 
@@ -200,7 +198,7 @@ func IsStabilizable(A, B *mat.Dense, continuous bool) (bool, error) {
 				return false, nil
 			}
 		} else {
-			if cmplx.Abs(v) >= 1-math.SmallestNonzeroFloat64 {
+			if cmplx.Abs(v) >= 1-1e-10 {
 				return false, nil
 			}
 		}

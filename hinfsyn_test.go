@@ -149,6 +149,47 @@ func TestHinfSyn_GammaPositive(t *testing.T) {
 	}
 }
 
+func TestHinfSyn_NonNormalizedD12D21(t *testing.T) {
+	A := mat.NewDense(2, 2, []float64{0, 1, -2, -3})
+	B := mat.NewDense(2, 3, []float64{
+		1, 0, 0,
+		0, 1, 1,
+	})
+	C := mat.NewDense(3, 2, []float64{
+		1, 0,
+		0, 0,
+		1, 0,
+	})
+	// D12 = [0; 2] (not [0; 1]), D21 = [0.3 0.3] (not [0.1 0.1])
+	D := mat.NewDense(3, 3, []float64{
+		0, 0, 0,
+		0, 0, 2,
+		0.3, 0.3, 0,
+	})
+
+	P, err := New(A, B, C, D, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := HinfSyn(P, 1, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, p := range res.CLPoles {
+		if real(p) >= 0 {
+			t.Errorf("unstable closed-loop pole: %v", p)
+		}
+	}
+	if res.GammaOpt <= 0 {
+		t.Errorf("gamma should be positive, got %v", res.GammaOpt)
+	}
+	if math.IsInf(res.GammaOpt, 0) || math.IsNaN(res.GammaOpt) {
+		t.Errorf("gamma should be finite, got %v", res.GammaOpt)
+	}
+}
+
 func TestHinfSyn_Stability(t *testing.T) {
 	A := mat.NewDense(2, 2, []float64{0, 1, -2, -3})
 	B := mat.NewDense(2, 3, []float64{

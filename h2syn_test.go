@@ -2,7 +2,6 @@ package controlsys
 
 import (
 	"errors"
-	"math"
 	"testing"
 
 	"gonum.org/v1/gonum/mat"
@@ -224,5 +223,4 @@ func TestH2Syn_SecondOrder(t *testing.T) {
 		}
 	}
 
-	_ = math.Abs(0)
 }

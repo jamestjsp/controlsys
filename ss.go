@@ -82,7 +82,6 @@ func (sys *System) Poles() ([]complex128, error) {
 	return eig.Values(nil), nil
 }
 
-
 func (sys *System) IsStable() (bool, error) {
 	poles, err := sys.Poles()
 	if err != nil {

@@ -57,6 +57,11 @@ func NewEKF(model *EKFModel, x0 *mat.VecDense, P0 *mat.Dense) (*EKF, error) {
 	}
 	p := rr
 
+	hProbe := model.H(x0)
+	if hProbe.Len() != p {
+		return nil, fmt.Errorf("NewEKF: H(x0) returned length %d, but R is %dx%d: %w", hProbe.Len(), p, p, ErrDimensionMismatch)
+	}
+
 	xCopy := mat.VecDenseCopyOf(x0)
 	pCopy := mat.DenseCopyOf(P0)
 

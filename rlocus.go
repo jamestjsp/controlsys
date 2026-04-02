@@ -1,6 +1,7 @@
 package controlsys
 
 import (
+	"fmt"
 	"math"
 	"math/cmplx"
 	"sort"
@@ -22,6 +23,11 @@ func RootLocus(sys *System, gains []float64) (*RootLocusResult, error) {
 	n, m, p := sys.Dims()
 	if m != 1 || p != 1 {
 		return nil, ErrNotSISO
+	}
+
+	dRaw := sys.D.RawMatrix()
+	if dRaw.Data[0] != 0 {
+		return nil, fmt.Errorf("controlsys: RootLocus requires D=0: %w", ErrDimensionMismatch)
 	}
 
 	poles, err := sys.Poles()
@@ -67,7 +73,7 @@ func RootLocus(sys *System, gains []float64) (*RootLocusResult, error) {
 		M := mat.NewDense(n, n, work)
 		var eig mat.Eigen
 		if !eig.Factorize(M, mat.EigenNone) {
-			return nil, ErrSingularTransform
+			return nil, ErrSchurFailed
 		}
 		vals := eig.Values(nil)
 		allEigs[gi] = vals

@@ -46,8 +46,6 @@ func HinfSyn(P *System, nmeas, ncont int) (*HinfSynResult, error) {
 	D11 := extractBlock(P.D, 0, 0, p1, m1)
 	D12 := extractBlock(P.D, 0, m1, p1, m2)
 	D21 := extractBlock(P.D, p1, 0, p2, m1)
-	_ = extractBlock(P.D, p1, m1, p2, m2)
-
 	stab, err := IsStabilizable(A, B2, true)
 	if err != nil {
 		return nil, err
@@ -89,12 +87,30 @@ func HinfSyn(P *System, nmeas, ncont int) (*HinfSynResult, error) {
 		return nil, err
 	}
 
-	F := mat.NewDense(m2, n, nil)
-	F.Mul(mat.DenseCopyOf(B2.T()), X)
+	R1 := mulDense(mat.DenseCopyOf(D12.T()), D12)
+	R1inv, err := invertSmall(R1, m2)
+	if err != nil {
+		return nil, err
+	}
+	S1 := mulDense(mat.DenseCopyOf(D12.T()), C1)
+
+	R2 := mulDense(D21, mat.DenseCopyOf(D21.T()))
+	R2inv, err := invertSmall(R2, p2)
+	if err != nil {
+		return nil, err
+	}
+	S2 := mulDense(B1, mat.DenseCopyOf(D21.T()))
+
+	// F = -R1inv * (B2'*X + S1)
+	B2tX := mulDense(mat.DenseCopyOf(B2.T()), X)
+	B2tX.Add(B2tX, S1)
+	F := mulDense(R1inv, B2tX)
 	F.Scale(-1, F)
 
-	L := mat.NewDense(n, p2, nil)
-	L.Mul(Y, mat.DenseCopyOf(C2.T()))
+	// L = -(Y*C2' + S2) * R2inv
+	YC2t := mulDense(Y, mat.DenseCopyOf(C2.T()))
+	YC2t.Add(YC2t, S2)
+	L := mulDense(YC2t, R2inv)
 	L.Scale(-1, L)
 
 	ginv2 := 1.0 / (gamma * gamma)
@@ -165,57 +181,82 @@ func hinfFeasible(A, B1, B2, C1, C2, D12, D21 *mat.Dense, n, m1, m2, p1, p2 int,
 func hinfSolveRiccatis(A, B1, B2, C1, C2, D12, D21 *mat.Dense, n, m1, m2, p1, p2 int, gamma float64) (*mat.Dense, *mat.Dense, error) {
 	ginv2 := 1.0 / (gamma * gamma)
 
-	// X-Riccati Hamiltonian:
-	// H_x = [A, Gx; -C1'C1, -A']
-	// Gx = ginv2*B1*B1' - B2*B2'
-	B1B1t := mulDense(B1, mat.DenseCopyOf(B1.T()))
-	B2B2t := mulDense(B2, mat.DenseCopyOf(B2.T()))
-	Gx := mat.NewDense(n, n, nil)
-	Gx.Scale(ginv2, B1B1t)
-	Gx.Sub(Gx, B2B2t)
+	R1 := mulDense(mat.DenseCopyOf(D12.T()), D12)
+	R1inv, err := invertSmall(R1, m2)
+	if err != nil {
+		return nil, nil, ErrInvalidPartition
+	}
+	S1 := mulDense(mat.DenseCopyOf(D12.T()), C1)
 
+	B1B1t := mulDense(B1, mat.DenseCopyOf(B1.T()))
 	C1tC1 := mulDense(mat.DenseCopyOf(C1.T()), C1)
 
+	// X-Riccati: Ahat = A - B2*R1inv*S1
+	B2R1inv := mulDense(B2, R1inv)
+	Ahat := mat.NewDense(n, n, nil)
+	Ahat.Sub(A, mulDense(B2R1inv, S1))
+
+	// Qhat = C1'C1 - S1'*R1inv*S1
+	Qhat := mat.NewDense(n, n, nil)
+	Qhat.Sub(C1tC1, mulDense(mat.DenseCopyOf(S1.T()), mulDense(R1inv, S1)))
+
+	// Gx = ginv2*B1*B1' - B2*R1inv*B2'
+	Gx := mat.NewDense(n, n, nil)
+	Gx.Scale(ginv2, B1B1t)
+	Gx.Sub(Gx, mulDense(B2R1inv, mat.DenseCopyOf(B2.T())))
+
 	Hx := mat.NewDense(2*n, 2*n, nil)
-	setBlock(Hx, 0, 0, A)
+	setBlock(Hx, 0, 0, Ahat)
 	setBlock(Hx, 0, n, Gx)
-	negC1tC1 := mat.NewDense(n, n, nil)
-	negC1tC1.Scale(-1, C1tC1)
-	setBlock(Hx, n, 0, negC1tC1)
-	negAt := mat.NewDense(n, n, nil)
-	negAt.Scale(-1, mat.DenseCopyOf(A.T()))
-	setBlock(Hx, n, n, negAt)
+	negQhat := mat.NewDense(n, n, nil)
+	negQhat.Scale(-1, Qhat)
+	setBlock(Hx, n, 0, negQhat)
+	negAhatT := mat.NewDense(n, n, nil)
+	negAhatT.Scale(-1, mat.DenseCopyOf(Ahat.T()))
+	setBlock(Hx, n, n, negAhatT)
 
 	X, err := solveHamiltonianRiccati(Hx, n)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	// Y-Riccati Hamiltonian:
-	// H_y = [A', Gy; -B1*B1', -A]
-	// Gy = ginv2*C1'C1 - C2'C2
-	C2tC2 := mulDense(mat.DenseCopyOf(C2.T()), C2)
+	// Y-Riccati
+	R2 := mulDense(D21, mat.DenseCopyOf(D21.T()))
+	R2inv, err := invertSmall(R2, p2)
+	if err != nil {
+		return nil, nil, ErrInvalidPartition
+	}
+	S2 := mulDense(B1, mat.DenseCopyOf(D21.T()))
+
+	// Atilde = A - S2*R2inv*C2
+	S2R2inv := mulDense(S2, R2inv)
+	Atilde := mat.NewDense(n, n, nil)
+	Atilde.Sub(A, mulDense(S2R2inv, C2))
+
+	// Qy = B1*B1' - S2*R2inv*S2'
+	Qy := mat.NewDense(n, n, nil)
+	Qy.Sub(B1B1t, mulDense(S2R2inv, mat.DenseCopyOf(S2.T())))
+
+	// Gy = ginv2*C1'C1 - C2'*R2inv*C2
 	Gy := mat.NewDense(n, n, nil)
 	Gy.Scale(ginv2, C1tC1)
-	Gy.Sub(Gy, C2tC2)
+	Gy.Sub(Gy, mulDense(mat.DenseCopyOf(C2.T()), mulDense(R2inv, C2)))
 
 	Hy := mat.NewDense(2*n, 2*n, nil)
-	At := mat.DenseCopyOf(A.T())
-	setBlock(Hy, 0, 0, At)
+	setBlock(Hy, 0, 0, mat.DenseCopyOf(Atilde.T()))
 	setBlock(Hy, 0, n, Gy)
-	negB1B1t := mat.NewDense(n, n, nil)
-	negB1B1t.Scale(-1, B1B1t)
-	setBlock(Hy, n, 0, negB1B1t)
-	negA := mat.NewDense(n, n, nil)
-	negA.Scale(-1, A)
-	setBlock(Hy, n, n, negA)
+	negQy := mat.NewDense(n, n, nil)
+	negQy.Scale(-1, Qy)
+	setBlock(Hy, n, 0, negQy)
+	negAtilde := mat.NewDense(n, n, nil)
+	negAtilde.Scale(-1, Atilde)
+	setBlock(Hy, n, n, negAtilde)
 
 	Y, err := solveHamiltonianRiccati(Hy, n)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	// Spectral radius check: rho(X*Y) < gamma^2
 	XY := mulDense(X, Y)
 	var eig mat.Eigen
 	ok := eig.Factorize(XY, mat.EigenNone)
@@ -229,9 +270,6 @@ func hinfSolveRiccatis(A, B1, B2, C1, C2, D12, D21 *mat.Dense, n, m1, m2, p1, p2
 			return nil, nil, ErrGammaNotAchievable
 		}
 	}
-
-	_ = D12
-	_ = D21
 
 	return X, Y, nil
 }

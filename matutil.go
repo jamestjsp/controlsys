@@ -115,6 +115,20 @@ func transposeDenseInto(dst []float64, src *mat.Dense) *mat.Dense {
 	return mat.NewDense(c, r, dst)
 }
 
+func invertSmall(m *mat.Dense, n int) (*mat.Dense, error) {
+	var lu mat.LU
+	lu.Factorize(m)
+	inv := mat.NewDense(n, n, nil)
+	eye := mat.NewDense(n, n, nil)
+	for i := range n {
+		eye.Set(i, i, 1)
+	}
+	if err := lu.SolveTo(inv, false, eye); err != nil {
+		return nil, err
+	}
+	return inv, nil
+}
+
 func extractBlock(m *mat.Dense, r0, c0, rows, cols int) *mat.Dense {
 	if rows == 0 || cols == 0 {
 		return mat.NewDense(max(rows, 1), max(cols, 1), nil)

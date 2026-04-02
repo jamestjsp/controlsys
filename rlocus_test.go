@@ -242,6 +242,24 @@ func TestRootLocus_NotSISO(t *testing.T) {
 	}
 }
 
+func TestRootLocus_NonZeroD(t *testing.T) {
+	sys, err := New(
+		mat.NewDense(1, 1, []float64{-1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{2}),
+		0,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = RootLocus(sys, nil)
+	if err == nil {
+		t.Error("expected error for D != 0")
+	}
+}
+
 func TestRootLocus_BranchContinuity(t *testing.T) {
 	// G(s) = 1/(s^2+2s+1) => two branches
 	sys, err := New(

@@ -39,17 +39,6 @@ func reuseSlice(ws **LyapunovWorkspace, n int, field func(*LyapunovWorkspace) *[
 	return make([]float64, n)
 }
 
-func reuseSliceMin(ws **LyapunovWorkspace, n int, field func(*LyapunovWorkspace) *[]float64) []float64 {
-	if *ws != nil {
-		p := field(*ws)
-		if len(*p) >= n {
-			return (*p)[:n]
-		}
-		*p = make([]float64, n)
-		return *p
-	}
-	return make([]float64, n)
-}
 
 func NewLyapunovWorkspace(n int) *LyapunovWorkspace {
 	return &LyapunovWorkspace{
@@ -105,7 +94,7 @@ func Lyap(A, Q *mat.Dense, opts *LyapunovOpts) (*mat.Dense, error) {
 	impl.Dgees(lapack.SchurHess, lapack.SortNone, nil,
 		n, aData, n, wr, wi, vs, n, workQuery[:], -1, nil)
 	lwork := int(workQuery[0])
-	work := reuseSliceMin(&ws, lwork, func(w *LyapunovWorkspace) *[]float64 { return &w.work })
+	work := reuseSlice(&ws, lwork, func(w *LyapunovWorkspace) *[]float64 { return &w.work })
 
 	_, ok := impl.Dgees(lapack.SchurHess, lapack.SortNone, nil,
 		n, aData, n, wr, wi, vs, n, work, lwork, nil)
@@ -194,7 +183,7 @@ func DLyap(A, Q *mat.Dense, opts *LyapunovOpts) (*mat.Dense, error) {
 	impl.Dgees(lapack.SchurHess, lapack.SortNone, nil,
 		n, aData, n, wr, wi, vs, n, workQuery[:], -1, nil)
 	lwork := int(workQuery[0])
-	work := reuseSliceMin(&ws, lwork, func(w *LyapunovWorkspace) *[]float64 { return &w.work })
+	work := reuseSlice(&ws, lwork, func(w *LyapunovWorkspace) *[]float64 { return &w.work })
 
 	_, ok := impl.Dgees(lapack.SchurHess, lapack.SortNone, nil,
 		n, aData, n, wr, wi, vs, n, work, lwork, nil)
