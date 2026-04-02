@@ -238,7 +238,7 @@ func computeBreakaway(sys *System, poles, zeros []complex128) []complex128 {
 			continue
 		}
 		s := real(r)
-		if isOnRealAxisSegment(s, poles, zeros) {
+		if isOnRealAxisSegment(s, poles, zeros) || isNearRepeatedReal(s, poles) || isNearRepeatedReal(s, zeros) {
 			result = append(result, complex(s, 0))
 		}
 	}
@@ -259,4 +259,14 @@ func isOnRealAxisSegment(s float64, poles, zeros []complex128) bool {
 		}
 	}
 	return count%2 == 1
+}
+
+func isNearRepeatedReal(s float64, roots []complex128) bool {
+	count := 0
+	for _, r := range roots {
+		if math.Abs(imag(r)) < 1e-6 && math.Abs(real(r)-s) < 1e-4 {
+			count++
+		}
+	}
+	return count >= 2
 }
