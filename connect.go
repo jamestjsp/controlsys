@@ -508,7 +508,7 @@ func Feedback(plant, controller *System, sign float64) (*System, error) {
 
 	var lu mat.LU
 	lu.Factorize(M)
-	if lu.Det() == 0 {
+	if luNearSingular(&lu) {
 		return nil, fmt.Errorf("feedback: (I + sign*D1*D2) singular: %w", ErrSingularTransform)
 	}
 
@@ -1164,7 +1164,6 @@ func appendInternalDelay(sys, sys1, sys2 *System, n1, n2, m1, m2, p1, p2 int) {
 	}
 }
 
-
 func BlkDiag(systems ...*System) (*System, error) {
 	if len(systems) == 0 {
 		return nil, fmt.Errorf("blkdiag: no systems provided: %w", ErrDimensionMismatch)
@@ -1479,7 +1478,7 @@ func connectWithDelay(sys *System, Q *mat.Dense, inputs, outputs []int) (*System
 
 	var lu mat.LU
 	lu.Factorize(IQD)
-	if lu.Det() == 0 {
+	if luNearSingular(&lu) {
 		return nil, fmt.Errorf("connect: (I-Q*D) singular, algebraic loop: %w", ErrAlgebraicLoop)
 	}
 
@@ -1659,7 +1658,7 @@ func connectSimple(sys *System, Q *mat.Dense, inputs, outputs []int, n, m, p int
 
 	var lu mat.LU
 	lu.Factorize(IQD)
-	if lu.Det() == 0 {
+	if luNearSingular(&lu) {
 		return nil, fmt.Errorf("connect: (I-Q*D) singular, algebraic loop: %w", ErrAlgebraicLoop)
 	}
 

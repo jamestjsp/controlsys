@@ -163,7 +163,7 @@ func Acker(A, B *mat.Dense, poles []complex128) (*mat.Dense, error) {
 
 	var lu mat.LU
 	lu.Factorize(Cm)
-	if lu.Det() == 0 {
+	if luNearSingular(&lu) {
 		return nil, fmt.Errorf("Acker: %w", ErrUncontrollable)
 	}
 
@@ -549,4 +549,3 @@ func schurBlock2x2Eig(t []float64, n, k int) complex128 {
 	}
 	return complex(tr+math.Sqrt(disc), 0)
 }
-

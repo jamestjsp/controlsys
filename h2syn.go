@@ -55,6 +55,15 @@ func H2Syn(P *System, nmeas, ncont int) (*H2SynResult, error) {
 		}
 	}
 
+	d22Raw := D22.RawMatrix()
+	for i := range p2 {
+		for j := range m2 {
+			if math.Abs(d22Raw.Data[i*d22Raw.Stride+j]) > tol {
+				return nil, ErrH2DirectFeedthrough
+			}
+		}
+	}
+
 	stab, err := IsStabilizable(A, B2, true)
 	if err != nil {
 		return nil, err
@@ -100,49 +109,19 @@ func H2Syn(P *System, nmeas, ncont int) (*H2SynResult, error) {
 	// L = K_dual' (observer gain, n×p2) — matches Lqe convention
 	L := mat.DenseCopyOf(resY.K.T())
 
-	// Form controller: y (p2) -> u (m2)
-	d22Zero := true
-	d22Raw := D22.RawMatrix()
-	for i := range p2 {
-		for j := range m2 {
-			if math.Abs(d22Raw.Data[i*d22Raw.Stride+j]) > tol {
-				d22Zero = false
-				break
-			}
-		}
-		if !d22Zero {
-			break
-		}
-	}
-
 	var Ak, Bk, Ck *mat.Dense
 	var Dk *mat.Dense
 
-	if d22Zero {
-		// Ak = A + B2*F - L*C2
-		BF := mulDense(B2, F)
-		LC := mulDense(L, C2)
-		Ak = mat.NewDense(n, n, nil)
-		Ak.Add(A, BF)
-		Ak.Sub(Ak, LC)
+	// Ak = A + B2*F - L*C2
+	BF := mulDense(B2, F)
+	LC := mulDense(L, C2)
+	Ak = mat.NewDense(n, n, nil)
+	Ak.Add(A, BF)
+	Ak.Sub(Ak, LC)
 
-		Bk = denseCopy(L)
-		Ck = denseCopy(F)
-		Dk = mat.NewDense(m2, p2, nil)
-	} else {
-		DF := mulDense(D22, F)
-		C2eff := mat.NewDense(p2, n, nil)
-		C2eff.Add(C2, DF)
-		LC := mulDense(L, C2eff)
-		BF := mulDense(B2, F)
-		Ak = mat.NewDense(n, n, nil)
-		Ak.Add(A, BF)
-		Ak.Sub(Ak, LC)
-
-		Bk = denseCopy(L)
-		Ck = denseCopy(F)
-		Dk = mat.NewDense(m2, p2, nil)
-	}
+	Bk = denseCopy(L)
+	Ck = denseCopy(F)
+	Dk = mat.NewDense(m2, p2, nil)
 
 	K, err := New(Ak, Bk, Ck, Dk, 0)
 	if err != nil {
@@ -156,10 +135,6 @@ func H2Syn(P *System, nmeas, ncont int) (*H2SynResult, error) {
 
 	// top-left: A + B2*Dk*C2
 	topLeft := denseCopy(A)
-	if !d22Zero {
-		BDC := mulDense(B2, mulDense(Dk, C2))
-		topLeft.Add(topLeft, BDC)
-	}
 	setBlock(clA, 0, 0, topLeft)
 
 	// top-right: B2*Ck
@@ -182,4 +157,3 @@ func H2Syn(P *System, nmeas, ncont int) (*H2SynResult, error) {
 
 	return &H2SynResult{K: K, X: X, Y: Y, CLPoles: clPoles}, nil
 }
-

@@ -68,6 +68,11 @@ func eps() float64 {
 	return math.Nextafter(1.0, 2.0) - 1.0
 }
 
+func luNearSingular(lu *mat.LU) bool {
+	cond := lu.Cond()
+	return math.IsNaN(cond) || math.IsInf(cond, 1) || cond*eps() >= 1
+}
+
 func isSymmetric(m *mat.Dense, tol float64) bool {
 	r, c := m.Dims()
 	if r != c {

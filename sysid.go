@@ -45,7 +45,7 @@ func ERA(markov []*mat.Dense, order int, dt float64) (*ERAResult, error) {
 			minLen, order, len(markov), ErrInsufficientData)
 	}
 
-	r := (len(markov) + 1) / 2
+	r := len(markov) / 2
 
 	h0Rows, h0Cols := r*p, r*m
 	h0Data := make([]float64, h0Rows*h0Cols)

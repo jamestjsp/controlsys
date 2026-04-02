@@ -260,6 +260,31 @@ func TestERA_Validation(t *testing.T) {
 	}
 }
 
+func TestERA_MinValidOddLength(t *testing.T) {
+	dt := 0.05
+	A := mat.NewDense(2, 2, []float64{
+		0.85, 0.15,
+		-0.1, 0.8,
+	})
+	B := mat.NewDense(2, 1, []float64{1, 0.2})
+	C := mat.NewDense(1, 2, []float64{1, -0.3})
+	D := mat.NewDense(1, 1, nil)
+
+	sys, err := New(A, B, C, D, dt)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	markov := impulseMarkov(t, sys, 5)
+	result, err := ERA(markov, 2, dt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result == nil || result.Sys == nil {
+		t.Fatal("expected identified system")
+	}
+}
+
 func TestERA_StableSystem(t *testing.T) {
 	dt := 0.1
 	A := mat.NewDense(3, 3, []float64{

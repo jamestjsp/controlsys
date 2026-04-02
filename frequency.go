@@ -43,7 +43,7 @@ func (sys *System) FreqResponse(omega []float64) (*FreqResponseMatrix, error) {
 		return nil, nil
 	}
 
-	_, m, p := sys.Dims()
+	n, m, p := sys.Dims()
 
 	if sys.HasInternalDelay() {
 		resp, err := freqResponseLFT(sys, omega, p, m)
@@ -56,15 +56,33 @@ func (sys *System) FreqResponse(omega []float64) (*FreqResponseMatrix, error) {
 		return resp, nil
 	}
 
+	nw := len(omega)
+	pm := p * m
+	data := make([]complex128, nw*pm)
+	if nw == 1 {
+		var s complex128
+		if sys.IsContinuous() {
+			s = complex(0, omega[0])
+		} else {
+			s = cmplx.Exp(complex(0, omega[0]*sys.Dt))
+		}
+		ws := newSSEvalWorkspace(n, p, m)
+		if err := evalFrSSInto(ws, sys, s, n, p, m); err != nil {
+			return nil, err
+		}
+		copy(data, ws.g[:pm])
+		applyIODelayAtS(sys, s, data, p, m, true)
+		return &FreqResponseMatrix{
+			Data: data, NFreq: nw, P: p, M: m,
+			InputName:  copyStringSlice(sys.InputName),
+			OutputName: copyStringSlice(sys.OutputName),
+		}, nil
+	}
+
 	res, err := sys.TransferFunction(nil)
 	if err != nil {
 		return nil, err
 	}
-
-	nw := len(omega)
-	pm := p * m
-	data := make([]complex128, nw*pm)
-
 	for k, w := range omega {
 		var s complex128
 		if sys.IsContinuous() {
@@ -139,71 +157,24 @@ func (sys *System) Bode(omega []float64, nPoints int) (*BodeResult, error) {
 }
 
 func (sys *System) EvalFr(s complex128) ([][]complex128, error) {
-	_, m, p := sys.Dims()
+	n, m, p := sys.Dims()
+	pm := p * m
 
 	if sys.HasInternalDelay() {
 		g, err := evalFrLFT(sys, s, p, m)
 		if err != nil {
 			return nil, err
 		}
-		result := make([][]complex128, p)
-		for i := 0; i < p; i++ {
-			result[i] = make([]complex128, m)
-			copy(result[i], g[i*m:(i+1)*m])
-		}
-		hasIODelay := sys.InputDelay != nil || sys.OutputDelay != nil || sys.Delay != nil
-		if hasIODelay {
-			for i := 0; i < p; i++ {
-				for j := 0; j < m; j++ {
-					tau := ioDelayTotal(sys, i, j)
-					if tau != 0 {
-						if sys.IsContinuous() {
-							result[i][j] *= cmplx.Exp(-s * complex(tau, 0))
-						} else {
-							d := int(math.Round(tau))
-							for k := 0; k < d; k++ {
-								result[i][j] /= s
-							}
-						}
-					}
-				}
-			}
-		}
-		return result, nil
+		applyIODelayAtS(sys, s, g, p, m, true)
+		return complexFlatToGrid(g, p, m), nil
 	}
 
-	res, err := sys.TransferFunction(nil)
-	if err != nil {
+	ws := newSSEvalWorkspace(n, p, m)
+	if err := evalFrSSInto(ws, sys, s, n, p, m); err != nil {
 		return nil, err
 	}
-	vals := res.TF.Eval(s)
-
-	hasIODelay := sys.InputDelay != nil || sys.OutputDelay != nil
-	if hasIODelay {
-		for i := 0; i < p; i++ {
-			for j := 0; j < m; j++ {
-				var tau float64
-				if sys.InputDelay != nil {
-					tau += sys.InputDelay[j]
-				}
-				if sys.OutputDelay != nil {
-					tau += sys.OutputDelay[i]
-				}
-				if tau != 0 {
-					if sys.IsContinuous() {
-						vals[i][j] *= cmplx.Exp(-s * complex(tau, 0))
-					} else {
-						d := int(math.Round(tau))
-						for k := 0; k < d; k++ {
-							vals[i][j] /= s
-						}
-					}
-				}
-			}
-		}
-	}
-
-	return vals, nil
+	applyIODelayAtS(sys, s, ws.g[:pm], p, m, true)
+	return complexFlatToGrid(ws.g[:pm], p, m), nil
 }
 
 func autoBodeFreqs(sys *System, nPoints int) ([]float64, error) {
@@ -285,12 +256,8 @@ func applyIODelayPhase(sys *System, omega []float64, data []complex128, p, m int
 	if !hasIODelay {
 		return
 	}
-	
-	var dRaw blas64.General
-	if includeDelayMatrix && sys.Delay != nil {
-		dRaw = sys.Delay.RawMatrix()
-	}
 
+	pm := p * m
 	for k, w := range omega {
 		var s complex128
 		if sys.IsContinuous() {
@@ -298,32 +265,96 @@ func applyIODelayPhase(sys *System, omega []float64, data []complex128, p, m int
 		} else {
 			s = cmplx.Exp(complex(0, w*sys.Dt))
 		}
-		for i := 0; i < p; i++ {
-			for j := 0; j < m; j++ {
-				var tau float64
-				if sys.InputDelay != nil {
-					tau += sys.InputDelay[j]
-				}
-				if sys.OutputDelay != nil {
-					tau += sys.OutputDelay[i]
-				}
-				if includeDelayMatrix && sys.Delay != nil {
-					tau += dRaw.Data[i*dRaw.Stride+j]
-				}
-				if tau != 0 {
-					off := (k*p+i)*m + j
-					if sys.IsContinuous() {
-						data[off] *= cmplx.Exp(-s * complex(tau, 0))
-					} else {
-						d := int(math.Round(tau))
-						for q := 0; q < d; q++ {
-							data[off] /= s
-						}
-					}
-				}
+		applyIODelayAtS(sys, s, data[k*pm:(k+1)*pm], p, m, includeDelayMatrix)
+	}
+}
+
+func applyIODelayAtS(sys *System, s complex128, data []complex128, p, m int, includeDelayMatrix bool) {
+	hasIODelay := sys.InputDelay != nil || sys.OutputDelay != nil || (includeDelayMatrix && sys.Delay != nil)
+	if !hasIODelay {
+		return
+	}
+
+	var dRaw blas64.General
+	if includeDelayMatrix && sys.Delay != nil {
+		dRaw = sys.Delay.RawMatrix()
+	}
+
+	for i := 0; i < p; i++ {
+		for j := 0; j < m; j++ {
+			var tau float64
+			if sys.InputDelay != nil {
+				tau += sys.InputDelay[j]
+			}
+			if sys.OutputDelay != nil {
+				tau += sys.OutputDelay[i]
+			}
+			if includeDelayMatrix && sys.Delay != nil {
+				tau += dRaw.Data[i*dRaw.Stride+j]
+			}
+			if tau == 0 {
+				continue
+			}
+			off := i*m + j
+			if sys.IsContinuous() {
+				data[off] *= cmplx.Exp(-s * complex(tau, 0))
+				continue
+			}
+			d := int(math.Round(tau))
+			for q := 0; q < d; q++ {
+				data[off] /= s
 			}
 		}
 	}
+}
+
+type ssEvalWorkspace struct {
+	sIA       []complex128
+	resolvent []complex128
+	invBuf    []complex128
+	temp      []complex128
+	g         []complex128
+}
+
+func newSSEvalWorkspace(n, p, m int) *ssEvalWorkspace {
+	return &ssEvalWorkspace{
+		sIA:       make([]complex128, n*n),
+		resolvent: make([]complex128, n*n),
+		invBuf:    make([]complex128, n*2*n),
+		temp:      make([]complex128, n*max(m, p)),
+		g:         make([]complex128, p*m),
+	}
+}
+
+func evalFrSSInto(ws *ssEvalWorkspace, sys *System, s complex128, n, p, m int) error {
+	var dData []float64
+	var dStride int
+	if sys.D != nil {
+		dRaw := sys.D.RawMatrix()
+		dData, dStride = dRaw.Data, dRaw.Stride
+	}
+	if n == 0 {
+		cComputeHInto(ws.g, ws.temp, ws.resolvent, nil, 0, nil, 0, dData, dStride, n, p, m)
+		return nil
+	}
+
+	aRaw := sys.A.RawMatrix()
+	if err := cResolventInto(ws.resolvent, ws.sIA, ws.invBuf, aRaw.Data, aRaw.Stride, s, n); err != nil {
+		return err
+	}
+	bRaw := sys.B.RawMatrix()
+	cRaw := sys.C.RawMatrix()
+	cComputeHInto(ws.g, ws.temp, ws.resolvent, cRaw.Data, cRaw.Stride, bRaw.Data, bRaw.Stride, dData, dStride, n, p, m)
+	return nil
+}
+
+func complexFlatToGrid(data []complex128, p, m int) [][]complex128 {
+	result := make([][]complex128, p)
+	for i := 0; i < p; i++ {
+		result[i] = make([]complex128, m)
+		copy(result[i], data[i*m:(i+1)*m])
+	}
+	return result
 }
 
 func freqResponseLFT(sys *System, omega []float64, p, m int) (*FreqResponseMatrix, error) {
@@ -784,4 +815,3 @@ func cInvertInto(dst, aug, src []complex128, n int) error {
 	}
 	return nil
 }
-

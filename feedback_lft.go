@@ -106,7 +106,7 @@ func feedbackWithLFT(plant, controller *System, sign float64) (*System, error) {
 
 	var lu mat.LU
 	lu.Factorize(M)
-	if lu.Det() == 0 {
+	if luNearSingular(&lu) {
 		return nil, fmt.Errorf("feedback: (I + sign*D1*D2) singular: %w", ErrSingularTransform)
 	}
 

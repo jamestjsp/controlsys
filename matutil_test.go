@@ -60,3 +60,63 @@ func matEqual(a, b *mat.Dense, tol float64) bool {
 	}
 	return true
 }
+
+func TestLUNearSingular(t *testing.T) {
+	wellCond := mat.NewDense(2, 2, []float64{
+		2, 0,
+		0, 3,
+	})
+	var lu mat.LU
+	lu.Factorize(wellCond)
+	if luNearSingular(&lu) {
+		t.Fatal("expected well-conditioned matrix to be accepted")
+	}
+
+	singular := mat.NewDense(2, 2, []float64{
+		1, 2,
+		2, 4,
+	})
+	lu.Factorize(singular)
+	if !luNearSingular(&lu) {
+		t.Fatal("expected singular matrix to be rejected")
+	}
+}
+
+// TestLUNearSingularThreshold exercises the cond*eps >= 1 boundary with
+// diagonal matrices whose condition numbers are deterministically far from
+// the threshold on each side, making the test robust against LAPACK estimator
+// variance.
+func TestLUNearSingularThreshold(t *testing.T) {
+	machEps := eps()
+	// threshold = 1/eps ≈ 4.5e15
+
+	cases := []struct {
+		name     string
+		small    float64 // off-diagonal scale; cond ≈ 1/small
+		wantNear bool
+	}{
+		// cond ≈ 1e2, cond*eps ≈ 2e-14 — clearly well-conditioned
+		{"well_conditioned", 1e-2, false},
+		// cond ≈ 1e12, cond*eps ≈ 2e-4 — high cond but 4 orders below threshold
+		{"high_cond_below_threshold", 1e-12, false},
+		// cond ≈ 1e17, cond*eps ≈ 20 — 2 orders above threshold
+		{"ill_conditioned_above_threshold", 1e-17, true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			m := mat.NewDense(2, 2, []float64{
+				1, 0,
+				0, tc.small,
+			})
+			var lu mat.LU
+			lu.Factorize(m)
+			cond := lu.Cond()
+			got := luNearSingular(&lu)
+			if got != tc.wantNear {
+				t.Errorf("luNearSingular=%v want=%v (cond=%.3e, cond*eps=%.3e, threshold=%.3e)",
+					got, tc.wantNear, cond, cond*machEps, 1/machEps)
+			}
+		})
+	}
+}
