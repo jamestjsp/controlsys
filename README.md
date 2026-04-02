@@ -28,8 +28,11 @@ This package is intended to be usable in production control and estimation code,
 
 - **Three representations:** state-space, transfer function, zero-pole-gain (ZPK) with bidirectional conversion
 - **Frequency response:** Bode, Nyquist, Nichols, singular values
-- **Stability analysis:** gain/phase margins, disk margins, bandwidth, damping
-- **Control design:** LQR, LQE (Kalman), LQI, pole placement, Riccati solvers (CARE/DARE)
+- **Stability analysis:** gain/phase margins, disk margins, bandwidth, damping, root locus
+- **Control design:** LQR, LQE (Kalman), LQI, LQG, H₂ synthesis, H∞ synthesis, pole placement, Riccati solvers (CARE/DARE)
+- **State estimation:** Extended Kalman Filter (EKF) for nonlinear systems
+- **System identification:** Eigensystem Realization Algorithm (ERA) from Markov parameters
+- **Nonlinear systems:** Jacobian linearization around operating points; Smith predictor for time-delay plants
 - **Model reduction:** controllability/observability staircase, balanced realization, balanced truncation
 - **System norms:** H2 and H-infinity
 - **Interconnection:** series, parallel, feedback, append, sum blocks
@@ -101,12 +104,15 @@ func main() {
 | `Poles` | Eigenvalues of A |
 | `Zeros` | Transmission zeros |
 | `IsStable` | Stability check |
+| `IsStabilizable` | Stabilizability test (unstable modes reachable from input) |
+| `IsDetectable` | Detectability test (unstable modes observable from output) |
 | `DCGain` | Steady-state (DC) gain |
 | `Damp` | Natural frequency, damping ratio, time constant |
 | `Margin` | Gain and phase margins (SISO) |
 | `AllMargin` | All gain/phase crossover points |
 | `DiskMargin` | Disk-based stability margin |
 | `Bandwidth` | -3 dB bandwidth |
+| `RootLocus` | Root locus as a function of loop gain |
 
 ### Control Design
 
@@ -116,9 +122,37 @@ func main() {
 | `Dlqr` | Discrete-time LQR regulator |
 | `Lqe` | Kalman filter (observer) gain |
 | `Lqi` | LQR with integral action |
+| `Lqg` | LQG controller (combined LQR + Kalman filter) |
+| `H2Syn` | H₂ optimal controller synthesis from generalized plant |
+| `HinfSyn` | H∞ controller synthesis from generalized plant |
 | `Place` | Pole placement |
 | `Care` | Continuous algebraic Riccati equation |
 | `Dare` | Discrete algebraic Riccati equation |
+| `SmithPredictor` | Smith predictor for time-delay plants |
+
+### State Estimation
+
+| Function/Type | Description |
+|---------------|-------------|
+| `NewEKF(model, x0, P0)` | Create an Extended Kalman Filter |
+| `(*EKF).Predict(u)` | Propagate state and covariance one step |
+| `(*EKF).Update(y)` | Correct state with a measurement |
+| `(*EKF).State()` | Return current state estimate |
+| `type EKFModel` | Nonlinear model: F, H, Jacobians FJac/HJac, noise Q/R |
+
+### System Identification
+
+| Function/Type | Description |
+|---------------|-------------|
+| `ERA(markov, order, dt)` | Eigensystem Realization Algorithm — recover state-space model from Markov parameters |
+| `type ERAResult` | Result: identified `System`, singular value ratios |
+
+### Nonlinear Systems
+
+| Function/Type | Description |
+|---------------|-------------|
+| `Linearize(model, x0, u0)` | Jacobian linearization of a nonlinear model around an operating point |
+| `type NonlinearModel` | Continuous nonlinear model definition (F, G, H functions) |
 
 ### Model Reduction
 
@@ -130,6 +164,8 @@ func main() {
 | `Balred` | Balanced truncation / singular perturbation |
 | `Ctrb` | Controllability matrix |
 | `Obsv` | Observability matrix |
+| `CtrbF` | Controllability staircase decomposition |
+| `ObsvF` | Observability staircase decomposition |
 | `Gram` | Controllability/observability gramian |
 
 ### System Norms
@@ -139,6 +175,14 @@ func main() {
 | `H2Norm` | H2 norm (RMS gain) |
 | `HinfNorm` | H-infinity norm (peak gain) |
 | `Norm` | General norm computation |
+
+### Lyapunov Equations
+
+| Function | Description |
+|----------|-------------|
+| `Lyap(A, Q, opts)` | Solve continuous Lyapunov equation AX + XAᵀ + Q = 0 |
+| `DLyap(A, Q, opts)` | Solve discrete Lyapunov equation AXAᵀ − X + Q = 0 |
+| `NewLyapunovWorkspace(n)` | Pre-allocate workspace for repeated solves |
 
 ### Representation Conversion
 
