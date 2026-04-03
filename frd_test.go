@@ -578,6 +578,20 @@ func TestLsim_NonUniformGrid_Rejected(t *testing.T) {
 	}
 }
 
+func TestLsim_DiscreteDtMismatch_Rejected(t *testing.T) {
+	sys, _ := New(
+		mat.NewDense(1, 1, []float64{0.9}),
+		mat.NewDense(1, 1, []float64{0.1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{0}), 0.1)
+	tGrid := []float64{0, 0.05, 0.10, 0.15}
+	u := mat.NewDense(4, 1, []float64{1, 1, 1, 1})
+	_, err := Lsim(sys, u, tGrid, nil)
+	if err == nil {
+		t.Error("Lsim should reject discrete system when t spacing != sys.Dt")
+	}
+}
+
 func TestInv_DelayRejected(t *testing.T) {
 	sys, _ := New(
 		mat.NewDense(1, 1, []float64{-1}),

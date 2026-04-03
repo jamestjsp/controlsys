@@ -325,6 +325,9 @@ func Lsim(sys *System, u *mat.Dense, t []float64, x0 *mat.VecDense) (*TimeRespon
 			return nil, fmt.Errorf("Lsim: %w", err)
 		}
 	} else {
+		if math.Abs(sys.Dt-dt)/sys.Dt > 1e-6 {
+			return nil, fmt.Errorf("Lsim: time grid spacing %g does not match system Dt %g: %w", dt, sys.Dt, ErrDimensionMismatch)
+		}
 		dsys = sys
 	}
 
