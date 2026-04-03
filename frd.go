@@ -6,7 +6,7 @@ import (
 	"math/cmplx"
 	"sort"
 
-	"gonum.org/v1/gonum/mat"
+	"gonum.org/v1/gonum/lapack"
 )
 
 // FRD represents a Frequency Response Data model — measured or computed
@@ -75,14 +75,8 @@ func NewFRD(response [][][]complex128, omega []float64, dt float64) (*FRD, error
 		}
 	}
 
-	resp := make([][][]complex128, len(response))
-	for k := range response {
-		resp[k] = make([][]complex128, p)
-		for i := range response[k] {
-			resp[k][i] = make([]complex128, m)
-			copy(resp[k][i], response[k][i])
-		}
-	}
+	resp, data := newFRDResponseStorage(len(response), p, m)
+	copyComplexGridInto(data, response, p, m)
 	om := make([]float64, len(omega))
 	copy(om, omega)
 
@@ -107,16 +101,8 @@ func (sys *System) FRD(omega []float64) (*FRD, error) {
 	_, m, p := sys.Dims()
 	nw := len(omega)
 
-	response := make([][][]complex128, nw)
-	for k := 0; k < nw; k++ {
-		response[k] = make([][]complex128, p)
-		for i := 0; i < p; i++ {
-			response[k][i] = make([]complex128, m)
-			for j := 0; j < m; j++ {
-				response[k][i][j] = resp.At(k, i, j)
-			}
-		}
-	}
+	response, data := newFRDResponseStorage(nw, p, m)
+	copy(data, resp.Data)
 
 	om := make([]float64, nw)
 	copy(om, omega)
@@ -128,6 +114,62 @@ func (sys *System) FRD(omega []float64) (*FRD, error) {
 		InputName:  copyStringSlice(sys.InputName),
 		OutputName: copyStringSlice(sys.OutputName),
 	}, nil
+}
+
+func newFRDResponseStorage(nw, p, m int) ([][][]complex128, []complex128) {
+	response := make([][][]complex128, nw)
+	if nw == 0 || p == 0 || m == 0 {
+		return response, nil
+	}
+	rows := make([][]complex128, nw*p)
+	data := make([]complex128, nw*p*m)
+	for k := 0; k < nw; k++ {
+		response[k] = rows[k*p : (k+1)*p]
+		block := data[k*p*m : (k+1)*p*m]
+		for i := 0; i < p; i++ {
+			start := i * m
+			response[k][i] = block[start : start+m : start+m]
+		}
+	}
+	return response, data
+}
+
+func copyComplexGridInto(dst []complex128, src [][][]complex128, p, m int) {
+	pm := p * m
+	for k := range src {
+		base := k * pm
+		for i := 0; i < p; i++ {
+			copy(dst[base+i*m:base+(i+1)*m], src[k][i])
+		}
+	}
+}
+
+func copyComplexMatrixInto(dst []complex128, src [][]complex128, rows, cols int) {
+	for i := 0; i < rows; i++ {
+		copy(dst[i*cols:(i+1)*cols], src[i])
+	}
+}
+
+func cMulNestedInto(dst []complex128, a, b [][]complex128, ra, ca, cb int) {
+	for i := 0; i < ra; i++ {
+		row := dst[i*cb : (i+1)*cb]
+		for j := 0; j < cb; j++ {
+			var sum complex128
+			for k := 0; k < ca; k++ {
+				sum += a[i][k] * b[k][j]
+			}
+			row[j] = sum
+		}
+	}
+}
+
+func cAddNestedInto(dst []complex128, a, b [][]complex128, rows, cols int) {
+	for i := 0; i < rows; i++ {
+		row := dst[i*cols : (i+1)*cols]
+		for j := 0; j < cols; j++ {
+			row[j] = a[i][j] + b[i][j]
+		}
+	}
 }
 
 func (f *FRD) Dims() (p, m int) {
@@ -271,38 +313,71 @@ func (f *FRD) Nyquist() (*NyquistResult, error) {
 func (f *FRD) Sigma() (*SigmaResult, error) {
 	p, m := f.Dims()
 	nw := len(f.Omega)
-	nsv := p
-	if m < p {
-		nsv = m
+	nsv := min(p, m)
+	if nsv == 0 {
+		omega := make([]float64, nw)
+		copy(omega, f.Omega)
+		return &SigmaResult{Omega: omega, nSV: 0}, nil
 	}
 	sv := make([]float64, nw*nsv)
+	if p == 1 && m == 1 {
+		for k := 0; k < nw; k++ {
+			sv[k] = cmplx.Abs(f.Response[k][0][0])
+		}
+		omega := make([]float64, nw)
+		copy(omega, f.Omega)
+		return &SigmaResult{Omega: omega, sv: sv, nSV: nsv}, nil
+	}
+
+	ws := newFRDSVDWorkspace(p, m)
 	for k := 0; k < nw; k++ {
 		H := f.Response[k]
-		svd := new(mat.SVD)
-		if p == 1 && m == 1 {
-			sv[k] = cmplx.Abs(H[0][0])
-			continue
-		}
-		hReal := mat.NewDense(2*p, 2*m, nil)
 		for i := 0; i < p; i++ {
+			top := i * ws.cols
+			bottom := (p + i) * ws.cols
 			for j := 0; j < m; j++ {
-				hReal.Set(i, j, real(H[i][j]))
-				hReal.Set(i, m+j, -imag(H[i][j]))
-				hReal.Set(p+i, j, imag(H[i][j]))
-				hReal.Set(p+i, m+j, real(H[i][j]))
+				h := H[i][j]
+				ws.block[top+j] = real(h)
+				ws.block[top+m+j] = -imag(h)
+				ws.block[bottom+j] = imag(h)
+				ws.block[bottom+m+j] = real(h)
 			}
 		}
-		if !svd.Factorize(hReal, mat.SVDNone) {
-			return nil, fmt.Errorf("FRD Sigma: SVD failed at freq index %d", k)
-		}
-		vals := svd.Values(nil)
-		for s := 0; s < nsv; s++ {
-			sv[k*nsv+s] = vals[2*s]
+		impl.Dgesvd(lapack.SVDNone, lapack.SVDNone, ws.rows, ws.cols, ws.block, ws.cols,
+			ws.fullSV, nil, 1, nil, 1, ws.work, len(ws.work))
+		for i := 0; i < nsv; i++ {
+			sv[k*nsv+i] = ws.fullSV[2*i]
 		}
 	}
 	omega := make([]float64, nw)
 	copy(omega, f.Omega)
 	return &SigmaResult{Omega: omega, sv: sv, nSV: nsv}, nil
+}
+
+type frdSVDWorkspace struct {
+	block  []float64
+	fullSV []float64
+	work   []float64
+	rows   int
+	cols   int
+}
+
+func newFRDSVDWorkspace(p, m int) *frdSVDWorkspace {
+	rows := 2 * p
+	cols := 2 * m
+	fullSV := make([]float64, min(rows, cols))
+	block := make([]float64, rows*cols)
+	workQuery := make([]float64, 1)
+	impl.Dgesvd(lapack.SVDNone, lapack.SVDNone, rows, cols, block, cols,
+		fullSV, nil, 1, nil, 1, workQuery, -1)
+	work := make([]float64, int(workQuery[0]))
+	return &frdSVDWorkspace{
+		block:  block,
+		fullSV: fullSV,
+		work:   work,
+		rows:   rows,
+		cols:   cols,
+	}
 }
 
 func FRDMargin(f *FRD) (*MarginResult, error) {
@@ -413,9 +488,9 @@ func FRDSeries(f1, f2 *FRD) (*FRD, error) {
 	}
 
 	nw := len(f1.Omega)
-	resp := make([][][]complex128, nw)
+	resp, data := newFRDResponseStorage(nw, p2, m1)
 	for w := 0; w < nw; w++ {
-		resp[w] = cMatMul(f2.Response[w], f1.Response[w], p2, p1, m1)
+		cMulNestedInto(data[w*p2*m1:(w+1)*p2*m1], f2.Response[w], f1.Response[w], p2, p1, m1)
 	}
 	return &FRD{Response: resp, Omega: append([]float64(nil), f1.Omega...), Dt: f1.Dt}, nil
 }
@@ -431,16 +506,9 @@ func FRDParallel(f1, f2 *FRD) (*FRD, error) {
 	}
 
 	nw := len(f1.Omega)
-	resp := make([][][]complex128, nw)
+	resp, data := newFRDResponseStorage(nw, p1, m1)
 	for w := 0; w < nw; w++ {
-		r := make([][]complex128, p1)
-		for i := 0; i < p1; i++ {
-			r[i] = make([]complex128, m1)
-			for j := 0; j < m1; j++ {
-				r[i][j] = f1.Response[w][i][j] + f2.Response[w][i][j]
-			}
-		}
-		resp[w] = r
+		cAddNestedInto(data[w*p1*m1:(w+1)*p1*m1], f1.Response[w], f2.Response[w], p1, m1)
 	}
 	return &FRD{Response: resp, Omega: append([]float64(nil), f1.Omega...), Dt: f1.Dt}, nil
 }
@@ -459,88 +527,50 @@ func FRDFeedback(plant, controller *FRD, sign float64) (*FRD, error) {
 	}
 
 	nw := len(plant.Omega)
-	resp := make([][][]complex128, nw)
+	resp, data := newFRDResponseStorage(nw, pp, pm)
+	ws := newFRDFeedbackWorkspace(pp, pm)
 
 	for w := 0; w < nw; w++ {
-		G := plant.Response[w]
-		K := controller.Response[w]
-		KG := cMatMul(K, G, cp, pp, pm)
+		copyComplexMatrixInto(ws.g, plant.Response[w], pp, pm)
+		copyComplexMatrixInto(ws.k, controller.Response[w], cp, pp)
+		cMulInto(ws.kg, ws.k, ws.g, cp, pp, pm)
 
-		n := pm
-		IpKG := make([][]complex128, n)
-		for i := 0; i < n; i++ {
-			IpKG[i] = make([]complex128, n)
-			for j := 0; j < n; j++ {
-				IpKG[i][j] = complex(-sign, 0) * KG[i][j]
-				if i == j {
-					IpKG[i][j] += 1
-				}
-			}
+		for i := range ws.kg {
+			ws.ipkg[i] = complex(-sign, 0) * ws.kg[i]
+		}
+		for i := 0; i < ws.n; i++ {
+			ws.ipkg[i*ws.n+i] += 1
 		}
 
-		inv, err := cMatInv(IpKG, n)
+		err := cInvertInto(ws.inv, ws.aug, ws.ipkg, ws.n)
 		if err != nil {
 			return nil, fmt.Errorf("frd feedback: singular at freq index %d", w)
 		}
-		resp[w] = cMatMul(G, inv, pp, n, pm)
+		cMulInto(data[w*pp*pm:(w+1)*pp*pm], ws.g, ws.inv, pp, ws.n, pm)
 	}
 
 	return &FRD{Response: resp, Omega: append([]float64(nil), plant.Omega...), Dt: plant.Dt}, nil
 }
 
-func cMatMul(a, b [][]complex128, ra, ca, cb int) [][]complex128 {
-	r := make([][]complex128, ra)
-	for i := 0; i < ra; i++ {
-		r[i] = make([]complex128, cb)
-		for j := 0; j < cb; j++ {
-			var s complex128
-			for k := 0; k < ca; k++ {
-				s += a[i][k] * b[k][j]
-			}
-			r[i][j] = s
-		}
-	}
-	return r
+type frdFeedbackWorkspace struct {
+	g    []complex128
+	k    []complex128
+	kg   []complex128
+	ipkg []complex128
+	inv  []complex128
+	aug  []complex128
+	n    int
 }
 
-func cMatInv(a [][]complex128, n int) ([][]complex128, error) {
-	aug := make([][]complex128, n)
-	for i := 0; i < n; i++ {
-		aug[i] = make([]complex128, 2*n)
-		copy(aug[i][:n], a[i])
-		aug[i][n+i] = 1
+func newFRDFeedbackWorkspace(pp, pm int) *frdFeedbackWorkspace {
+	n := pm
+	return &frdFeedbackWorkspace{
+		g:    make([]complex128, pp*pm),
+		k:    make([]complex128, pm*pp),
+		kg:   make([]complex128, n*n),
+		ipkg: make([]complex128, n*n),
+		inv:  make([]complex128, n*n),
+		aug:  make([]complex128, n*2*n),
+		n:    n,
 	}
-	for col := 0; col < n; col++ {
-		pivot := -1
-		var best float64
-		for row := col; row < n; row++ {
-			if v := cmplx.Abs(aug[row][col]); v > best {
-				best = v
-				pivot = row
-			}
-		}
-		if best < 1e-15 {
-			return nil, fmt.Errorf("singular")
-		}
-		aug[col], aug[pivot] = aug[pivot], aug[col]
-		s := 1.0 / aug[col][col]
-		for j := col; j < 2*n; j++ {
-			aug[col][j] *= s
-		}
-		for row := 0; row < n; row++ {
-			if row == col {
-				continue
-			}
-			f := aug[row][col]
-			for j := col; j < 2*n; j++ {
-				aug[row][j] -= f * aug[col][j]
-			}
-		}
-	}
-	inv := make([][]complex128, n)
-	for i := 0; i < n; i++ {
-		inv[i] = make([]complex128, n)
-		copy(inv[i], aug[i][n:])
-	}
-	return inv, nil
 }

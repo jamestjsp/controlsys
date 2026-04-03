@@ -358,6 +358,123 @@ func TestFRD_FreqResponseMatrix(t *testing.T) {
 	}
 }
 
+func TestFRDSeries_MIMO(t *testing.T) {
+	f1, err := NewFRD([][][]complex128{
+		{{1 + 1i, 2 - 1i}, {3 + 0i, -1 + 2i}},
+	}, []float64{1}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f2, err := NewFRD([][][]complex128{
+		{{2 + 0i, -1 + 1i}, {0.5 - 0.5i, 4 + 0i}},
+	}, []float64{1}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := FRDSeries(f1, f2)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := [2][2]complex128{
+		{
+			f2.At(0, 0, 0)*f1.At(0, 0, 0) + f2.At(0, 0, 1)*f1.At(0, 1, 0),
+			f2.At(0, 0, 0)*f1.At(0, 0, 1) + f2.At(0, 0, 1)*f1.At(0, 1, 1),
+		},
+		{
+			f2.At(0, 1, 0)*f1.At(0, 0, 0) + f2.At(0, 1, 1)*f1.At(0, 1, 0),
+			f2.At(0, 1, 0)*f1.At(0, 0, 1) + f2.At(0, 1, 1)*f1.At(0, 1, 1),
+		},
+	}
+	for i := 0; i < 2; i++ {
+		for j := 0; j < 2; j++ {
+			if cmplx.Abs(got.At(0, i, j)-want[i][j]) > 1e-12 {
+				t.Fatalf("series[%d,%d] = %v, want %v", i, j, got.At(0, i, j), want[i][j])
+			}
+		}
+	}
+}
+
+func TestFRDParallel_MIMO(t *testing.T) {
+	f1, err := NewFRD([][][]complex128{
+		{{1 + 1i, 2 - 1i}, {3 + 0i, -1 + 2i}},
+	}, []float64{1}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f2, err := NewFRD([][][]complex128{
+		{{2 + 0i, -1 + 1i}, {0.5 - 0.5i, 4 + 0i}},
+	}, []float64{1}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := FRDParallel(f1, f2)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for i := 0; i < 2; i++ {
+		for j := 0; j < 2; j++ {
+			want := f1.At(0, i, j) + f2.At(0, i, j)
+			if cmplx.Abs(got.At(0, i, j)-want) > 1e-12 {
+				t.Fatalf("parallel[%d,%d] = %v, want %v", i, j, got.At(0, i, j), want)
+			}
+		}
+	}
+}
+
+func TestFRDFeedback_MIMO(t *testing.T) {
+	plant, err := NewFRD([][][]complex128{
+		{{2 + 0.5i, 0}, {0, 1 - 0.25i}},
+		{{1 - 0.5i, 0}, {0, 0.5 + 0.75i}},
+	}, []float64{1, 2}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	controller, err := NewFRD([][][]complex128{
+		{{3 - 0.5i, 0}, {0, -0.5 + 0.25i}},
+		{{2 + 0.5i, 0}, {0, 1 + 0.5i}},
+	}, []float64{1, 2}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := FRDFeedback(plant, controller, -1)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for k := 0; k < 2; k++ {
+		for i := 0; i < 2; i++ {
+			g := plant.At(k, i, i)
+			c := controller.At(k, i, i)
+			want := g / (1 + c*g)
+			if cmplx.Abs(got.At(k, i, i)-want) > 1e-12 {
+				t.Fatalf("feedback[%d,%d,%d] = %v, want %v", k, i, i, got.At(k, i, i), want)
+			}
+		}
+		if cmplx.Abs(got.At(k, 0, 1)) > 1e-12 || cmplx.Abs(got.At(k, 1, 0)) > 1e-12 {
+			t.Fatalf("feedback off-diagonals = [%v %v], want 0", got.At(k, 0, 1), got.At(k, 1, 0))
+		}
+	}
+}
+
+func TestFRDFeedback_Singular(t *testing.T) {
+	plant, err := NewFRD([][][]complex128{{{1}}}, []float64{1}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	controller, err := NewFRD([][][]complex128{{{-1}}}, []float64{1}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := FRDFeedback(plant, controller, -1); err == nil {
+		t.Fatal("expected singular FRD feedback error")
+	}
+}
+
 func TestFRD_Bode(t *testing.T) {
 	sys, err := New(
 		mat.NewDense(1, 1, []float64{-1}),
@@ -604,4 +721,3 @@ func TestInv_DelayRejected(t *testing.T) {
 		t.Error("Inv should reject delayed system")
 	}
 }
-
