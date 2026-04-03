@@ -26,15 +26,16 @@ This package is intended to be usable in production control and estimation code,
 
 ## Features
 
-- **Three representations:** state-space, transfer function, zero-pole-gain (ZPK) with bidirectional conversion
+- **Three representations:** state-space, transfer function, zero-pole-gain (ZPK), and frequency-response data (FRD)
 - **Frequency response:** Bode, Nyquist, Nichols, singular values
 - **Stability analysis:** gain/phase margins, disk margins, bandwidth, damping, root locus
-- **Control design:** LQR, LQE (Kalman), LQI, LQG, H₂ synthesis, H∞ synthesis, pole placement, Riccati solvers (CARE/DARE)
+- **Control design:** LQR, LQE (Kalman), LQI, LQG, H₂ synthesis, H∞ synthesis, pole placement, Ackermann placement, Riccati solvers (CARE/DARE)
+- **PID control:** PID/PID2 controller models, standard/parallel forms, and `Pidtune` autotuning
 - **State estimation:** Extended Kalman Filter (EKF) for nonlinear systems
-- **System identification:** Eigensystem Realization Algorithm (ERA) from Markov parameters
+- **System identification:** Eigensystem Realization Algorithm (ERA) and frequency-response estimation from I/O data
 - **Nonlinear systems:** Jacobian linearization around operating points; Smith predictor for time-delay plants
-- **Model reduction:** controllability/observability staircase, balanced realization, balanced truncation
-- **System norms:** H2 and H-infinity
+- **Model reduction & decomposition:** controllability/observability staircase, balanced realization, balanced truncation, stable/unstable and modal separation
+- **System norms & covariance:** H2/H-infinity norms, Hankel singular values, state covariance
 - **Interconnection:** series, parallel, feedback, append, sum blocks
 - **Time-domain:** step, impulse, initial condition, arbitrary input (lsim), discrete simulation
 - **Discretization:** ZOH, FOH, Tustin (bilinear), matched pole-zero, discrete-to-discrete resampling
@@ -85,6 +86,23 @@ func main() {
 | `NewFromSlices` | Create from row-major flat arrays |
 | `NewZPK` | SISO zero-pole-gain model |
 | `NewZPKMIMO` | MIMO zero-pole-gain model |
+| `NewFRD` | Frequency-response data model from sampled complex responses |
+| `Rss` | Random stable continuous-time state-space model |
+| `Drss` | Random stable discrete-time state-space model |
+
+### PID & Classical Loop Design
+
+| Function/Type | Description |
+|---------------|-------------|
+| `NewPID` | PID in parallel form (`Kp`, `Ki`, `Kd`) |
+| `NewPIDStd` | PID in standard/ISA form (`Kp`, `Ti`, `Td`) |
+| `NewPID2` | 2-DOF PID controller with setpoint weighting |
+| `Pidtune` | Autotune `P`, `PI`, `PD`, `PID`, or `PIDF` for a SISO plant |
+| `WithFilter` | PID option for derivative filter time constant |
+| `WithTs` | PID option for discrete sample time |
+| `(*PID).System` / `(*PID2).System` | Convert controller model to state-space |
+| `Loopsens` | Sensitivity and complementary-sensitivity functions |
+| `Pzmap` | Pole-zero map |
 
 ### Frequency Response & Plotting
 
@@ -96,6 +114,19 @@ func main() {
 | `Nichols` | Nichols chart (magnitude vs phase) |
 | `Sigma` | Singular value frequency response |
 | `EvalFr` | Evaluate at arbitrary complex s |
+
+### FRD Workflows
+
+| Function/Method | Description |
+|-----------------|-------------|
+| `(*System).FRD` | Sample a system on a frequency grid and build an FRD model |
+| `(*FRD).Bode` | Bode data from FRD samples |
+| `(*FRD).Nyquist` | Nyquist contour from FRD samples |
+| `(*FRD).Sigma` | Singular values from FRD samples |
+| `FRDMargin` | Gain/phase margins from SISO FRD data |
+| `FRDSeries` | Cascade composition of FRD models |
+| `FRDParallel` | Parallel composition of FRD models |
+| `FRDFeedback` | Closed-loop feedback composition of FRD models |
 
 ### Stability & Margins
 
@@ -113,6 +144,7 @@ func main() {
 | `DiskMargin` | Disk-based stability margin |
 | `Bandwidth` | -3 dB bandwidth |
 | `RootLocus` | Root locus as a function of loop gain |
+| `Pzmap` | Poles and transmission zeros for plotting/inspection |
 
 ### Control Design
 
@@ -120,12 +152,16 @@ func main() {
 |----------|-------------|
 | `Lqr` | Continuous-time LQR regulator |
 | `Dlqr` | Discrete-time LQR regulator |
+| `Lqrd` | Discrete LQR obtained from continuous data and sample time |
 | `Lqe` | Kalman filter (observer) gain |
+| `Kalman` | Kalman estimator from a `System` model |
+| `Kalmd` | Discrete-time Kalman estimator from sampled model data |
 | `Lqi` | LQR with integral action |
 | `Lqg` | LQG controller (combined LQR + Kalman filter) |
 | `H2Syn` | H₂ optimal controller synthesis from generalized plant |
 | `HinfSyn` | H∞ controller synthesis from generalized plant |
 | `Place` | Pole placement |
+| `Acker` | Ackermann pole placement |
 | `Care` | Continuous algebraic Riccati equation |
 | `Dare` | Discrete algebraic Riccati equation |
 | `SmithPredictor` | Smith predictor for time-delay plants |
@@ -145,7 +181,9 @@ func main() {
 | Function/Type | Description |
 |---------------|-------------|
 | `ERA(markov, order, dt)` | Eigensystem Realization Algorithm — recover state-space model from Markov parameters |
+| `FreqRespEst(input, output, dt, opts)` | Estimate a frequency response from sampled I/O data |
 | `type ERAResult` | Result: identified `System`, singular value ratios |
+| `type FreqRespEstResult` | Result: estimated response data and metadata |
 
 ### Nonlinear Systems
 
@@ -158,22 +196,32 @@ func main() {
 
 | Function/Method | Description |
 |-----------------|-------------|
-| `Reduce` | Staircase reduction (controllability/observability) |
-| `MinimalRealization` | Shorthand for full reduction |
 | `Balreal` | Balanced realization |
 | `Balred` | Balanced truncation / singular perturbation |
+| `Modred` | Model reduction by eliminating selected states |
+| `Ssbal` | State-space balancing / scaling |
+| `Sminreal` | Minimal realization via staircase reduction |
+| `Stabsep` | Stable/unstable decomposition |
+| `Modsep` | Modal decomposition around a cutoff |
+| `Canon` | Modal or companion canonical form |
+| `SS2SS` | Similarity transform with a user-supplied state basis |
+| `Xperm` | State permutation transform |
+| `Prescale` | Pre-scale states/inputs/outputs for numerical conditioning |
 | `Ctrb` | Controllability matrix |
 | `Obsv` | Observability matrix |
 | `CtrbF` | Controllability staircase decomposition |
 | `ObsvF` | Observability staircase decomposition |
 | `Gram` | Controllability/observability gramian |
+| `Covar` | State covariance from process-noise covariance |
 
 ### System Norms
 
 | Function | Description |
 |----------|-------------|
+| `Norm` | Generic norm entry point (`NormH2`, `NormInf`) |
 | `H2Norm` | H2 norm (RMS gain) |
 | `HinfNorm` | H-infinity norm (peak gain) |
+| `HSV` | Hankel singular values |
 
 ### Lyapunov Equations
 
@@ -187,11 +235,11 @@ func main() {
 
 | Function/Method | Description |
 |-----------------|-------------|
-| `TransferFunction` | State-space → transfer function |
-| `StateSpace` | Transfer function → state-space |
-| `ZPKModel` | State-space → zero-pole-gain |
-| `(ZPK).TransferFunction` | ZPK → transfer function |
-| `(TransferFunc).ZPK` | Transfer function → ZPK |
+| `(*System).TransferFunction` | State-space → transfer function |
+| `(*TransferFunc).StateSpace` | Transfer function → state-space |
+| `(*TransferFunc).ZPK` | Transfer function → zero-pole-gain |
+| `(*ZPK).TransferFunction` | ZPK → transfer function |
+| `(*ZPK).StateSpace` | ZPK → state-space |
 
 ### Discretization
 
@@ -213,7 +261,11 @@ func main() {
 | `Feedback` | Closed-loop with feedback |
 | `SafeFeedback` | Feedback with automatic delay handling |
 | `Append` | Block diagonal concatenation |
-| `Sumblk` | Sum block from string expression |
+| `SumBlk` | Sum block from string expression |
+| `Connect` / `ConnectByName` | General interconnection by indices or signal names |
+| `BlkDiag` | Block-diagonal composition of multiple systems |
+| `Inv` | System inversion when the model is invertible |
+| `LFT` | Linear fractional transformation |
 
 ### Time-Domain Simulation
 
@@ -222,6 +274,7 @@ func main() {
 | `Step` | Unit step response |
 | `Impulse` | Unit impulse response |
 | `Initial` | Free response to initial state |
+| `Lsim` | Response to arbitrary input on a uniform time grid |
 | `Simulate` | Discrete-time simulation |
 | `GenSig` | Generate test signals (step, sine, square, pulse) |
 
@@ -232,6 +285,8 @@ func main() {
 | `SetDelay` | Set MIMO delay matrix |
 | `SetInputDelay` | Set per-input delays |
 | `SetOutputDelay` | Set per-output delays |
+| `SetDelayModel` | Attach a custom internal delay model |
+| `DecomposeIODelay` | Split a full I/O delay matrix into input/output/residual pieces |
 | `PadeDelay` | Pade rational approximation |
 | `ThiranDelay` | Thiran allpass (fractional discrete delays) |
 | `Pade` | Replace all delays with Pade approximations |
