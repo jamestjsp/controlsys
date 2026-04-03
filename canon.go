@@ -66,8 +66,26 @@ func canonModal(sys *System) (*CanonResult, error) {
 			continue
 		}
 		eigMag := cmplx.Abs(vals[i])
-		tol := 1e-10 * math.Max(1, eigMag)
-		if math.Abs(imag(vals[i])) < tol {
+		realTol := 1e-10 * math.Max(1, eigMag)
+		conj := -1
+		if imag(vals[i]) != 0 {
+			for j := i + 1; j < n; j++ {
+				if !used[j] && isConjugate(vals[i], vals[j]) {
+					conj = j
+					break
+				}
+			}
+		}
+		if conj >= 0 {
+			blocks = append(blocks, eigBlock{
+				mag:   eigMag,
+				real1: real(vals[i]),
+				imag1: math.Abs(imag(vals[i])),
+				idx:   i,
+			})
+			used[i] = true
+			used[conj] = true
+		} else if math.Abs(imag(vals[i])) < realTol {
 			blocks = append(blocks, eigBlock{
 				mag:   math.Abs(real(vals[i])),
 				real1: real(vals[i]),
@@ -76,25 +94,7 @@ func canonModal(sys *System) (*CanonResult, error) {
 			})
 			used[i] = true
 		} else {
-			conj := -1
-			for j := i + 1; j < n; j++ {
-				if !used[j] && math.Abs(real(vals[i])-real(vals[j])) < tol &&
-					math.Abs(imag(vals[i])+imag(vals[j])) < tol {
-					conj = j
-					break
-				}
-			}
-			if conj < 0 {
-				return nil, fmt.Errorf("controlsys: complex eigenvalue without conjugate pair")
-			}
-			blocks = append(blocks, eigBlock{
-				mag:   math.Sqrt(real(vals[i])*real(vals[i]) + imag(vals[i])*imag(vals[i])),
-				real1: real(vals[i]),
-				imag1: math.Abs(imag(vals[i])),
-				idx:   i,
-			})
-			used[i] = true
-			used[conj] = true
+			return nil, fmt.Errorf("controlsys: complex eigenvalue without conjugate pair")
 		}
 	}
 

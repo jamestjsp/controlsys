@@ -80,6 +80,40 @@ func TestCanonModal_ComplexEigenvalues(t *testing.T) {
 	checkEigsPreserved(t, sys, res.Sys, 1e-10)
 }
 
+func TestCanonModal_LargeRealSmallImagPair(t *testing.T) {
+	const (
+		a = 1e4
+		b = 1e-7
+	)
+	sys, err := New(
+		mat.NewDense(2, 2, []float64{a, b, -b, a}),
+		mat.NewDense(2, 1, []float64{0, 1}),
+		mat.NewDense(1, 2, []float64{1, 0}),
+		mat.NewDense(1, 1, []float64{0}), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := Canon(sys, CanonModal)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	Amod := res.Sys.A
+	if math.Abs(Amod.At(0, 0)-a) > 1e-6 || math.Abs(Amod.At(1, 1)-a) > 1e-6 {
+		t.Errorf("diagonal = [%g, %g], want [%g, %g]", Amod.At(0, 0), Amod.At(1, 1), a, a)
+	}
+	if math.Abs(Amod.At(0, 1)) < 1e-10 || math.Abs(Amod.At(1, 0)) < 1e-10 {
+		t.Fatalf("expected 2x2 modal block, got %v", mat.Formatted(Amod))
+	}
+	if Amod.At(0, 1)*Amod.At(1, 0) > 0 {
+		t.Errorf("off-diagonal should have opposite signs")
+	}
+
+	checkEigsPreserved(t, sys, res.Sys, 1e-10)
+	checkFreqPreserved(t, sys, res.Sys, 1e-8)
+}
+
 func TestCanonModal_Mixed(t *testing.T) {
 	sys, err := New(
 		mat.NewDense(3, 3, []float64{-1, 0, 0, 0, 0, 1, 0, -4, 0}),

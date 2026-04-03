@@ -7,7 +7,7 @@ import (
 	"gonum.org/v1/gonum/mat"
 )
 
-// benchSysNonSym builds a stable system with non-symmetric A.
+// benchSysNonSym builds a stable system with non-symmetric A for benchmark workloads.
 // A has sub/superdiagonal coupling so transposition bugs surface.
 func benchSysNonSym(n, m, p int) *System {
 	A := mat.NewDense(n, n, nil)
@@ -185,12 +185,12 @@ func benchImpulse(b *testing.B, n, m, p int) {
 	}
 }
 
-func BenchmarkLsim_SISO_N2(b *testing.B)   { benchLsimB(b, 2, 1, 1, 500) }
-func BenchmarkLsim_SISO_N10(b *testing.B)  { benchLsimB(b, 10, 1, 1, 500) }
-func BenchmarkLsim_SISO_N50(b *testing.B)  { benchLsimB(b, 50, 1, 1, 500) }
-func BenchmarkLsim_MIMO_N10(b *testing.B)  { benchLsimB(b, 10, 3, 4, 500) }
-func BenchmarkLsim_SISO_1e4(b *testing.B)  { benchLsimB(b, 4, 1, 1, 10000) }
-func BenchmarkLsim_MIMO_1e4(b *testing.B)  { benchLsimB(b, 10, 4, 4, 10000) }
+func BenchmarkLsim_SISO_N2(b *testing.B)  { benchLsimB(b, 2, 1, 1, 500) }
+func BenchmarkLsim_SISO_N10(b *testing.B) { benchLsimB(b, 10, 1, 1, 500) }
+func BenchmarkLsim_SISO_N50(b *testing.B) { benchLsimB(b, 50, 1, 1, 500) }
+func BenchmarkLsim_MIMO_N10(b *testing.B) { benchLsimB(b, 10, 3, 4, 500) }
+func BenchmarkLsim_SISO_1e4(b *testing.B) { benchLsimB(b, 4, 1, 1, 10000) }
+func BenchmarkLsim_MIMO_1e4(b *testing.B) { benchLsimB(b, 10, 4, 4, 10000) }
 
 func BenchmarkLsim_Discrete_SISO(b *testing.B) {
 	sys := benchSysNonSym(4, 1, 1)
@@ -231,7 +231,7 @@ func benchLsimB(b *testing.B, n, m, p, steps int) {
 
 // --------------- Loopsens ---------------
 
-func BenchmarkLoopsens_SISO_N2(b *testing.B) { benchLoopsens(b, 2, 1, 1) }
+func BenchmarkLoopsens_SISO_N2(b *testing.B)  { benchLoopsens(b, 2, 1, 1) }
 func BenchmarkLoopsens_SISO_N10(b *testing.B) { benchLoopsens(b, 10, 1, 1) }
 func BenchmarkLoopsens_MIMO_N10(b *testing.B) { benchLoopsens(b, 10, 3, 3) }
 
@@ -246,12 +246,12 @@ func benchLoopsens(b *testing.B, n, m, p int) {
 
 // --------------- Transform / decomposition ---------------
 
-func BenchmarkCanon_Modal_N2(b *testing.B)  { benchCanon(b, CanonModal, 2) }
-func BenchmarkCanon_Modal_N10(b *testing.B) { benchCanon(b, CanonModal, 10) }
+func BenchmarkCanon_Modal_N2(b *testing.B)   { benchCanon(b, CanonModal, 2) }
+func BenchmarkCanon_Modal_N10(b *testing.B)  { benchCanon(b, CanonModal, 10) }
 func BenchmarkCanon_Modal_N50(b *testing.B)  { benchCanon(b, CanonModal, 50) }
 func BenchmarkCanon_Modal_N100(b *testing.B) { benchCanon(b, CanonModal, 100) }
-func BenchmarkCanon_Comp_N2(b *testing.B)   { benchCanon(b, CanonCompanion, 2) }
-func BenchmarkCanon_Comp_N10(b *testing.B)  { benchCanon(b, CanonCompanion, 10) }
+func BenchmarkCanon_Comp_N2(b *testing.B)    { benchCanon(b, CanonCompanion, 2) }
+func BenchmarkCanon_Comp_N10(b *testing.B)   { benchCanon(b, CanonCompanion, 10) }
 
 func benchCanon(b *testing.B, form CanonForm, n int) {
 	sys := benchSysNonSym(n, 1, 1)
@@ -261,8 +261,8 @@ func benchCanon(b *testing.B, form CanonForm, n int) {
 	}
 }
 
-func BenchmarkStabsep_N2(b *testing.B)  { benchStabsep(b, 2) }
-func BenchmarkStabsep_N10(b *testing.B) { benchStabsep(b, 10) }
+func BenchmarkStabsep_N2(b *testing.B)   { benchStabsep(b, 2) }
+func BenchmarkStabsep_N10(b *testing.B)  { benchStabsep(b, 10) }
 func BenchmarkStabsep_N50(b *testing.B)  { benchStabsep(b, 50) }
 func BenchmarkStabsep_N100(b *testing.B) { benchStabsep(b, 100) }
 
@@ -362,11 +362,11 @@ func benchInvB(b *testing.B, n, m, p int) {
 	}
 }
 
-func BenchmarkCovar_SISO_N2(b *testing.B)  { benchCovarB(b, 2, 1, 1) }
-func BenchmarkCovar_SISO_N10(b *testing.B) { benchCovarB(b, 10, 1, 1) }
+func BenchmarkCovar_SISO_N2(b *testing.B)   { benchCovarB(b, 2, 1, 1) }
+func BenchmarkCovar_SISO_N10(b *testing.B)  { benchCovarB(b, 10, 1, 1) }
 func BenchmarkCovar_SISO_N50(b *testing.B)  { benchCovarB(b, 50, 1, 1) }
 func BenchmarkCovar_SISO_N100(b *testing.B) { benchCovarB(b, 100, 1, 1) }
-func BenchmarkCovar_MIMO_N10(b *testing.B) { benchCovarB(b, 10, 3, 4) }
+func BenchmarkCovar_MIMO_N10(b *testing.B)  { benchCovarB(b, 10, 3, 4) }
 
 func benchCovarB(b *testing.B, n, m, p int) {
 	sys := benchSysNonSym(n, m, p)
