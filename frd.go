@@ -279,12 +279,6 @@ func (f *FRD) Sigma() (*SigmaResult, error) {
 	for k := 0; k < nw; k++ {
 		H := f.Response[k]
 		svd := new(mat.SVD)
-		hMat := mat.NewDense(p, m, nil)
-		for i := 0; i < p; i++ {
-			for j := 0; j < m; j++ {
-				hMat.Set(i, j, cmplx.Abs(H[i][j]))
-			}
-		}
 		if p == 1 && m == 1 {
 			sv[k] = cmplx.Abs(H[0][0])
 			continue
@@ -303,7 +297,7 @@ func (f *FRD) Sigma() (*SigmaResult, error) {
 		}
 		vals := svd.Values(nil)
 		for s := 0; s < nsv; s++ {
-			sv[k*nsv+s] = vals[s]
+			sv[k*nsv+s] = vals[2*s]
 		}
 	}
 	omega := make([]float64, nw)
@@ -321,56 +315,46 @@ func FRDMargin(f *FRD) (*MarginResult, error) {
 		return nil, fmt.Errorf("FRDMargin: need at least 2 frequency points")
 	}
 
-	var gmDB, pm, wcg, wcp float64
-	gmDB = math.Inf(1)
-	foundGM, foundPM := false, false
+	bode := f.Bode()
+	magDB := bode.magDB
+	phase := bode.phase
+
+	result := &MarginResult{
+		GainMargin:  math.Inf(1),
+		PhaseMargin: math.Inf(1),
+		WgFreq:      math.NaN(),
+		WpFreq:      math.NaN(),
+	}
 
 	for k := 1; k < nw; k++ {
-		h0 := f.Response[k-1][0][0]
-		h1 := f.Response[k][0][0]
-		ph0 := cmplx.Phase(h0) * 180 / math.Pi
-		ph1 := cmplx.Phase(h1) * 180 / math.Pi
-		mag0 := cmplx.Abs(h0)
-		mag1 := cmplx.Abs(h1)
-		magDB0 := 20 * math.Log10(mag0)
-		magDB1 := 20 * math.Log10(mag1)
+		ph0, ph1 := phase[k-1], phase[k]
 
-		if (ph0+180)*(ph1+180) <= 0 || (math.Abs(ph0+180) < 1 && math.Abs(ph1+180) < 1) {
+		if (ph0+180)*(ph1+180) <= 0 && math.Abs(ph0-ph1) < 180 {
 			t := math.Abs(ph0+180) / (math.Abs(ph0+180) + math.Abs(ph1+180) + 1e-30)
-			magAtCross := magDB0 + t*(magDB1-magDB0)
+			magAtCross := magDB[k-1] + t*(magDB[k]-magDB[k-1])
 			gm := -magAtCross
-			if !foundGM || gm < gmDB {
-				gmDB = gm
-				wcg = f.Omega[k-1] + t*(f.Omega[k]-f.Omega[k-1])
-				foundGM = true
-			}
-		}
-
-		if (magDB0)*(magDB1) <= 0 || (math.Abs(magDB0) < 0.5 && math.Abs(magDB1) < 0.5) {
-			t := math.Abs(magDB0) / (math.Abs(magDB0) + math.Abs(magDB1) + 1e-30)
-			phAtCross := ph0 + t*(ph1-ph0)
-			pmCand := 180 + phAtCross
-			if !foundPM || f.Omega[k-1]+t*(f.Omega[k]-f.Omega[k-1]) < wcp {
-				pm = pmCand
-				wcp = f.Omega[k-1] + t*(f.Omega[k]-f.Omega[k-1])
-				foundPM = true
+			if gm > 0 && gm < result.GainMargin {
+				result.GainMargin = gm
+				result.WpFreq = bode.Omega[k-1] + t*(bode.Omega[k]-bode.Omega[k-1])
 			}
 		}
 	}
 
-	if !foundGM {
-		gmDB = math.Inf(1)
-	}
-	if !foundPM {
-		pm = math.Inf(1)
+	for k := 1; k < nw; k++ {
+		m0, m1 := magDB[k-1], magDB[k]
+
+		if m0*m1 <= 0 && math.Abs(m0-m1) < 40 {
+			t := math.Abs(m0) / (math.Abs(m0) + math.Abs(m1) + 1e-30)
+			phAtCross := phase[k-1] + t*(phase[k]-phase[k-1])
+			pm := 180 + phAtCross
+			if pm > 0 && pm < result.PhaseMargin {
+				result.PhaseMargin = pm
+				result.WgFreq = bode.Omega[k-1] + t*(bode.Omega[k]-bode.Omega[k-1])
+			}
+		}
 	}
 
-	return &MarginResult{
-		GainMargin:  gmDB,
-		PhaseMargin: pm,
-		WgFreq:      wcp,
-		WpFreq:      wcg,
-	}, nil
+	return result, nil
 }
 
 func frdGridsMatch(f1, f2 *FRD) error {

@@ -1,8 +1,15 @@
 package controlsys
 
-import "gonum.org/v1/gonum/mat"
+import (
+	"fmt"
+
+	"gonum.org/v1/gonum/mat"
+)
 
 func Sminreal(sys *System) (*System, error) {
+	if sys.HasDelay() {
+		return nil, fmt.Errorf("controlsys: Sminreal does not support delayed systems; use Pade/AbsorbDelay first")
+	}
 	n, m, p := sys.Dims()
 	if n == 0 {
 		return sys.Copy(), nil

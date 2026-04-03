@@ -1,6 +1,7 @@
 package controlsys
 
 import (
+	"fmt"
 	"math"
 
 	"gonum.org/v1/gonum/mat"
@@ -12,6 +13,9 @@ type SsbalResult struct {
 }
 
 func Ssbal(sys *System) (*SsbalResult, error) {
+	if sys.HasDelay() {
+		return nil, fmt.Errorf("controlsys: Ssbal does not support delayed systems; use Pade/AbsorbDelay first")
+	}
 	n, m, p := sys.Dims()
 	if n == 0 {
 		cp := sys.Copy()

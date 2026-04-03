@@ -7,6 +7,9 @@ import (
 )
 
 func Inv(sys *System) (*System, error) {
+	if sys.HasDelay() {
+		return nil, fmt.Errorf("Inv: system with delays not supported; use Pade/AbsorbDelay first")
+	}
 	n, m, p := sys.Dims()
 	if m != p {
 		return nil, fmt.Errorf("Inv: system must be square (p=%d, m=%d): %w", p, m, ErrDimensionMismatch)

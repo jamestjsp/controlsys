@@ -7,55 +7,68 @@ import (
 )
 
 type LoopsensResult struct {
-	So *System
-	To *System
-	Si *System
-	Ti *System
+	So *System // output sensitivity: (I + P*C)^{-1}
+	To *System // output complementary sensitivity: P*C*(I + P*C)^{-1}
+	Si *System // input sensitivity: (I + C*P)^{-1}
+	Ti *System // input complementary sensitivity: C*P*(I + C*P)^{-1}
 }
 
-func Loopsens(L *System) (*LoopsensResult, error) {
-	if L == nil {
-		return nil, fmt.Errorf("controlsys: loop transfer function cannot be nil")
+func Loopsens(P, C *System) (*LoopsensResult, error) {
+	if P == nil || C == nil {
+		return nil, fmt.Errorf("controlsys: loopsens: P and C must not be nil")
 	}
 
-	_, m, p := L.Dims()
-	if m != p {
-		return nil, fmt.Errorf("controlsys: loop transfer must be square (%d inputs, %d outputs): %w", m, p, ErrDimensionMismatch)
+	_, pm, pp := P.Dims()
+	_, cm, cp := C.Dims()
+
+	if pp != cm {
+		return nil, fmt.Errorf("controlsys: loopsens: P outputs %d != C inputs %d: %w", pp, cm, ErrDimensionMismatch)
+	}
+	if cp != pm {
+		return nil, fmt.Errorf("controlsys: loopsens: C outputs %d != P inputs %d: %w", cp, pm, ErrDimensionMismatch)
 	}
 
-	eyeData := make([]float64, m*m)
-	for i := 0; i < m; i++ {
-		eyeData[i*(m+1)] = 1
-	}
-	I, err := NewGain(mat.NewDense(m, m, eyeData), L.Dt)
+	Lo, err := Series(C, P)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("controlsys: loopsens: cannot form output loop P*C: %w", err)
 	}
 
-	So, err := Feedback(I, L, -1)
+	Li, err := Series(P, C)
 	if err != nil {
-		return nil, fmt.Errorf("controlsys: loopsens So computation failed: %w", err)
+		return nil, fmt.Errorf("controlsys: loopsens: cannot form input loop C*P: %w", err)
 	}
 
-	To, err := Feedback(L, I, -1)
+	eyeO := makeIdentityGain(pp, Lo.Dt)
+	eyeI := makeIdentityGain(pm, Li.Dt)
+
+	So, err := Feedback(eyeO, Lo, -1)
 	if err != nil {
-		return nil, fmt.Errorf("controlsys: loopsens To computation failed: %w", err)
+		return nil, fmt.Errorf("controlsys: loopsens So: %w", err)
 	}
 
-	Si, err := Feedback(I, L, -1)
+	To, err := Feedback(Lo, eyeO, -1)
 	if err != nil {
-		return nil, fmt.Errorf("controlsys: loopsens Si computation failed: %w", err)
+		return nil, fmt.Errorf("controlsys: loopsens To: %w", err)
 	}
 
-	Ti, err := Feedback(L, I, -1)
+	Si, err := Feedback(eyeI, Li, -1)
 	if err != nil {
-		return nil, fmt.Errorf("controlsys: loopsens Ti computation failed: %w", err)
+		return nil, fmt.Errorf("controlsys: loopsens Si: %w", err)
 	}
 
-	return &LoopsensResult{
-		So: So,
-		To: To,
-		Si: Si,
-		Ti: Ti,
-	}, nil
+	Ti, err := Feedback(Li, eyeI, -1)
+	if err != nil {
+		return nil, fmt.Errorf("controlsys: loopsens Ti: %w", err)
+	}
+
+	return &LoopsensResult{So: So, To: To, Si: Si, Ti: Ti}, nil
+}
+
+func makeIdentityGain(n int, dt float64) *System {
+	data := make([]float64, n*n)
+	for i := 0; i < n; i++ {
+		data[i*(n+1)] = 1
+	}
+	sys, _ := NewGain(mat.NewDense(n, n, data), dt)
+	return sys
 }

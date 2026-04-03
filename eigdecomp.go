@@ -13,6 +13,9 @@ import (
 )
 
 func decomposeByEigenvalues(sys *System, isGroup1 func(complex128) bool) (group1, group2 *System, err error) {
+	if sys.HasDelay() {
+		return nil, nil, fmt.Errorf("controlsys: decomposition does not support delayed systems; use Pade/AbsorbDelay first")
+	}
 	n, m, p := sys.Dims()
 	if n == 0 {
 		cp := sys.Copy()

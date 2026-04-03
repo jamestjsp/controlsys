@@ -21,6 +21,9 @@ type CanonResult struct {
 }
 
 func Canon(sys *System, form CanonForm) (*CanonResult, error) {
+	if sys.HasDelay() {
+		return nil, fmt.Errorf("controlsys: Canon does not support delayed systems; use Pade/AbsorbDelay first")
+	}
 	switch form {
 	case CanonModal:
 		return canonModal(sys)

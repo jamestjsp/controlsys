@@ -496,3 +496,37 @@ func TestFRDMargin(t *testing.T) {
 	}
 }
 
+func TestFRD_Sigma_MIMO_Regression(t *testing.T) {
+	// Bug: real block form doubles SVs; diag(2,1) was returning [2,2] not [2,1]
+	resp := [][][]complex128{
+		{{2, 0}, {0, 1}},
+	}
+	f, _ := NewFRD(resp, []float64{1.0}, 0)
+	sig, err := f.Sigma()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sig.nSV != 2 {
+		t.Fatalf("nSV = %d, want 2", sig.nSV)
+	}
+	if math.Abs(sig.sv[0]-2) > 1e-10 {
+		t.Errorf("sv[0] = %g, want 2", sig.sv[0])
+	}
+	if math.Abs(sig.sv[1]-1) > 1e-10 {
+		t.Errorf("sv[1] = %g, want 1", sig.sv[1])
+	}
+}
+
+func TestInv_DelayRejected(t *testing.T) {
+	sys, _ := New(
+		mat.NewDense(1, 1, []float64{-1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{1}), 0)
+	sys.SetInputDelay([]float64{0.5})
+	_, err := Inv(sys)
+	if err == nil {
+		t.Error("Inv should reject delayed system")
+	}
+}
+

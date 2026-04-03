@@ -1,6 +1,7 @@
 package controlsys
 
 import (
+	"fmt"
 	"math"
 
 	"gonum.org/v1/gonum/lapack"
@@ -17,6 +18,9 @@ type PrescaleResult struct {
 }
 
 func Prescale(sys *System) (*PrescaleResult, error) {
+	if sys.HasDelay() {
+		return nil, fmt.Errorf("controlsys: Prescale does not support delayed systems; use Pade/AbsorbDelay first")
+	}
 	n, m, p := sys.Dims()
 
 	if n == 0 {
