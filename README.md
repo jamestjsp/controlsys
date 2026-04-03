@@ -174,7 +174,6 @@ func main() {
 |----------|-------------|
 | `H2Norm` | H2 norm (RMS gain) |
 | `HinfNorm` | H-infinity norm (peak gain) |
-| `Norm` | General norm computation |
 
 ### Lyapunov Equations
 
@@ -222,8 +221,7 @@ func main() {
 |-----------------|-------------|
 | `Step` | Unit step response |
 | `Impulse` | Unit impulse response |
-| `InitialCondition` | Free response to initial state |
-| `Lsim` | Response to arbitrary input signal |
+| `Initial` | Free response to initial state |
 | `Simulate` | Discrete-time simulation |
 | `GenSig` | Generate test signals (step, sine, square, pulse) |
 

@@ -1,6 +1,7 @@
 package controlsys
 
 import (
+	"fmt"
 	"math"
 	"math/cmplx"
 	"sort"
@@ -10,6 +11,19 @@ import (
 	"gonum.org/v1/gonum/lapack"
 	"gonum.org/v1/gonum/mat"
 )
+
+const NormH2 = 2
+
+func Norm(sys *System, normType float64) (float64, error) {
+	if normType == 2 {
+		return H2Norm(sys)
+	}
+	if math.IsInf(normType, 1) {
+		norm, _, err := HinfNorm(sys)
+		return norm, err
+	}
+	return 0, fmt.Errorf("controlsys: normType must be 2 or Inf, got %g", normType)
+}
 
 // H2Norm computes the H2 norm of a stable LTI system.
 //

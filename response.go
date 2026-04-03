@@ -293,3 +293,46 @@ func Initial(sys *System, x0 *mat.VecDense, tFinal float64) (*TimeResponse, erro
 
 	return &TimeResponse{T: makeTimeVector(steps, dt), Y: resp.Y, OutputName: copyStringSlice(sys.OutputName)}, nil
 }
+
+func Lsim(sys *System, u *mat.Dense, t []float64, x0 *mat.VecDense) (*TimeResponse, error) {
+	if len(t) < 2 {
+		return nil, fmt.Errorf("Lsim: need at least 2 time points: %w", ErrDimensionMismatch)
+	}
+
+	_, m, _ := sys.Dims()
+	ur, uc := u.Dims()
+	if ur != len(t) || uc != m {
+		return nil, fmt.Errorf("Lsim: u must be %d×%d, got %d×%d: %w", len(t), m, ur, uc, ErrDimensionMismatch)
+	}
+
+	steps := len(t)
+	dt := t[1] - t[0]
+
+	var dsys *System
+	var err error
+	if sys.IsContinuous() {
+		dsys, err = sys.DiscretizeZOH(dt)
+		if err != nil {
+			return nil, fmt.Errorf("Lsim: %w", err)
+		}
+	} else {
+		dsys = sys
+	}
+
+	// Transpose u from len(t)×m to m×len(t) for Simulate
+	uSim := mat.NewDense(m, steps, nil)
+	uRaw := u.RawMatrix()
+	uSimRaw := uSim.RawMatrix()
+	for i := 0; i < steps; i++ {
+		for j := 0; j < m; j++ {
+			uSimRaw.Data[j*uSimRaw.Stride+i] = uRaw.Data[i*uRaw.Stride+j]
+		}
+	}
+
+	resp, err := dsys.Simulate(uSim, x0, nil)
+	if err != nil {
+		return nil, fmt.Errorf("Lsim: %w", err)
+	}
+
+	return &TimeResponse{T: t, Y: resp.Y, OutputName: copyStringSlice(sys.OutputName)}, nil
+}

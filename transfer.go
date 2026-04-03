@@ -624,3 +624,21 @@ func (tf *TransferFunc) StateSpace(opts *StateSpaceOpts) (*StateSpaceResult, err
 		BlockSizes:   degrees,
 	}, nil
 }
+
+func (sys *System) Isproper() bool {
+	return true
+}
+
+func (tf *TransferFunc) Isproper() bool {
+	p, m := tf.Dims()
+	for i := 0; i < p; i++ {
+		denDeg := len(tf.Den[i]) - 1
+		for j := 0; j < m; j++ {
+			numDeg := len(tf.Num[i][j]) - 1
+			if numDeg > denDeg {
+				return false
+			}
+		}
+	}
+	return true
+}
