@@ -307,6 +307,15 @@ func Lsim(sys *System, u *mat.Dense, t []float64, x0 *mat.VecDense) (*TimeRespon
 
 	steps := len(t)
 	dt := t[1] - t[0]
+	if dt <= 0 {
+		return nil, fmt.Errorf("Lsim: time step must be positive, got %g: %w", dt, ErrDimensionMismatch)
+	}
+	for k := 2; k < steps; k++ {
+		dk := t[k] - t[k-1]
+		if math.Abs(dk-dt)/dt > 1e-6 {
+			return nil, fmt.Errorf("Lsim: non-uniform time grid at index %d (dt=%g, expected %g); uniform grid required: %w", k, dk, dt, ErrDimensionMismatch)
+		}
+	}
 
 	var dsys *System
 	var err error

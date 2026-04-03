@@ -517,6 +517,67 @@ func TestFRD_Sigma_MIMO_Regression(t *testing.T) {
 	}
 }
 
+func TestFRDMargin_NegativeMargins(t *testing.T) {
+	// K/(s+1)^3 with K=10: unstable closed-loop, negative margins
+	// Margin() returns GM≈-1.94dB, PM≈-7°
+	A := mat.NewDense(3, 3, []float64{-1, 1, 0, 0, -1, 1, 0, 0, -1})
+	B := mat.NewDense(3, 1, []float64{0, 0, 10})
+	C := mat.NewDense(1, 3, []float64{1, 0, 0})
+	D := mat.NewDense(1, 1, []float64{0})
+	sys, _ := New(A, B, C, D, 0)
+
+	sysMr, err := Margin(sys)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sysMr.GainMargin >= 0 {
+		t.Skipf("expected negative GM, got %g", sysMr.GainMargin)
+	}
+
+	w := logspace(-2, 2, 5000)
+	f, err := sys.FRD(w)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mr, err := FRDMargin(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if math.IsInf(mr.GainMargin, 1) || math.IsNaN(mr.GainMargin) {
+		t.Errorf("FRDMargin GM = %g, want finite negative (sys GM = %g)", mr.GainMargin, sysMr.GainMargin)
+	}
+	if math.Abs(mr.GainMargin-sysMr.GainMargin) > 1 {
+		t.Errorf("FRDMargin GM = %g, sys GM = %g", mr.GainMargin, sysMr.GainMargin)
+	}
+	if math.IsInf(mr.PhaseMargin, 1) || math.IsNaN(mr.PhaseMargin) {
+		t.Errorf("FRDMargin PM = %g, want finite negative (sys PM = %g)", mr.PhaseMargin, sysMr.PhaseMargin)
+	}
+	if math.Abs(mr.PhaseMargin-sysMr.PhaseMargin) > 3 {
+		t.Errorf("FRDMargin PM = %g, sys PM = %g", mr.PhaseMargin, sysMr.PhaseMargin)
+	}
+	if math.IsNaN(mr.WgFreq) {
+		t.Errorf("FRDMargin WgFreq = NaN, want finite (sys = %g)", sysMr.WgFreq)
+	}
+	if math.IsNaN(mr.WpFreq) {
+		t.Errorf("FRDMargin WpFreq = NaN, want finite (sys = %g)", sysMr.WpFreq)
+	}
+}
+
+func TestLsim_NonUniformGrid_Rejected(t *testing.T) {
+	sys, _ := New(
+		mat.NewDense(1, 1, []float64{-1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{0}), 0)
+	tNonUniform := []float64{0, 0.1, 0.3, 0.6}
+	u := mat.NewDense(4, 1, []float64{1, 1, 1, 1})
+	_, err := Lsim(sys, u, tNonUniform, nil)
+	if err == nil {
+		t.Error("Lsim should reject non-uniform time grid")
+	}
+}
+
 func TestInv_DelayRejected(t *testing.T) {
 	sys, _ := New(
 		mat.NewDense(1, 1, []float64{-1}),

@@ -319,24 +319,21 @@ func FRDMargin(f *FRD) (*MarginResult, error) {
 	magDB := bode.magDB
 	phase := bode.phase
 
-	result := &MarginResult{
-		GainMargin:  math.Inf(1),
-		PhaseMargin: math.Inf(1),
-		WgFreq:      math.NaN(),
-		WpFreq:      math.NaN(),
-	}
+	var allGM []float64
+	var allGMFreq []float64
+	var allPM []float64
+	var allPMFreq []float64
 
 	for k := 1; k < nw; k++ {
 		ph0, ph1 := phase[k-1], phase[k]
 
 		if (ph0+180)*(ph1+180) <= 0 && math.Abs(ph0-ph1) < 180 {
-			t := math.Abs(ph0+180) / (math.Abs(ph0+180) + math.Abs(ph1+180) + 1e-30)
-			magAtCross := magDB[k-1] + t*(magDB[k]-magDB[k-1])
+			frac := math.Abs(ph0+180) / (math.Abs(ph0+180) + math.Abs(ph1+180) + 1e-30)
+			magAtCross := magDB[k-1] + frac*(magDB[k]-magDB[k-1])
 			gm := -magAtCross
-			if gm > 0 && gm < result.GainMargin {
-				result.GainMargin = gm
-				result.WpFreq = bode.Omega[k-1] + t*(bode.Omega[k]-bode.Omega[k-1])
-			}
+			wCross := bode.Omega[k-1] + frac*(bode.Omega[k]-bode.Omega[k-1])
+			allGM = append(allGM, gm)
+			allGMFreq = append(allGMFreq, wCross)
 		}
 	}
 
@@ -344,12 +341,48 @@ func FRDMargin(f *FRD) (*MarginResult, error) {
 		m0, m1 := magDB[k-1], magDB[k]
 
 		if m0*m1 <= 0 && math.Abs(m0-m1) < 40 {
-			t := math.Abs(m0) / (math.Abs(m0) + math.Abs(m1) + 1e-30)
-			phAtCross := phase[k-1] + t*(phase[k]-phase[k-1])
+			frac := math.Abs(m0) / (math.Abs(m0) + math.Abs(m1) + 1e-30)
+			phAtCross := phase[k-1] + frac*(phase[k]-phase[k-1])
 			pm := 180 + phAtCross
-			if pm > 0 && pm < result.PhaseMargin {
+			wCross := bode.Omega[k-1] + frac*(bode.Omega[k]-bode.Omega[k-1])
+			allPM = append(allPM, pm)
+			allPMFreq = append(allPMFreq, wCross)
+		}
+	}
+
+	result := &MarginResult{
+		GainMargin:  math.Inf(1),
+		PhaseMargin: math.Inf(1),
+		WgFreq:      math.NaN(),
+		WpFreq:      math.NaN(),
+	}
+
+	for i, gm := range allGM {
+		if gm > 0 && gm < result.GainMargin {
+			result.GainMargin = gm
+			result.WpFreq = allGMFreq[i]
+		}
+	}
+	if math.IsInf(result.GainMargin, 1) {
+		for i, gm := range allGM {
+			if gm > result.GainMargin || math.IsInf(result.GainMargin, 1) {
+				result.GainMargin = gm
+				result.WpFreq = allGMFreq[i]
+			}
+		}
+	}
+
+	for i, pm := range allPM {
+		if pm > 0 && pm < result.PhaseMargin {
+			result.PhaseMargin = pm
+			result.WgFreq = allPMFreq[i]
+		}
+	}
+	if math.IsInf(result.PhaseMargin, 1) {
+		for i, pm := range allPM {
+			if pm > result.PhaseMargin || math.IsInf(result.PhaseMargin, 1) {
 				result.PhaseMargin = pm
-				result.WgFreq = bode.Omega[k-1] + t*(bode.Omega[k]-bode.Omega[k-1])
+				result.WgFreq = allPMFreq[i]
 			}
 		}
 	}
