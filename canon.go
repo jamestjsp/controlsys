@@ -3,6 +3,7 @@ package controlsys
 import (
 	"fmt"
 	"math"
+	"math/cmplx"
 	"sort"
 
 	"gonum.org/v1/gonum/mat"
@@ -64,7 +65,9 @@ func canonModal(sys *System) (*CanonResult, error) {
 		if used[i] {
 			continue
 		}
-		if math.Abs(imag(vals[i])) < 1e-10 {
+		eigMag := cmplx.Abs(vals[i])
+		tol := 1e-10 * math.Max(1, eigMag)
+		if math.Abs(imag(vals[i])) < tol {
 			blocks = append(blocks, eigBlock{
 				mag:   math.Abs(real(vals[i])),
 				real1: real(vals[i]),
@@ -75,8 +78,8 @@ func canonModal(sys *System) (*CanonResult, error) {
 		} else {
 			conj := -1
 			for j := i + 1; j < n; j++ {
-				if !used[j] && math.Abs(real(vals[i])-real(vals[j])) < 1e-10 &&
-					math.Abs(imag(vals[i])+imag(vals[j])) < 1e-10 {
+				if !used[j] && math.Abs(real(vals[i])-real(vals[j])) < tol &&
+					math.Abs(imag(vals[i])+imag(vals[j])) < tol {
 					conj = j
 					break
 				}
@@ -260,7 +263,7 @@ func characteristicPoly(A *mat.Dense, n int) []float64 {
 	coeffs[0] = 1.0
 	cur := 1
 	for _, lam := range vals {
-		if math.Abs(imag(lam)) < 1e-10 {
+		if math.Abs(imag(lam)) < 1e-10*math.Max(1, cmplx.Abs(lam)) {
 			r := real(lam)
 			for j := cur; j >= 1; j-- {
 				coeffs[j] = coeffs[j-1] - r*coeffs[j]
