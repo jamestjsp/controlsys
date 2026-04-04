@@ -1411,7 +1411,7 @@ func matchedGainFallback(num, den Poly, discZeros, discPoles []complex128, dt fl
 	if cmplx.Abs(discVal) < 1e-14 {
 		return 0, fmt.Errorf("DiscretizeMatched: cannot determine gain: %w", ErrSingularTransform)
 	}
-	return cmplx.Abs(contVal) / cmplx.Abs(discVal), nil
+	return real(contVal / discVal), nil
 }
 
 func (sys *System) D2D(newDt float64, opts C2DOptions) (*System, error) {

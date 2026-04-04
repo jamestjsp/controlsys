@@ -143,22 +143,19 @@ func canonModalEig(sys *System, n, m, p int) (*CanonResult, error) {
 		return nil, fmt.Errorf("controlsys: eigenvector matrix ill-conditioned (κ=%.1e)", cond)
 	}
 
-	Tinv := mat.NewDense(n, n, nil)
-	eye := mat.NewDense(n, n, nil)
-	for i := 0; i < n; i++ {
-		eye.Set(i, i, 1)
-	}
-	if err := lu.SolveTo(Tinv, false, eye); err != nil {
-		return nil, fmt.Errorf("controlsys: inversion failed: %w", ErrSingularTransform)
-	}
-
+	// Anew = T⁻¹*A*T: compute AT = A*T, then solve T*Anew = AT
+	AT := mat.NewDense(n, n, nil)
+	AT.Mul(sys.A, T)
 	Anew := mat.NewDense(n, n, nil)
-	tmp := mat.NewDense(n, n, nil)
-	tmp.Mul(Tinv, sys.A)
-	Anew.Mul(tmp, T)
+	if err := lu.SolveTo(Anew, false, AT); err != nil {
+		return nil, fmt.Errorf("controlsys: solve failed: %w", ErrSingularTransform)
+	}
 
+	// Bnew = T⁻¹*B: solve T*Bnew = B
 	Bnew := mat.NewDense(n, m, nil)
-	Bnew.Mul(Tinv, sys.B)
+	if err := lu.SolveTo(Bnew, false, sys.B); err != nil {
+		return nil, fmt.Errorf("controlsys: solve failed: %w", ErrSingularTransform)
+	}
 
 	Cnew := mat.NewDense(p, n, nil)
 	Cnew.Mul(sys.C, T)
@@ -328,22 +325,19 @@ func canonCompanion(sys *System) (*CanonResult, error) {
 		return nil, fmt.Errorf("controlsys: transformation matrix singular: %w", ErrSingularTransform)
 	}
 
-	Tinv := mat.NewDense(n, n, nil)
-	eye := mat.NewDense(n, n, nil)
-	for i := 0; i < n; i++ {
-		eye.Set(i, i, 1)
-	}
-	if err := luT.SolveTo(Tinv, false, eye); err != nil {
-		return nil, fmt.Errorf("controlsys: inversion failed: %w", ErrSingularTransform)
-	}
-
+	// Anew = T⁻¹*A*T: compute AT = A*T, then solve T*Anew = AT
+	AT := mat.NewDense(n, n, nil)
+	AT.Mul(sys.A, T)
 	Anew := mat.NewDense(n, n, nil)
-	tmp := mat.NewDense(n, n, nil)
-	tmp.Mul(Tinv, sys.A)
-	Anew.Mul(tmp, T)
+	if err := luT.SolveTo(Anew, false, AT); err != nil {
+		return nil, fmt.Errorf("controlsys: solve failed: %w", ErrSingularTransform)
+	}
 
+	// Bnew = T⁻¹*B: solve T*Bnew = B
 	Bnew := mat.NewDense(n, 1, nil)
-	Bnew.Mul(Tinv, sys.B)
+	if err := luT.SolveTo(Bnew, false, sys.B); err != nil {
+		return nil, fmt.Errorf("controlsys: solve failed: %w", ErrSingularTransform)
+	}
 
 	Cnew := mat.NewDense(1, n, nil)
 	Cnew.Mul(sys.C, T)
