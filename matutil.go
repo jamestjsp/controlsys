@@ -3,6 +3,7 @@ package controlsys
 import (
 	"math"
 
+	"gonum.org/v1/gonum/blas"
 	"gonum.org/v1/gonum/mat"
 )
 
@@ -87,6 +88,25 @@ func isSymmetric(m *mat.Dense, tol float64) bool {
 		}
 	}
 	return true
+}
+
+// isPSD checks if a symmetric matrix is positive semi-definite
+// by attempting Cholesky on Q + tol*I. A small shift avoids
+// rejecting borderline-zero eigenvalues from roundoff.
+func isPSD(m *mat.Dense) bool {
+	n, _ := m.Dims()
+	if n == 0 {
+		return true
+	}
+	raw := m.RawMatrix()
+	tmp := make([]float64, n*n)
+	copyStrided(tmp, n, raw.Data, raw.Stride, n, n)
+	symmetrize(tmp, n, n)
+	tol := eps() * denseNorm(m) * float64(n)
+	for i := 0; i < n; i++ {
+		tmp[i*n+i] += tol
+	}
+	return impl.Dpotrf(blas.Lower, n, tmp, n)
 }
 
 func symmetrize(data []float64, n, stride int) {

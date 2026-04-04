@@ -9,6 +9,7 @@ var (
 	ErrInvalidSampleTime = errors.New("controlsys: sample time must be positive")
 	ErrSingularDenom     = errors.New("controlsys: zero or near-zero leading denominator")
 	ErrOverflow          = errors.New("controlsys: coefficient overflow")
+	ErrImproperTF        = errors.New("controlsys: transfer function is improper (numerator degree exceeds denominator degree)")
 
 	ErrNegativeDelay        = errors.New("controlsys: delay must be non-negative")
 	ErrFractionalDelay      = errors.New("controlsys: discrete delay must be non-negative integer")
@@ -23,6 +24,7 @@ var (
 	ErrMixedDelayTypes = errors.New("controlsys: InternalDelay and IODelay cannot coexist")
 
 	ErrNotSymmetric     = errors.New("controlsys: matrix must be symmetric")
+	ErrNotPSD           = errors.New("controlsys: Q matrix must be positive semi-definite")
 	ErrSchurFailed      = errors.New("controlsys: Schur decomposition failed to converge")
 	ErrSingularEquation = errors.New("controlsys: matrix equation is singular or nearly singular")
 	ErrNoStabilizing    = errors.New("controlsys: no stabilizing solution exists")
@@ -48,4 +50,5 @@ var (
 	ErrH2DirectFeedthrough = errors.New("controlsys: H2 synthesis requires D22 = 0")
 	ErrGammaNotAchievable  = errors.New("controlsys: no stabilizing controller exists for given gamma")
 	ErrDescriptorSingular  = errors.New("controlsys: descriptor matrix E is singular")
+	ErrDescriptorRiccati   = errors.New("controlsys: standard Riccati solvers do not support descriptor systems (E != I)")
 )

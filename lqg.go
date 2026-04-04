@@ -22,6 +22,9 @@ func Lqg(sys *System, Q, R, Qn, Rn *mat.Dense, opts *RiccatiOpts) (*LqgResult, e
 	if n == 0 {
 		return nil, fmt.Errorf("Lqg: system has no states: %w", ErrDimensionMismatch)
 	}
+	if sys.IsDescriptor() {
+		return nil, fmt.Errorf("Lqg: %w", ErrDescriptorRiccati)
+	}
 
 	var kRes *RiccatiResult
 	var err error

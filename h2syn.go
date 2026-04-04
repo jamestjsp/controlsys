@@ -17,6 +17,9 @@ func H2Syn(P *System, nmeas, ncont int) (*H2SynResult, error) {
 	if !P.IsContinuous() {
 		return nil, ErrWrongDomain
 	}
+	if P.IsDescriptor() {
+		return nil, ErrDescriptorRiccati
+	}
 
 	n, m, p := P.Dims()
 	if n == 0 {
