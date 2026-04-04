@@ -484,6 +484,10 @@ func (tf *TransferFunc) StateSpace(opts *StateSpaceOpts) (*StateSpaceResult, err
 		return &StateSpaceResult{Sys: sys, MinimalOrder: 0}, nil
 	}
 
+	if !tf.Isproper() {
+		return nil, ErrImproperTF
+	}
+
 	degrees := make([]int, p)
 	totalN := 0
 	for i := 0; i < p; i++ {

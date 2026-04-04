@@ -120,6 +120,9 @@ func Care(A, B, Q, R *mat.Dense, opts *RiccatiOpts) (*RiccatiResult, error) {
 	if !isSymmetric(R, eps()*denseNorm(R)) {
 		return nil, ErrNotSymmetric
 	}
+	if !isPSD(Q) {
+		return nil, ErrNotPSD
+	}
 
 	var S *mat.Dense
 	if opts != nil && opts.S != nil {
@@ -327,6 +330,9 @@ func Dare(A, B, Q, R *mat.Dense, opts *RiccatiOpts) (*RiccatiResult, error) {
 	}
 	if !isSymmetric(R, eps()*denseNorm(R)) {
 		return nil, ErrNotSymmetric
+	}
+	if !isPSD(Q) {
+		return nil, ErrNotPSD
 	}
 
 	var S *mat.Dense

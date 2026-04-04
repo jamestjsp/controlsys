@@ -1,6 +1,7 @@
 package controlsys
 
 import (
+	"math"
 	"math/cmplx"
 
 	"gonum.org/v1/gonum/blas"
@@ -193,12 +194,13 @@ func IsStabilizable(A, B *mat.Dense, continuous bool) (bool, error) {
 	vals := eig.Values(nil)
 
 	for _, v := range vals {
+		tol := 1e-10 * math.Max(1, cmplx.Abs(v))
 		if continuous {
-			if real(v) >= 0 {
+			if real(v) >= -tol {
 				return false, nil
 			}
 		} else {
-			if cmplx.Abs(v) >= 1-1e-10 {
+			if cmplx.Abs(v) >= 1-tol {
 				return false, nil
 			}
 		}

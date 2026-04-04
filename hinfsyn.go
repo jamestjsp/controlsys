@@ -20,6 +20,9 @@ func HinfSyn(P *System, nmeas, ncont int) (*HinfSynResult, error) {
 	if !P.IsContinuous() {
 		return nil, ErrWrongDomain
 	}
+	if P.IsDescriptor() {
+		return nil, ErrDescriptorRiccati
+	}
 
 	n, m, p := P.Dims()
 	if n == 0 {

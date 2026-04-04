@@ -6,6 +6,9 @@ import (
 	"math/cmplx"
 	"sort"
 
+	"gonum.org/v1/gonum/blas"
+	"gonum.org/v1/gonum/blas/blas64"
+	"gonum.org/v1/gonum/lapack"
 	"gonum.org/v1/gonum/mat"
 )
 
@@ -49,6 +52,16 @@ func canonModal(sys *System) (*CanonResult, error) {
 		return &CanonResult{Sys: cp, T: &mat.Dense{}}, nil
 	}
 
+	res, err := canonModalEig(sys, n, m, p)
+	if err == nil {
+		return res, nil
+	}
+	return canonModalSchur(sys, n, m, p)
+}
+
+// canonModalEig attempts the eigendecomposition-based modal form.
+// Returns error if eigenvector matrix is too ill-conditioned.
+func canonModalEig(sys *System, n, m, p int) (*CanonResult, error) {
 	var eig mat.Eigen
 	ok := eig.Factorize(sys.A, mat.EigenRight)
 	if !ok {
@@ -124,26 +137,25 @@ func canonModal(sys *System) (*CanonResult, error) {
 
 	var lu mat.LU
 	lu.Factorize(T)
-	if luNearSingular(&lu) {
-		return nil, fmt.Errorf("controlsys: transformation matrix is singular: %w", ErrSingularTransform)
+
+	cond := lu.Cond()
+	if math.IsNaN(cond) || math.IsInf(cond, 1) || cond > 1e12 {
+		return nil, fmt.Errorf("controlsys: eigenvector matrix ill-conditioned (κ=%.1e)", cond)
 	}
 
-	Tinv := mat.NewDense(n, n, nil)
-	eye := mat.NewDense(n, n, nil)
-	for i := 0; i < n; i++ {
-		eye.Set(i, i, 1)
-	}
-	if err := lu.SolveTo(Tinv, false, eye); err != nil {
-		return nil, fmt.Errorf("controlsys: inversion failed: %w", ErrSingularTransform)
-	}
-
+	// Anew = T⁻¹*A*T: compute AT = A*T, then solve T*Anew = AT
+	AT := mat.NewDense(n, n, nil)
+	AT.Mul(sys.A, T)
 	Anew := mat.NewDense(n, n, nil)
-	tmp := mat.NewDense(n, n, nil)
-	tmp.Mul(Tinv, sys.A)
-	Anew.Mul(tmp, T)
+	if err := lu.SolveTo(Anew, false, AT); err != nil {
+		return nil, fmt.Errorf("controlsys: solve failed: %w", ErrSingularTransform)
+	}
 
+	// Bnew = T⁻¹*B: solve T*Bnew = B
 	Bnew := mat.NewDense(n, m, nil)
-	Bnew.Mul(Tinv, sys.B)
+	if err := lu.SolveTo(Bnew, false, sys.B); err != nil {
+		return nil, fmt.Errorf("controlsys: solve failed: %w", ErrSingularTransform)
+	}
 
 	Cnew := mat.NewDense(p, n, nil)
 	Cnew.Mul(sys.C, T)
@@ -157,6 +169,107 @@ func canonModal(sys *System) (*CanonResult, error) {
 	propagateIONames(newSys, sys)
 
 	return &CanonResult{Sys: newSys, T: T}, nil
+}
+
+// canonModalSchur computes a quasi-modal form via ordered real Schur decomposition.
+// Numerically stable even for near-repeated eigenvalues.
+// A_modal is quasi-upper-triangular: 1×1 blocks for real eigenvalues,
+// 2×2 blocks for complex pairs, ordered by eigenvalue magnitude.
+func canonModalSchur(sys *System, n, m, p int) (*CanonResult, error) {
+	aRaw := sys.A.RawMatrix()
+
+	t := make([]float64, n*n)
+	copyStrided(t, n, aRaw.Data, aRaw.Stride, n, n)
+
+	z := make([]float64, n*n)
+	wr := make([]float64, n)
+	wi := make([]float64, n)
+	bwork := make([]bool, n)
+
+	workQuery := make([]float64, 1)
+	impl.Dgees(lapack.SchurHess, lapack.SortNone, nil,
+		n, t, n, wr, wi, z, n, workQuery, -1, bwork)
+	lwork := int(workQuery[0])
+	work := make([]float64, lwork)
+
+	_, ok := impl.Dgees(lapack.SchurHess, lapack.SortNone, nil,
+		n, t, n, wr, wi, z, n, work, lwork, bwork)
+	if !ok {
+		return nil, fmt.Errorf("controlsys: Schur decomposition failed: %w", ErrSchurFailed)
+	}
+
+	// Sort Schur blocks by eigenvalue magnitude (ascending)
+	schurSortByMagnitude(t, z, n)
+
+	bRaw := sys.B.RawMatrix()
+	cRaw := sys.C.RawMatrix()
+
+	zGen := blas64.General{Rows: n, Cols: n, Stride: n, Data: z}
+
+	// B_modal = Z' * B
+	bNew := make([]float64, n*m)
+	blas64.Gemm(blas.Trans, blas.NoTrans, 1, zGen,
+		blas64.General{Rows: n, Cols: m, Stride: bRaw.Stride, Data: bRaw.Data},
+		0, blas64.General{Rows: n, Cols: m, Stride: m, Data: bNew})
+
+	// C_modal = C * Z
+	cNew := make([]float64, p*n)
+	blas64.Gemm(blas.NoTrans, blas.NoTrans, 1,
+		blas64.General{Rows: p, Cols: n, Stride: cRaw.Stride, Data: cRaw.Data},
+		zGen,
+		0, blas64.General{Rows: p, Cols: n, Stride: n, Data: cNew})
+
+	Anew := mat.NewDense(n, n, t)
+	Bnew := mat.NewDense(n, m, bNew)
+	Cnew := mat.NewDense(p, n, cNew)
+	Dnew := denseCopy(sys.D)
+
+	newSys, err := newNoCopy(Anew, Bnew, Cnew, Dnew, sys.Dt)
+	if err != nil {
+		return nil, err
+	}
+	propagateIONames(newSys, sys)
+
+	T := mat.NewDense(n, n, z)
+	return &CanonResult{Sys: newSys, T: T}, nil
+}
+
+// schurSortByMagnitude reorders Schur blocks by eigenvalue magnitude (ascending).
+func schurSortByMagnitude(t, z []float64, n int) {
+	trexcWork := make([]float64, n)
+	nPlaced := 0
+	for nPlaced < n {
+		evals := schurEigenvaluesRaw(t, n)
+
+		bestIdx := nPlaced
+		bestMag := cmplx.Abs(evals[nPlaced])
+		i := nPlaced
+		for i < n {
+			blockSize := 1
+			if i+1 < n && t[(i+1)*n+i] != 0 {
+				blockSize = 2
+			}
+			mag := cmplx.Abs(evals[i])
+			if mag < bestMag {
+				bestMag = mag
+				bestIdx = i
+			}
+			i += blockSize
+		}
+
+		if bestIdx != nPlaced {
+			_, _, ok := impl.Dtrexc(lapack.UpdateSchur, n, t, n, z, n, bestIdx, nPlaced, trexcWork)
+			if !ok {
+				break
+			}
+		}
+
+		if nPlaced+1 < n && t[(nPlaced+1)*n+nPlaced] != 0 {
+			nPlaced += 2
+		} else {
+			nPlaced++
+		}
+	}
 }
 
 func canonCompanion(sys *System) (*CanonResult, error) {
@@ -212,22 +325,19 @@ func canonCompanion(sys *System) (*CanonResult, error) {
 		return nil, fmt.Errorf("controlsys: transformation matrix singular: %w", ErrSingularTransform)
 	}
 
-	Tinv := mat.NewDense(n, n, nil)
-	eye := mat.NewDense(n, n, nil)
-	for i := 0; i < n; i++ {
-		eye.Set(i, i, 1)
-	}
-	if err := luT.SolveTo(Tinv, false, eye); err != nil {
-		return nil, fmt.Errorf("controlsys: inversion failed: %w", ErrSingularTransform)
-	}
-
+	// Anew = T⁻¹*A*T: compute AT = A*T, then solve T*Anew = AT
+	AT := mat.NewDense(n, n, nil)
+	AT.Mul(sys.A, T)
 	Anew := mat.NewDense(n, n, nil)
-	tmp := mat.NewDense(n, n, nil)
-	tmp.Mul(Tinv, sys.A)
-	Anew.Mul(tmp, T)
+	if err := luT.SolveTo(Anew, false, AT); err != nil {
+		return nil, fmt.Errorf("controlsys: solve failed: %w", ErrSingularTransform)
+	}
 
+	// Bnew = T⁻¹*B: solve T*Bnew = B
 	Bnew := mat.NewDense(n, 1, nil)
-	Bnew.Mul(Tinv, sys.B)
+	if err := luT.SolveTo(Bnew, false, sys.B); err != nil {
+		return nil, fmt.Errorf("controlsys: solve failed: %w", ErrSingularTransform)
+	}
 
 	Cnew := mat.NewDense(1, n, nil)
 	Cnew.Mul(sys.C, T)
