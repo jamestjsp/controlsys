@@ -149,6 +149,7 @@ func HinfSyn(P *System, nmeas, ncont int) (*HinfSynResult, error) {
 	Ak.Add(Ak, mulDense(ZpL, C2))
 
 	Bk := mulDense(Zp, L)
+	Bk.Scale(-1, Bk)
 	Ck := denseCopy(F)
 	Dk := mat.NewDense(m2, p2, nil)
 
