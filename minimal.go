@@ -105,6 +105,12 @@ func (sys *System) Reduce(opts *ReduceOpts) (*ReduceResult, error) {
 		}
 	}
 
+	if nr == 0 {
+		res := zeroOrderResult(sys, m, p)
+		res.BlockSizes = blockSizes
+		return res, nil
+	}
+
 	ar := extractSubmatrix(A, 0, nr, 0, nr)
 	br := extractSubmatrix(B, 0, nr, 0, m)
 	cr := extractSubmatrix(C, 0, p, 0, nr)

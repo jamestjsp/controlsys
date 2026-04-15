@@ -314,3 +314,126 @@ func TestReducePZero(t *testing.T) {
 		t.Errorf("expected order 0 for p=0, got %d", res.Order)
 	}
 }
+
+// Issue #26: MinimalRealization should not over-reduce a closed-loop PI + plant
+// system to order 0. The pole-zero cancellation of the PI integrator against the
+// plant's unity DC gain leaves a 2-state minimal realization (the closed-loop
+// complex-conjugate pole pair).
+func TestReduceIssue26PIPlantLoop(t *testing.T) {
+	K, tau1, beta := 3.333, 11998.8, 11998.8
+	ctrl, err := New(
+		mat.NewDense(1, 1, []float64{0}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{K / tau1}),
+		mat.NewDense(1, 1, []float64{K * beta / tau1}),
+		0,
+	)
+	if err != nil {
+		t.Fatalf("ctrl: %v", err)
+	}
+	Kp, tauP := 0.56, 66240.0
+	plant, err := New(
+		mat.NewDense(1, 1, []float64{-1.0 / tauP}),
+		mat.NewDense(1, 1, []float64{1.0 / tauP}),
+		mat.NewDense(1, 1, []float64{Kp}),
+		mat.NewDense(1, 1, []float64{0}),
+		0,
+	)
+	if err != nil {
+		t.Fatalf("plant: %v", err)
+	}
+
+	cl, err := Feedback(ctrl, plant, -1)
+	if err != nil {
+		t.Fatalf("Feedback: %v", err)
+	}
+	clToPv, err := Series(cl, plant)
+	if err != nil {
+		t.Fatalf("Series: %v", err)
+	}
+
+	mr, err := clToPv.MinimalRealization()
+	if err != nil {
+		t.Fatalf("MinimalRealization: %v", err)
+	}
+	if mr.Order != 2 {
+		t.Fatalf("Order=%d, want 2", mr.Order)
+	}
+	stable, err := mr.Sys.IsStable()
+	if err != nil {
+		t.Fatalf("IsStable: %v", err)
+	}
+	if !stable {
+		t.Errorf("minimal system should be stable")
+	}
+	dc, err := mr.Sys.DCGain()
+	if err != nil {
+		t.Fatalf("DCGain: %v", err)
+	}
+	if v := dc.At(0, 0); math.Abs(v-1.0) > 1e-6 {
+		t.Errorf("DCGain=%g, want ≈1", v)
+	}
+}
+
+// Issue #26: when the controllability staircase returns ncont=0 (e.g., B=0),
+// Reduce must return a cleanly empty 0-state system, not a bogus 1×1 zero
+// matrix that IsStable then flags as marginally unstable.
+func TestReduceZeroControllableReturnsEmpty(t *testing.T) {
+	A := mat.NewDense(2, 2, []float64{1, 2, 3, 4})
+	B := mat.NewDense(2, 1, []float64{0, 0})
+	C := mat.NewDense(1, 2, []float64{1, 1})
+	D := mat.NewDense(1, 1, []float64{7})
+	sys, err := New(A, B, C, D, 0)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	mr, err := sys.MinimalRealization()
+	if err != nil {
+		t.Fatalf("MinimalRealization: %v", err)
+	}
+	if mr.Order != 0 {
+		t.Fatalf("Order=%d, want 0", mr.Order)
+	}
+	ar, ac := mr.Sys.A.Dims()
+	br, bc := mr.Sys.B.Dims()
+	cr, cc := mr.Sys.C.Dims()
+	if ar != 0 || ac != 0 {
+		t.Errorf("A dims=%dx%d, want 0x0", ar, ac)
+	}
+	if br != 0 || bc != 0 {
+		t.Errorf("B dims=%dx%d, want 0x0", br, bc)
+	}
+	if cr != 0 || cc != 0 {
+		t.Errorf("C dims=%dx%d, want 0x0", cr, cc)
+	}
+	if v := mr.Sys.D.At(0, 0); v != 7 {
+		t.Errorf("D preserved? got %g, want 7", v)
+	}
+}
+
+// Issue #26: same check for the observability branch — when the dual staircase
+// returns nobs=0 (e.g., C=0), Reduce must return a cleanly empty system.
+func TestReduceZeroObservableReturnsEmpty(t *testing.T) {
+	A := mat.NewDense(2, 2, []float64{1, 2, 3, 4})
+	B := mat.NewDense(2, 1, []float64{1, 1})
+	C := mat.NewDense(1, 2, []float64{0, 0})
+	D := mat.NewDense(1, 1, []float64{9})
+	sys, err := New(A, B, C, D, 0)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	mr, err := sys.MinimalRealization()
+	if err != nil {
+		t.Fatalf("MinimalRealization: %v", err)
+	}
+	if mr.Order != 0 {
+		t.Fatalf("Order=%d, want 0", mr.Order)
+	}
+	ar, ac := mr.Sys.A.Dims()
+	if ar != 0 || ac != 0 {
+		t.Errorf("A dims=%dx%d, want 0x0", ar, ac)
+	}
+	if v := mr.Sys.D.At(0, 0); v != 9 {
+		t.Errorf("D preserved? got %g, want 9", v)
+	}
+}
