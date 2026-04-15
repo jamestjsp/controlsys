@@ -155,6 +155,9 @@ func invertSmall(m *mat.Dense, n int) (*mat.Dense, error) {
 }
 
 func extractBlock(m *mat.Dense, r0, c0, rows, cols int) *mat.Dense {
+	if rows == 0 && cols == 0 {
+		return &mat.Dense{}
+	}
 	if rows == 0 || cols == 0 {
 		return mat.NewDense(max(rows, 1), max(cols, 1), nil)
 	}

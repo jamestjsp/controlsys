@@ -61,6 +61,23 @@ func matEqual(a, b *mat.Dense, tol float64) bool {
 	return true
 }
 
+func TestExtractBlockZeroDim(t *testing.T) {
+	M := mat.NewDense(3, 3, []float64{
+		1, 2, 3,
+		4, 5, 6,
+		7, 8, 9,
+	})
+	blk := extractBlock(M, 0, 0, 0, 0)
+	r, c := blk.Dims()
+	if r != 0 || c != 0 {
+		t.Fatalf("extractBlock(0,0,0,0) dims = %dx%d, want 0x0", r, c)
+	}
+
+	blk = extractBlock(M, 1, 1, 2, 2)
+	want := mat.NewDense(2, 2, []float64{5, 6, 8, 9})
+	assertMatClose(t, "2x2 block", blk, want, 0)
+}
+
 func TestLUNearSingular(t *testing.T) {
 	wellCond := mat.NewDense(2, 2, []float64{
 		2, 0,
