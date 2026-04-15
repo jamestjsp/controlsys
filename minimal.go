@@ -216,11 +216,16 @@ func reverseCols(m *mat.Dense, n int) {
 	}
 }
 
+// equalize balances A by a diagonal similarity D such that A → D^{-1} A D,
+// B → D^{-1} B, C → C D, following LAPACK DGEBAL with the SLICOT TB01ID
+// extension that includes B rows and C columns in the row/column 1-norms.
 func equalize(A, B, C *mat.Dense, n, m, p int) {
 	const sclfac = 10.0
 	const factor = 0.95
 	sfmin1 := math.SmallestNonzeroFloat64 / eps()
 	sfmax1 := 1.0 / sfmin1
+	sfmin2 := sfmin1 * sclfac
+	sfmax2 := 1.0 / sfmin2
 
 	scale := make([]float64, n)
 	for i := range scale {
@@ -236,21 +241,39 @@ func equalize(A, B, C *mat.Dense, n, m, p int) {
 		for i := 0; i < n; i++ {
 			c := 0.0
 			r := 0.0
+			ca := 0.0
+			ra := 0.0
 
 			aRow := aRaw.Data[i*aRaw.Stride:]
 			for j := 0; j < n; j++ {
 				if j == i {
 					continue
 				}
-				c += math.Abs(aRaw.Data[j*aRaw.Stride+i])
-				r += math.Abs(aRow[j])
+				v := math.Abs(aRaw.Data[j*aRaw.Stride+i])
+				c += v
+				if v > ca {
+					ca = v
+				}
+				v = math.Abs(aRow[j])
+				r += v
+				if v > ra {
+					ra = v
+				}
 			}
 			bRow := bRaw.Data[i*bRaw.Stride:]
 			for j := 0; j < m; j++ {
-				r += math.Abs(bRow[j])
+				v := math.Abs(bRow[j])
+				r += v
+				if v > ra {
+					ra = v
+				}
 			}
 			for j := 0; j < p; j++ {
-				c += math.Abs(cRaw.Data[j*cRaw.Stride+i])
+				v := math.Abs(cRaw.Data[j*cRaw.Stride+i])
+				c += v
+				if v > ca {
+					ca = v
+				}
 			}
 
 			if c == 0 || r == 0 {
@@ -261,42 +284,50 @@ func equalize(A, B, C *mat.Dense, n, m, p int) {
 			f := 1.0
 			s := c + r
 
-			for c < g {
-				if f*scale[i] > sfmax1/sclfac {
-					break
-				}
+			for c < g && max(f, c, ca) < sfmax2 && min(r, g, ra) > sfmin2 {
 				f *= sclfac
-				c *= sclfac * sclfac
+				c *= sclfac
+				ca *= sclfac
+				g /= sclfac
+				r /= sclfac
+				ra /= sclfac
 			}
 
-			g = r * sclfac
-			for c > g {
-				if scale[i]*f <= sfmin1*sclfac {
-					break
-				}
+			g = c / sclfac
+			for g >= r && max(r, ra) < sfmax2 && min(f, c, g, ca) > sfmin2 {
 				f /= sclfac
-				c /= sclfac * sclfac
+				c /= sclfac
+				g /= sclfac
+				ca /= sclfac
+				r *= sclfac
+				ra *= sclfac
 			}
 
-			if (c+r)/f >= factor*s {
+			if c+r >= factor*s {
+				continue
+			}
+			if f < 1 && scale[i] < 1 && f*scale[i] <= sfmin1 {
+				continue
+			}
+			if f > 1 && scale[i] > 1 && scale[i] >= sfmax1/f {
 				continue
 			}
 
 			scale[i] *= f
 			noconv = true
 
-			for j := 0; j < n; j++ {
-				aRow[j] *= f
-			}
-			for j := 0; j < m; j++ {
-				bRow[j] *= f
-			}
 			fi := 1.0 / f
 			for j := 0; j < n; j++ {
-				aRaw.Data[j*aRaw.Stride+i] *= fi
+				aRow[j] *= fi
+			}
+			for j := 0; j < m; j++ {
+				bRow[j] *= fi
+			}
+			for j := 0; j < n; j++ {
+				aRaw.Data[j*aRaw.Stride+i] *= f
 			}
 			for j := 0; j < p; j++ {
-				cRaw.Data[j*cRaw.Stride+i] *= fi
+				cRaw.Data[j*cRaw.Stride+i] *= f
 			}
 		}
 		if !noconv {

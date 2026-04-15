@@ -2,6 +2,8 @@ package controlsys
 
 import (
 	"math"
+	"math/cmplx"
+	"sort"
 	"testing"
 
 	"gonum.org/v1/gonum/mat"
@@ -409,6 +411,152 @@ func TestReduceZeroControllableReturnsEmpty(t *testing.T) {
 	if v := mr.Sys.D.At(0, 0); v != 7 {
 		t.Errorf("D preserved? got %g, want 7", v)
 	}
+}
+
+// Issue #27: equalize() must match LAPACK DGEBAL + SLICOT TB01ID semantics.
+// A deliberately imbalanced 2×2 system should have its row/col 1-norms
+// brought into balance with finite entries and identical A-eigenvalues
+// (diagonal similarity is a similarity transform).
+func TestEqualizeImbalanced2x2(t *testing.T) {
+	A := mat.NewDense(2, 2, []float64{1, 1e10, 1e-10, 2})
+	B := mat.NewDense(2, 1, []float64{1e10, 1e-10})
+	C := mat.NewDense(1, 2, []float64{1e-10, 1e10})
+
+	before := eigSorted(A)
+
+	Aw := mat.DenseCopyOf(A)
+	Bw := mat.DenseCopyOf(B)
+	Cw := mat.DenseCopyOf(C)
+	equalize(Aw, Bw, Cw, 2, 1, 1)
+
+	assertAllFinite(t, "A", Aw)
+	assertAllFinite(t, "B", Bw)
+	assertAllFinite(t, "C", Cw)
+
+	after := eigSorted(Aw)
+	for i := range before {
+		diff := cmplx.Abs(before[i] - after[i])
+		scale := math.Max(1, cmplx.Abs(before[i]))
+		if diff/scale > 1e-9 {
+			t.Errorf("eig[%d] changed: before=%v after=%v (rel diff %.2e)",
+				i, before[i], after[i], diff/scale)
+		}
+	}
+
+	beforeRatio := normRatio(A, B, C)
+	afterRatio := normRatio(Aw, Bw, Cw)
+	if afterRatio >= beforeRatio {
+		t.Errorf("balance did not improve: before=%.2e after=%.2e",
+			beforeRatio, afterRatio)
+	}
+}
+
+// Issue #27: equalize with the issue #26 closed-loop should not diverge.
+// Before the fix, one pass made A[0,1]=-Inf and B blew up to 1e+186.
+func TestEqualizeIssue26SystemFinite(t *testing.T) {
+	K, tau1, beta := 3.333, 11998.8, 11998.8
+	ctrl, _ := New(
+		mat.NewDense(1, 1, []float64{0}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{K / tau1}),
+		mat.NewDense(1, 1, []float64{K * beta / tau1}),
+		0,
+	)
+	Kp, tauP := 0.56, 66240.0
+	plant, _ := New(
+		mat.NewDense(1, 1, []float64{-1.0 / tauP}),
+		mat.NewDense(1, 1, []float64{1.0 / tauP}),
+		mat.NewDense(1, 1, []float64{Kp}),
+		mat.NewDense(1, 1, []float64{0}),
+		0,
+	)
+	cl, _ := Feedback(ctrl, plant, -1)
+	clToPv, _ := Series(cl, plant)
+
+	mr, err := clToPv.Reduce(&ReduceOpts{Mode: ReduceAll, Equalize: true})
+	if err != nil {
+		t.Fatalf("Reduce(Equalize): %v", err)
+	}
+
+	n, _, _ := mr.Sys.Dims()
+	if n > 0 {
+		assertAllFinite(t, "A", mr.Sys.A)
+		assertAllFinite(t, "B", mr.Sys.B)
+		assertAllFinite(t, "C", mr.Sys.C)
+		stable, _ := mr.Sys.IsStable()
+		if !stable {
+			t.Errorf("balanced minimal system should be stable")
+		}
+	}
+}
+
+func assertAllFinite(t *testing.T, name string, m *mat.Dense) {
+	t.Helper()
+	r, c := m.Dims()
+	for i := 0; i < r; i++ {
+		for j := 0; j < c; j++ {
+			v := m.At(i, j)
+			if math.IsNaN(v) || math.IsInf(v, 0) {
+				t.Errorf("%s[%d,%d] = %v (non-finite)", name, i, j, v)
+			}
+		}
+	}
+}
+
+func eigSorted(A *mat.Dense) []complex128 {
+	var eig mat.Eigen
+	ok := eig.Factorize(A, mat.EigenNone)
+	if !ok {
+		return nil
+	}
+	vals := eig.Values(nil)
+	sort.Slice(vals, func(i, j int) bool {
+		if real(vals[i]) != real(vals[j]) {
+			return real(vals[i]) < real(vals[j])
+		}
+		return imag(vals[i]) < imag(vals[j])
+	})
+	return vals
+}
+
+func normRatio(A, B, C *mat.Dense) float64 {
+	n, _ := A.Dims()
+	_, m := B.Dims()
+	p, _ := C.Dims()
+	maxNorm := 0.0
+	minNorm := math.Inf(1)
+	for i := 0; i < n; i++ {
+		r, c := 0.0, 0.0
+		for j := 0; j < n; j++ {
+			if j == i {
+				continue
+			}
+			r += math.Abs(A.At(i, j))
+			c += math.Abs(A.At(j, i))
+		}
+		for j := 0; j < m; j++ {
+			r += math.Abs(B.At(i, j))
+		}
+		for j := 0; j < p; j++ {
+			c += math.Abs(C.At(j, i))
+		}
+		if r > maxNorm {
+			maxNorm = r
+		}
+		if c > maxNorm {
+			maxNorm = c
+		}
+		if r > 0 && r < minNorm {
+			minNorm = r
+		}
+		if c > 0 && c < minNorm {
+			minNorm = c
+		}
+	}
+	if minNorm == 0 || math.IsInf(minNorm, 1) {
+		return math.Inf(1)
+	}
+	return maxNorm / minNorm
 }
 
 // Issue #26: same check for the observability branch — when the dual staircase
