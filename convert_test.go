@@ -2113,3 +2113,196 @@ func TestDiscretizeImpulseAugmented_SISO(t *testing.T) {
 		t.Fatal("expected InternalDelay")
 	}
 }
+
+func TestD2C_WrongDomain(t *testing.T) {
+	sys := makeTestSystem()
+	if _, err := sys.D2C("zoh"); err == nil {
+		t.Fatal("expected ErrWrongDomain for continuous input")
+	}
+	if _, err := sys.D2C("tustin"); err == nil {
+		t.Fatal("expected ErrWrongDomain for continuous input")
+	}
+}
+
+func TestD2C_UnknownMethod(t *testing.T) {
+	disc, err := makeTestSystem().Discretize(0.05)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := disc.D2C("bogus"); err == nil {
+		t.Fatal("expected error for unknown method")
+	}
+}
+
+func TestD2C_Tustin_Roundtrip(t *testing.T) {
+	orig := makeTestSystem()
+	dt := 0.02
+
+	disc, err := orig.Discretize(dt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec, err := disc.D2C("tustin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !rec.IsContinuous() {
+		t.Fatal("expected continuous")
+	}
+	tol := 1e-10
+	assertMatClose(t, "A", rec.A, orig.A, tol)
+	assertMatClose(t, "B", rec.B, orig.B, tol)
+	assertMatClose(t, "C", rec.C, orig.C, tol)
+	assertMatClose(t, "D", rec.D, orig.D, tol)
+}
+
+func TestD2C_ZOH_Roundtrip(t *testing.T) {
+	orig := makeTestSystem()
+	dt := 0.05
+
+	disc, err := orig.DiscretizeZOH(dt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec, err := disc.D2C("zoh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !rec.IsContinuous() {
+		t.Fatal("expected continuous")
+	}
+	tol := 1e-9
+	assertMatClose(t, "A", rec.A, orig.A, tol)
+	assertMatClose(t, "B", rec.B, orig.B, tol)
+	assertMatClose(t, "C", rec.C, orig.C, tol)
+	assertMatClose(t, "D", rec.D, orig.D, tol)
+}
+
+func TestD2C_ZOH_DefaultMethod(t *testing.T) {
+	orig := makeTestSystem()
+	dt := 0.05
+	disc, err := orig.DiscretizeZOH(dt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recDefault, err := disc.D2C("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	recZOH, err := disc.D2C("zoh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertMatClose(t, "A default==zoh", recDefault.A, recZOH.A, 1e-14)
+	assertMatClose(t, "B default==zoh", recDefault.B, recZOH.B, 1e-14)
+}
+
+func TestD2C_ZOH_NegativeEigenvalue(t *testing.T) {
+	A := mat.NewDense(1, 1, []float64{-0.5})
+	B := mat.NewDense(1, 1, []float64{1})
+	C := mat.NewDense(1, 1, []float64{1})
+	D := mat.NewDense(1, 1, []float64{0})
+	sys, _ := New(A, B, C, D, 0.1)
+
+	_, err := sys.D2C("zoh")
+	if err == nil {
+		t.Fatal("expected ErrSingularTransform for negative-real eigenvalue")
+	}
+}
+
+func TestD2C_ZOH_EigenvalueAtOne(t *testing.T) {
+	A := mat.NewDense(1, 1, []float64{1.0})
+	B := mat.NewDense(1, 1, []float64{0.1})
+	C := mat.NewDense(1, 1, []float64{1})
+	D := mat.NewDense(1, 1, []float64{0})
+	sys, _ := New(A, B, C, D, 0.1)
+
+	_, err := sys.D2C("zoh")
+	if err == nil {
+		t.Fatal("expected ErrSingularTransform for eigenvalue at 1 (A_d-I singular)")
+	}
+}
+
+func TestD2C_ZOH_MIMO_Roundtrip(t *testing.T) {
+	A := mat.NewDense(3, 3, []float64{
+		-1, 0.5, 0,
+		0, -2, 1,
+		0, 0, -3,
+	})
+	B := mat.NewDense(3, 2, []float64{
+		1, 0,
+		0, 1,
+		1, 1,
+	})
+	C := mat.NewDense(2, 3, []float64{
+		1, 0, 0,
+		0, 1, 0,
+	})
+	D := mat.NewDense(2, 2, []float64{
+		0, 0,
+		0, 0,
+	})
+	orig, err := New(A, B, C, D, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dt := 0.1
+	disc, err := orig.DiscretizeZOH(dt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec, err := disc.D2C("zoh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tol := 1e-8
+	assertMatClose(t, "A", rec.A, orig.A, tol)
+	assertMatClose(t, "B", rec.B, orig.B, tol)
+}
+
+func TestD2C_ZOH_N0_GainOnly(t *testing.T) {
+	D := mat.NewDense(2, 3, []float64{1, 2, 3, 4, 5, 6})
+	disc := &System{
+		A:  &mat.Dense{},
+		B:  &mat.Dense{},
+		C:  &mat.Dense{},
+		D:  D,
+		Dt: 0.1,
+	}
+	rec, err := disc.D2C("zoh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !rec.IsContinuous() {
+		t.Fatal("expected continuous")
+	}
+	assertMatClose(t, "D", rec.D, D, 0)
+}
+
+func TestD2C_InputDelayRoundtrip(t *testing.T) {
+	A := mat.NewDense(1, 1, []float64{-1})
+	B := mat.NewDense(1, 1, []float64{1})
+	C := mat.NewDense(1, 1, []float64{1})
+	D := mat.NewDense(1, 1, []float64{0})
+	orig, err := New(A, B, C, D, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	orig.InputDelay = []float64{0.2}
+
+	dt := 0.1
+	disc, err := orig.DiscretizeZOH(dt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(disc.InputDelay) != 1 || disc.InputDelay[0] != 2 {
+		t.Fatalf("discrete input delay = %v, want [2]", disc.InputDelay)
+	}
+	rec, err := disc.D2C("zoh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rec.InputDelay) != 1 || math.Abs(rec.InputDelay[0]-0.2) > 1e-12 {
+		t.Fatalf("continuous input delay = %v, want [0.2]", rec.InputDelay)
+	}
+}

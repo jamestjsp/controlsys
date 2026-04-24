@@ -1414,6 +1414,109 @@ func matchedGainFallback(num, den Poly, discZeros, discPoles []complex128, dt fl
 	return real(contVal / discVal), nil
 }
 
+// D2C converts a discrete-time system to continuous time.
+//
+// Supported methods:
+//   - "tustin": bilinear (trapezoidal) inverse — equivalent to Undiscretize.
+//     Always succeeds for non-pathological systems; exact inverse of Discretize.
+//   - "zoh": zero-order-hold inverse via matrix logarithm.
+//     A_c = log(A_d)/dt,  B_c = (A_d - I)⁻¹·A_c·B_d.
+//     Requires A_d diagonalizable with no eigenvalue on the non-positive real
+//     axis and A_d − I non-singular (no eigenvalue exactly at 1).
+//
+// Delay fields are converted back to continuous (τ_c = τ_d · Dt).
+func (sys *System) D2C(method string) (*System, error) {
+	if sys.IsContinuous() {
+		return nil, fmt.Errorf("D2C: system already continuous: %w", ErrWrongDomain)
+	}
+	switch method {
+	case "", "zoh":
+		return sys.d2cZOH()
+	case "tustin":
+		return sys.Undiscretize()
+	default:
+		return nil, fmt.Errorf("D2C: unknown method %q (supported: \"tustin\", \"zoh\")", method)
+	}
+}
+
+func (sys *System) d2cZOH() (*System, error) {
+	if sys.HasInternalDelay() {
+		return nil, fmt.Errorf("D2C: zoh with internal delays not supported: %w", ErrFeedbackDelay)
+	}
+
+	n, m, _ := sys.Dims()
+	dt := sys.Dt
+
+	C := denseCopy(sys.C)
+	D := denseCopy(sys.D)
+
+	if n == 0 {
+		out := &System{
+			A:  newDense(0, 0),
+			B:  denseCopy(sys.B),
+			C:  C,
+			D:  D,
+			Dt: 0,
+		}
+		d2cPropagateDelays(out, sys, dt)
+		propagateNames(out, sys)
+		return out, nil
+	}
+
+	Alog, err := matLog(sys.A)
+	if err != nil {
+		return nil, fmt.Errorf("D2C zoh: %w", err)
+	}
+	Ac := mat.NewDense(n, n, nil)
+	Ac.Scale(1.0/dt, Alog)
+
+	var Bc *mat.Dense
+	if m > 0 {
+		AminusI := mat.NewDense(n, n, nil)
+		AminusI.Copy(sys.A)
+		raw := AminusI.RawMatrix()
+		for i := 0; i < n; i++ {
+			raw.Data[i*raw.Stride+i] -= 1
+		}
+		var lu mat.LU
+		lu.Factorize(AminusI)
+		if luNearSingular(&lu) {
+			return nil, fmt.Errorf("D2C zoh: (A_d - I) singular (A_d has eigenvalue 1): %w", ErrSingularTransform)
+		}
+		AcB := mat.NewDense(n, m, nil)
+		AcB.Mul(Ac, sys.B)
+		Bc = mat.NewDense(n, m, nil)
+		if err := lu.SolveTo(Bc, false, AcB); err != nil {
+			return nil, fmt.Errorf("D2C zoh: LU solve for B_c failed: %w", ErrSingularTransform)
+		}
+	} else {
+		Bc = denseCopy(sys.B)
+	}
+
+	out := &System{A: Ac, B: Bc, C: C, D: D, Dt: 0}
+	d2cPropagateDelays(out, sys, dt)
+	propagateNames(out, sys)
+	return out, nil
+}
+
+func d2cPropagateDelays(out, sys *System, dt float64) {
+	if sys.Delay != nil {
+		out.Delay = convertDelayToContinuous(sys.Delay, dt)
+	}
+	if sys.InputDelay != nil {
+		out.InputDelay = make([]float64, len(sys.InputDelay))
+		for i, d := range sys.InputDelay {
+			out.InputDelay[i] = d * dt
+		}
+	}
+	if sys.OutputDelay != nil {
+		out.OutputDelay = make([]float64, len(sys.OutputDelay))
+		for i, d := range sys.OutputDelay {
+			out.OutputDelay[i] = d * dt
+		}
+	}
+}
+
 func (sys *System) D2D(newDt float64, opts C2DOptions) (*System, error) {
 	if sys.IsContinuous() {
 		return nil, fmt.Errorf("D2D: system is continuous: %w", ErrWrongDomain)
