@@ -14,6 +14,10 @@ import (
 // Returns ErrSingularTransform if A has an eigenvalue on the branch cut
 // (real, ≤ 0) or if the eigenvector matrix is singular/ill-conditioned
 // (defective / near-defective A).
+//
+// Implementation: skips explicit V⁻¹ by solving V^T·L^T = (V·D)^T in the
+// 2n×2n real-augmented representation of the complex system, then transposes.
+// One LU factorization + one back-solve with n complex RHS.
 func matLog(A *mat.Dense) (*mat.Dense, error) {
 	n, c := A.Dims()
 	if n != c {
@@ -29,6 +33,7 @@ func matLog(A *mat.Dense) (*mat.Dense, error) {
 	}
 	vals := eig.Values(nil)
 
+	logVals := make([]complex128, n)
 	for i, v := range vals {
 		if imag(v) == 0 && real(v) <= 0 {
 			return nil, fmt.Errorf("matLog: eigenvalue[%d]=%v on non-positive real axis (branch cut): %w",
@@ -37,66 +42,89 @@ func matLog(A *mat.Dense) (*mat.Dense, error) {
 		if cmplx.Abs(v) == 0 {
 			return nil, fmt.Errorf("matLog: eigenvalue[%d]=0: %w", i, ErrSingularTransform)
 		}
+		logVals[i] = cmplx.Log(v)
 	}
 
 	var vecC mat.CDense
 	eig.VectorsTo(&vecC)
+	vRaw := vecC.RawCMatrix()
 
-	V := mat.NewCDense(n, n, nil)
+	// Build V^T_aug = [[Re(V)^T, -Im(V)^T], [Im(V)^T, Re(V)^T]]  (2n × 2n).
+	// Build Y^T_aug where Y = V·D (D=diag(logVals)); (Y^T)_{i,j} = d_i · V_{j,i}.
+	vTaug := mat.NewDense(2*n, 2*n, nil)
+	yTaug := mat.NewDense(2*n, n, nil)
+	vaRaw := vTaug.RawMatrix()
+	yaRaw := yTaug.RawMatrix()
 	for i := 0; i < n; i++ {
+		vRow := vRaw.Data[i*vRaw.Stride : i*vRaw.Stride+n]
 		for j := 0; j < n; j++ {
-			V.Set(i, j, vecC.At(i, j))
+			v := vRow[j]
+			a := real(v)
+			b := imag(v)
+			// V^T_aug = [[Re(V)^T, -Im(V)^T], [Im(V)^T, Re(V)^T]]; V_{i,j} lands at (j,i).
+			vaRaw.Data[j*vaRaw.Stride+i] = a
+			vaRaw.Data[j*vaRaw.Stride+(i+n)] = -b
+			vaRaw.Data[(j+n)*vaRaw.Stride+i] = b
+			vaRaw.Data[(j+n)*vaRaw.Stride+(i+n)] = a
+		}
+	}
+	// Y^T_aug: for row i of Y^T (complex), value at col j is d_i · V_{j,i}.
+	for i := 0; i < n; i++ {
+		d := logVals[i]
+		dr, di := real(d), imag(d)
+		reRow := yaRaw.Data[i*yaRaw.Stride : i*yaRaw.Stride+n]
+		imRow := yaRaw.Data[(i+n)*yaRaw.Stride : (i+n)*yaRaw.Stride+n]
+		for j := 0; j < n; j++ {
+			v := vRaw.Data[j*vRaw.Stride+i]
+			a := real(v)
+			b := imag(v)
+			reRow[j] = dr*a - di*b
+			imRow[j] = di*a + dr*b
 		}
 	}
 
-	Vinv, err := cinvert(V, n)
-	if err != nil {
+	var lu mat.LU
+	lu.Factorize(vTaug)
+	if luNearSingular(&lu) {
 		return nil, fmt.Errorf("matLog: eigenvector matrix singular (defective A): %w", ErrSingularTransform)
 	}
 
-	cond := cmatNorm(V, n) * cmatNorm(Vinv, n)
-	if cond > 1e12 || math.IsNaN(cond) || math.IsInf(cond, 0) {
-		return nil, fmt.Errorf("matLog: eigenvector matrix ill-conditioned (cond=%.2e), A may be defective: %w",
-			cond, ErrSingularTransform)
+	xAug := mat.NewDense(2*n, n, nil)
+	if err := lu.SolveTo(xAug, false, yTaug); err != nil {
+		return nil, fmt.Errorf("matLog: LU solve failed: %w", ErrSingularTransform)
 	}
 
-	DVinv := mat.NewCDense(n, n, nil)
-	for i := 0; i < n; i++ {
-		lv := cmplx.Log(vals[i])
-		for j := 0; j < n; j++ {
-			DVinv.Set(i, j, lv*Vinv.At(i, j))
-		}
-	}
-
-	L := mat.NewCDense(n, n, nil)
-	for i := 0; i < n; i++ {
-		for j := 0; j < n; j++ {
-			var s complex128
-			for k := 0; k < n; k++ {
-				s += V.At(i, k) * DVinv.At(k, j)
-			}
-			L.Set(i, j, s)
-		}
-	}
-
+	// xAug represents L^T in complex form: top half = Re(L^T), bottom half = Im(L^T).
+	// Take the real part of L = (Re(L^T))^T and bound the residual imaginary part.
+	xRaw := xAug.RawMatrix()
 	result := mat.NewDense(n, n, nil)
+	resRaw := result.RawMatrix()
 	maxIm, maxRe := 0.0, 0.0
 	for i := 0; i < n; i++ {
+		reRow := xRaw.Data[i*xRaw.Stride : i*xRaw.Stride+n]
+		imRow := xRaw.Data[(i+n)*xRaw.Stride : (i+n)*xRaw.Stride+n]
 		for j := 0; j < n; j++ {
-			re := real(L.At(i, j))
-			im := math.Abs(imag(L.At(i, j)))
+			re := reRow[j]
+			im := imRow[j]
+			// (L^T)_{i,j} = X_{i,j}  ⇒  L_{j,i} = X_{i,j}; set result[j,i].
+			resRaw.Data[j*resRaw.Stride+i] = re
+			if im < 0 {
+				im = -im
+			}
+			if re > maxRe {
+				maxRe = re
+			} else if -re > maxRe {
+				maxRe = -re
+			}
 			if im > maxIm {
 				maxIm = im
 			}
-			if math.Abs(re) > maxRe {
-				maxRe = math.Abs(re)
-			}
-			result.Set(i, j, re)
 		}
 	}
+
 	tol := 1e-8 * math.Max(1, maxRe)
 	if maxIm > tol {
-		return nil, fmt.Errorf("matLog: residual imaginary part %.3e exceeds tolerance %.3e (unpaired complex eigenvalues): %w",
+		return nil, fmt.Errorf("matLog: residual imaginary part %.3e exceeds tolerance %.3e (defective or near-defective A): %w",
 			maxIm, tol, ErrSingularTransform)
 	}
 	return result, nil

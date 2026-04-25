@@ -1296,3 +1296,79 @@ func BenchmarkLFT_Large(b *testing.B) {
 		LFT(M, Delta, 6, 6)
 	}
 }
+
+func benchD2CSystem(n, m int, dt float64) *System {
+	A := mat.NewDense(n, n, nil)
+	for i := 0; i < n; i++ {
+		A.Set(i, i, -float64(i+1)*0.5)
+		if i > 0 {
+			A.Set(i, i-1, 0.3)
+		}
+	}
+	B := mat.NewDense(n, m, nil)
+	for j := 0; j < m && j < n; j++ {
+		B.Set(j, j, 1)
+	}
+	C := mat.NewDense(1, n, nil)
+	C.Set(0, 0, 1)
+	D := mat.NewDense(1, m, nil)
+	cont, _ := New(A, B, C, D, 0)
+	disc, _ := cont.DiscretizeZOH(dt)
+	return disc
+}
+
+func BenchmarkD2C_ZOH_N2(b *testing.B) {
+	sys := benchD2CSystem(2, 1, 0.05)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		sys.D2C("zoh")
+	}
+}
+
+func BenchmarkD2C_ZOH_N5(b *testing.B) {
+	sys := benchD2CSystem(5, 2, 0.05)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		sys.D2C("zoh")
+	}
+}
+
+func BenchmarkD2C_ZOH_N20(b *testing.B) {
+	sys := benchD2CSystem(20, 5, 0.01)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		sys.D2C("zoh")
+	}
+}
+
+func BenchmarkD2C_ZOH_N50(b *testing.B) {
+	sys := benchD2CSystem(50, 10, 0.01)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		sys.D2C("zoh")
+	}
+}
+
+func BenchmarkD2C_Tustin_N20(b *testing.B) {
+	sys := benchD2CSystem(20, 5, 0.01)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		sys.D2C("tustin")
+	}
+}
+
+func BenchmarkMatLog_N20(b *testing.B) {
+	sys := benchD2CSystem(20, 1, 0.01)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		matLog(sys.A)
+	}
+}
+
+func BenchmarkMatLog_N50(b *testing.B) {
+	sys := benchD2CSystem(50, 1, 0.01)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		matLog(sys.A)
+	}
+}
