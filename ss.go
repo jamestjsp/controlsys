@@ -66,6 +66,58 @@ func (sys *System) Dims() (n, m, p int) {
 func (sys *System) IsContinuous() bool { return sys.Dt == 0 }
 func (sys *System) IsDiscrete() bool   { return sys.Dt > 0 }
 
+func (sys *System) Validate() error {
+	if sys == nil {
+		return fmt.Errorf("system is nil: %w", ErrDimensionMismatch)
+	}
+	A, B, C, D := nonEmptyDense(sys.A), nonEmptyDense(sys.B), nonEmptyDense(sys.C), nonEmptyDense(sys.D)
+	n, m, p, err := validateDims(A, B, C, D, sys.Dt)
+	if err != nil {
+		return err
+	}
+	if sys.E != nil {
+		er, ec := sys.E.Dims()
+		if er != n || ec != n {
+			return fmt.Errorf("E %dx%d != %dx%d: %w", er, ec, n, n, ErrDimensionMismatch)
+		}
+	}
+	if err := validateDelay(sys.Delay, p, m, sys.Dt); err != nil {
+		return err
+	}
+	if err := validateSliceDelay(sys.InputDelay, m, sys.Dt); err != nil {
+		return err
+	}
+	if err := validateSliceDelay(sys.OutputDelay, p, sys.Dt); err != nil {
+		return err
+	}
+	if sys.LFT != nil {
+		N := len(sys.LFT.Tau)
+		if err := validateSliceDelay(sys.LFT.Tau, N, sys.Dt); err != nil {
+			return err
+		}
+		for _, v := range sys.LFT.Tau {
+			if v == 0 {
+				return ErrZeroInternalDelay
+			}
+		}
+		if err := validateLFTDims(n, m, p, N, sys.LFT.B2, sys.LFT.C2, sys.LFT.D12, sys.LFT.D21, sys.LFT.D22); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func nonEmptyDense(m *mat.Dense) *mat.Dense {
+	if m == nil {
+		return nil
+	}
+	r, c := m.Dims()
+	if r == 0 || c == 0 {
+		return nil
+	}
+	return m
+}
+
 func (sys *System) Poles() ([]complex128, error) {
 	n, _, _ := sys.Dims()
 	if n == 0 {

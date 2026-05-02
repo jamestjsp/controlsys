@@ -25,6 +25,9 @@ func (sys *System) Simulate(u *mat.Dense, x0 *mat.VecDense, opts *SimulateOpts) 
 	if sys.IsContinuous() {
 		return nil, ErrWrongDomain
 	}
+	if err := sys.validateSimulateInputs(u, x0, opts); err != nil {
+		return nil, err
+	}
 
 	if sys.HasInternalDelay() {
 		hasIODelay := sys.Delay != nil || sys.InputDelay != nil || sys.OutputDelay != nil
@@ -43,6 +46,43 @@ func (sys *System) Simulate(u *mat.Dense, x0 *mat.VecDense, opts *SimulateOpts) 
 	}
 
 	return sys.simulateNoDelay(u, x0, opts)
+}
+
+func (sys *System) validateSimulateInputs(u *mat.Dense, x0 *mat.VecDense, opts *SimulateOpts) error {
+	if err := sys.Validate(); err != nil {
+		return err
+	}
+	n, m, p := sys.Dims()
+	steps := 0
+	if u != nil {
+		ur, uc := u.Dims()
+		if ur != m {
+			return fmt.Errorf("Simulate: input rows %d != system inputs %d: %w", ur, m, ErrDimensionMismatch)
+		}
+		steps = uc
+	}
+	if x0 != nil && x0.Len() != n {
+		return fmt.Errorf("Simulate: x0 length %d != state dimension %d: %w", x0.Len(), n, ErrDimensionMismatch)
+	}
+	if opts == nil {
+		return nil
+	}
+	if opts.Workspace != nil && opts.Workspace.Len() != n {
+		return fmt.Errorf("Simulate: workspace length %d != state dimension %d: %w", opts.Workspace.Len(), n, ErrDimensionMismatch)
+	}
+	if opts.yBuf != nil {
+		yr, yc := opts.yBuf.Dims()
+		if yr != p || yc != steps {
+			return fmt.Errorf("Simulate: yBuf %dx%d != %dx%d: %w", yr, yc, p, steps, ErrDimensionMismatch)
+		}
+	}
+	if opts.duBuf != nil {
+		dr, dc := opts.duBuf.Dims()
+		if dr != p || dc != steps {
+			return fmt.Errorf("Simulate: duBuf %dx%d != %dx%d: %w", dr, dc, p, steps, ErrDimensionMismatch)
+		}
+	}
+	return nil
 }
 
 func (sys *System) simulateNoDelay(u *mat.Dense, x0 *mat.VecDense, opts *SimulateOpts) (*Response, error) {

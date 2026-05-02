@@ -167,8 +167,8 @@ func Care(A, B, Q, R *mat.Dense, opts *RiccatiOpts) (*RiccatiResult, error) {
 	impl.Dpotrs(blas.Upper, m, n, rChol, m, rinvBt, n)
 
 	if S != nil {
-		// Ã = A - B*R⁻¹*S'
-		// Z = R⁻¹*S' (m×n): solve R*Z = S'
+		// Abar = A - B*R^-1*S'
+		// Z = R^-1*S' (m x n): solve R*Z = S'
 		rinvSt := ws.rinvSt[:m*n]
 		sRaw := S.RawMatrix()
 		for i := range n {

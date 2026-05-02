@@ -314,6 +314,90 @@ func TestSimulateNilX0(t *testing.T) {
 	}
 }
 
+func TestSimulateDimensionErrors(t *testing.T) {
+	sys, err := New(
+		mat.NewDense(2, 2, []float64{0.9, 0.1, 0, 0.8}),
+		mat.NewDense(2, 1, []float64{1, 0}),
+		mat.NewDense(1, 2, []float64{1, 0}),
+		mat.NewDense(1, 1, nil),
+		1,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cases := []struct {
+		name string
+		u    *mat.Dense
+		x0   *mat.VecDense
+		opts *SimulateOpts
+	}{
+		{
+			name: "input rows",
+			u:    mat.NewDense(2, 3, nil),
+		},
+		{
+			name: "initial state",
+			u:    mat.NewDense(1, 3, nil),
+			x0:   mat.NewVecDense(1, nil),
+		},
+		{
+			name: "workspace",
+			u:    mat.NewDense(1, 3, nil),
+			opts: &SimulateOpts{Workspace: mat.NewVecDense(1, nil)},
+		},
+		{
+			name: "y buffer",
+			u:    mat.NewDense(1, 3, nil),
+			opts: &SimulateOpts{yBuf: mat.NewDense(2, 3, nil)},
+		},
+		{
+			name: "du buffer",
+			u:    mat.NewDense(1, 3, nil),
+			opts: &SimulateOpts{duBuf: mat.NewDense(1, 2, nil)},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := sys.Simulate(tc.u, tc.x0, tc.opts); !errors.Is(err, ErrDimensionMismatch) {
+				t.Fatalf("got %v, want ErrDimensionMismatch", err)
+			}
+		})
+	}
+}
+
+func TestSimulateValidatesMutatedDelayFields(t *testing.T) {
+	sys, err := New(
+		mat.NewDense(1, 1, []float64{0.5}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, nil),
+		1,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	u := mat.NewDense(1, 3, nil)
+
+	sys.InputDelay = []float64{1, 2}
+	if _, err := sys.Simulate(u, nil, nil); !errors.Is(err, ErrDimensionMismatch) {
+		t.Fatalf("InputDelay: got %v, want ErrDimensionMismatch", err)
+	}
+
+	sys.InputDelay = nil
+	sys.OutputDelay = []float64{-1}
+	if _, err := sys.Simulate(u, nil, nil); !errors.Is(err, ErrNegativeDelay) {
+		t.Fatalf("OutputDelay: got %v, want ErrNegativeDelay", err)
+	}
+
+	sys.OutputDelay = nil
+	sys.Delay = mat.NewDense(2, 1, nil)
+	if _, err := sys.Simulate(u, nil, nil); !errors.Is(err, ErrDimensionMismatch) {
+		t.Fatalf("Delay: got %v, want ErrDimensionMismatch", err)
+	}
+}
+
 func TestSimulate_WithInputDelay(t *testing.T) {
 	sys, _ := New(
 		mat.NewDense(1, 1, []float64{0.5}),
@@ -552,11 +636,11 @@ func TestSimulate_InternalDelay_SISO(t *testing.T) {
 	refSys.InputDelay = []float64{3}
 
 	lftSys := &System{
-		A:             mat.DenseCopyOf(A),
-		B:             mat.NewDense(2, 1, nil),
-		C:             mat.DenseCopyOf(C),
-		D:             mat.NewDense(1, 1, nil),
-		Dt:            1.0,
+		A:  mat.DenseCopyOf(A),
+		B:  mat.NewDense(2, 1, nil),
+		C:  mat.DenseCopyOf(C),
+		D:  mat.NewDense(1, 1, nil),
+		Dt: 1.0,
 		LFT: &LFTDelay{
 			Tau: []float64{3},
 			B2:  mat.DenseCopyOf(B),
@@ -597,11 +681,11 @@ func TestSimulate_InternalDelay_MultipleDelays(t *testing.T) {
 	refSys.InputDelay = []float64{2, 5}
 
 	lftSys := &System{
-		A:             mat.NewDense(2, 2, []float64{0.5, 0.1, 0.0, 0.8}),
-		B:             mat.NewDense(2, 2, nil),
-		C:             mat.NewDense(1, 2, []float64{1, 1}),
-		D:             mat.NewDense(1, 2, nil),
-		Dt:            1.0,
+		A:  mat.NewDense(2, 2, []float64{0.5, 0.1, 0.0, 0.8}),
+		B:  mat.NewDense(2, 2, nil),
+		C:  mat.NewDense(1, 2, []float64{1, 1}),
+		D:  mat.NewDense(1, 2, nil),
+		Dt: 1.0,
 		LFT: &LFTDelay{
 			Tau: []float64{2, 5},
 			B2:  mat.NewDense(2, 2, []float64{1, 0, 0, 1}),
@@ -642,11 +726,11 @@ func TestSimulate_InternalDelay_WithX0(t *testing.T) {
 	refSys.InputDelay = []float64{2}
 
 	lftSys := &System{
-		A:             mat.DenseCopyOf(A),
-		B:             mat.NewDense(2, 1, nil),
-		C:             mat.DenseCopyOf(C),
-		D:             mat.NewDense(1, 1, nil),
-		Dt:            1.0,
+		A:  mat.DenseCopyOf(A),
+		B:  mat.NewDense(2, 1, nil),
+		C:  mat.DenseCopyOf(C),
+		D:  mat.NewDense(1, 1, nil),
+		Dt: 1.0,
 		LFT: &LFTDelay{
 			Tau: []float64{2},
 			B2:  mat.DenseCopyOf(B),
@@ -679,11 +763,11 @@ func TestSimulate_InternalDelay_WithX0(t *testing.T) {
 
 func TestSimulate_InternalDelay_D22Nonzero(t *testing.T) {
 	lftSys := &System{
-		A:             mat.NewDense(1, 1, []float64{0.5}),
-		B:             mat.NewDense(1, 1, []float64{1}),
-		C:             mat.NewDense(1, 1, []float64{1}),
-		D:             mat.NewDense(1, 1, []float64{0}),
-		Dt:            1.0,
+		A:  mat.NewDense(1, 1, []float64{0.5}),
+		B:  mat.NewDense(1, 1, []float64{1}),
+		C:  mat.NewDense(1, 1, []float64{1}),
+		D:  mat.NewDense(1, 1, []float64{0}),
+		Dt: 1.0,
 		LFT: &LFTDelay{
 			Tau: []float64{2},
 			B2:  mat.NewDense(1, 1, []float64{0.3}),
@@ -736,11 +820,11 @@ func TestSimulate_InternalDelay_NonUnitDt(t *testing.T) {
 	refSys.InputDelay = []float64{3}
 
 	lftSys := &System{
-		A:             mat.NewDense(1, 1, []float64{0.5}),
-		B:             mat.NewDense(1, 1, nil),
-		C:             mat.NewDense(1, 1, []float64{1}),
-		D:             mat.NewDense(1, 1, nil),
-		Dt:            0.1,
+		A:  mat.NewDense(1, 1, []float64{0.5}),
+		B:  mat.NewDense(1, 1, nil),
+		C:  mat.NewDense(1, 1, []float64{1}),
+		D:  mat.NewDense(1, 1, nil),
+		Dt: 0.1,
 		LFT: &LFTDelay{
 			Tau: []float64{3},
 			B2:  mat.NewDense(1, 1, []float64{1}),

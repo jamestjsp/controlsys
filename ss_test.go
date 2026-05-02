@@ -334,6 +334,33 @@ func TestDimsConsistency(t *testing.T) {
 	}
 }
 
+func TestSystemValidate(t *testing.T) {
+	sys, err := New(
+		mat.NewDense(2, 2, []float64{0.9, 0.1, 0, 0.8}),
+		mat.NewDense(2, 1, []float64{1, 0}),
+		mat.NewDense(1, 2, []float64{1, 0}),
+		mat.NewDense(1, 1, nil),
+		1,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := sys.Validate(); err != nil {
+		t.Fatalf("valid system failed Validate: %v", err)
+	}
+
+	sys.E = mat.NewDense(1, 1, nil)
+	if err := sys.Validate(); !errors.Is(err, ErrDimensionMismatch) {
+		t.Fatalf("E: got %v, want ErrDimensionMismatch", err)
+	}
+
+	sys.E = nil
+	sys.LFT = &LFTDelay{Tau: []float64{0}}
+	if err := sys.Validate(); !errors.Is(err, ErrZeroInternalDelay) {
+		t.Fatalf("LFT tau: got %v, want ErrZeroInternalDelay", err)
+	}
+}
+
 func TestIsStableMarginal(t *testing.T) {
 	// Pole on imaginary axis (marginally stable = not stable)
 	sys, _ := NewFromSlices(2, 1, 1,

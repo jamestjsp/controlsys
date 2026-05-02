@@ -129,7 +129,7 @@ func TestCare_CrossTerm(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Verify with transformed equation: Ã = A - B*R⁻¹*S', Q̃ = Q - S*R⁻¹*S'
+	// Verify with transformed equation: Abar = A - B*R^-1*S', Qbar = Q - S*R^-1*S'
 	tol := 1e-10
 	checkSymmetric(t, res.X, tol)
 	for _, e := range res.Eig {

@@ -6,5 +6,5 @@
 //
 // Methods that configure delays, names, or notes mutate the receiver,
 // so shared systems should be copied with Copy before concurrent
-// mutation.
+// mutation. Call Validate after direct field edits.
 package controlsys

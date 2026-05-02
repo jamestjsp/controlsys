@@ -12,7 +12,7 @@ go get github.com/jamestjsp/controlsys
 
 > **Note:** This package depends on a [gonum fork](https://github.com/jamestjsp/gonum) for additional LAPACK routines. Because `replace` directives do not propagate to downstream modules, applications that import `controlsys` must add this to their own `go.mod`:
 > ```
-> replace gonum.org/v1/gonum => github.com/jamestjsp/gonum v0.17.2-fork
+> replace gonum.org/v1/gonum => github.com/jamestjsp/gonum v0.17.3-fork
 > ```
 
 ## Production Readiness
@@ -21,7 +21,7 @@ This package is intended to be usable in production control and estimation code,
 
 - Pin both `controlsys` and the required gonum fork to explicit versions.
 - Validate mission-critical models against an external reference, especially for ill-conditioned realizations and delay-heavy systems.
-- `System` values are mutable. Use `Copy` before sharing a model across goroutines that may mutate names, delays, notes, or other receiver state.
+- `System` values are mutable. Use `Copy` before sharing a model across goroutines that may mutate names, delays, notes, or other receiver state. Use `Validate` after direct field edits.
 - The repository CI runs `go vet ./...` and `go test -v -count=1 -race ./...`; those are the recommended baseline checks for downstream integrations.
 
 ## Features
@@ -29,7 +29,7 @@ This package is intended to be usable in production control and estimation code,
 - **Three representations:** state-space, transfer function, zero-pole-gain (ZPK), and frequency-response data (FRD)
 - **Frequency response:** Bode, Nyquist, Nichols, singular values
 - **Stability analysis:** gain/phase margins, disk margins, bandwidth, damping, root locus
-- **Control design:** LQR, LQE (Kalman), LQI, LQG, H₂ synthesis, H∞ synthesis, pole placement, Ackermann placement, Riccati solvers (CARE/DARE)
+- **Control design:** LQR, LQE (Kalman), LQI, LQG, H2 synthesis, H-infinity synthesis, pole placement, Ackermann placement, Riccati solvers (CARE/DARE)
 - **PID control:** PID/PID2 controller models, standard/parallel forms, and `Pidtune` autotuning
 - **State estimation:** Extended Kalman Filter (EKF) for nonlinear systems
 - **System identification:** Eigensystem Realization Algorithm (ERA) and frequency-response estimation from I/O data
@@ -158,8 +158,8 @@ func main() {
 | `Kalmd` | Discrete-time Kalman estimator from sampled model data |
 | `Lqi` | LQR with integral action |
 | `Lqg` | LQG controller (combined LQR + Kalman filter) |
-| `H2Syn` | H₂ optimal controller synthesis from generalized plant |
-| `HinfSyn` | H∞ controller synthesis from generalized plant |
+| `H2Syn` | H2 optimal controller synthesis from generalized plant |
+| `HinfSyn` | H-infinity controller synthesis from generalized plant |
 | `Place` | Pole placement |
 | `Acker` | Ackermann pole placement |
 | `Care` | Continuous algebraic Riccati equation |
