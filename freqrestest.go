@@ -24,6 +24,17 @@ type FreqRespEstResult struct {
 	Coherence []float64
 }
 
+type freqRespEstPlan struct {
+	nfft     int
+	noverlap int
+	hop      int
+	nSeg     int
+	nFreq    int
+	method   string
+	win      []float64
+	winPower float64
+}
+
 func (r *FreqRespEstResult) CoherenceAt(freq, output, input int) float64 {
 	if r.Coherence == nil {
 		return 0
@@ -44,61 +55,29 @@ func FreqRespEst(input, output *mat.Dense, dt float64, opts *FreqRespEstOpts) (*
 		return nil, err
 	}
 
-	nfft, winFunc, noverlap, method := resolveOpts(opts, N)
-	if err := validateFreqRespEstMethod(method, m, p); err != nil {
+	plan, err := newFreqRespEstPlan(opts, N, m, p)
+	if err != nil {
 		return nil, err
 	}
 
-	win := make([]float64, nfft)
-	for i := range win {
-		win[i] = 1
-	}
-	winFunc(win)
-
-	winPower := 0.0
-	for _, w := range win {
-		winPower += w * w
-	}
-	winPower /= float64(nfft)
-
-	if method == "fft" {
-		return freqRespEstFFT(input, output, dt, m, p, N, nfft, win, winPower)
+	if plan.method == "fft" {
+		return freqRespEstFFT(input, output, dt, m, p, N, plan.nfft, plan.win, plan.winPower)
 	}
 
-	hop := nfft - noverlap
-	nSeg := (N - noverlap) / hop
-	if nSeg < 1 {
-		nfft = N
-		noverlap = 0
-		hop = N
-		nSeg = 1
-		win = make([]float64, nfft)
-		for i := range win {
-			win[i] = 1
-		}
-		winFunc(win)
-		winPower = 0
-		for _, w := range win {
-			winPower += w * w
-		}
-		winPower /= float64(nfft)
-	}
-
-	nFreq := nfft/2 + 1
-	fft := fourier.NewFFT(nfft)
-	seg := make([]float64, nfft)
-	coeff := make([]complex128, nFreq)
+	fft := fourier.NewFFT(plan.nfft)
+	seg := make([]float64, plan.nfft)
+	coeff := make([]complex128, plan.nFreq)
 
 	inRaw := input.RawMatrix()
 	outRaw := output.RawMatrix()
 
 	if m == 1 && p == 1 {
-		return welchSISO(fft, seg, coeff, win, inRaw.Data, inRaw.Stride, outRaw.Data, outRaw.Stride,
-			dt, nfft, nFreq, hop, nSeg, winPower, method)
+		return welchSISO(fft, seg, coeff, plan.win, inRaw.Data, inRaw.Stride, outRaw.Data, outRaw.Stride,
+			dt, plan.nfft, plan.nFreq, plan.hop, plan.nSeg, plan.winPower, plan.method)
 	}
 
-	return welchMIMO(fft, seg, coeff, win, input, output,
-		dt, m, p, nfft, nFreq, hop, nSeg, winPower, method)
+	return welchMIMO(fft, seg, coeff, plan.win, input, output,
+		dt, m, p, plan.nfft, plan.nFreq, plan.hop, plan.nSeg, plan.winPower, plan.method)
 }
 
 func validateFreqRespEstMethod(method string, m, p int) error {
@@ -145,6 +124,44 @@ func resolveOpts(opts *FreqRespEstOpts, N int) (nfft int, winFunc func([]float64
 	}
 
 	return
+}
+
+func newFreqRespEstPlan(opts *FreqRespEstOpts, N, m, p int) (freqRespEstPlan, error) {
+	nfft, winFunc, noverlap, method := resolveOpts(opts, N)
+	if err := validateFreqRespEstMethod(method, m, p); err != nil {
+		return freqRespEstPlan{}, err
+	}
+
+	plan := freqRespEstPlan{nfft: nfft, noverlap: noverlap, method: method}
+	plan.rebuildWindow(winFunc)
+	if method == "fft" {
+		return plan, nil
+	}
+
+	plan.hop = plan.nfft - plan.noverlap
+	plan.nSeg = (N - plan.noverlap) / plan.hop
+	if plan.nSeg < 1 {
+		plan.nfft = N
+		plan.noverlap = 0
+		plan.hop = N
+		plan.nSeg = 1
+		plan.rebuildWindow(winFunc)
+	}
+	return plan, nil
+}
+
+func (p *freqRespEstPlan) rebuildWindow(winFunc func([]float64) []float64) {
+	p.win = make([]float64, p.nfft)
+	for i := range p.win {
+		p.win[i] = 1
+	}
+	winFunc(p.win)
+	p.winPower = 0
+	for _, w := range p.win {
+		p.winPower += w * w
+	}
+	p.winPower /= float64(p.nfft)
+	p.nFreq = p.nfft/2 + 1
 }
 
 func welchSISO(fft *fourier.FFT, seg []float64, _ []complex128, win []float64,

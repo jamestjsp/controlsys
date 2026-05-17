@@ -60,9 +60,10 @@ func NewEKF(model *EKFModel, x0 *mat.VecDense, P0 *mat.Dense) (*EKF, error) {
 		return nil, fmt.Errorf("NewEKF: R is %dx%d, must be square: %w", rr, rc, ErrDimensionMismatch)
 	}
 	p := rr
+	contract := newLocalApproximationContract("NewEKF", n, 0, p)
 
 	hProbe := model.H(x0)
-	if err := validateVecResult("NewEKF: H(x0)", hProbe, p); err != nil {
+	if err := contract.validateMeasurementResult("H(x0)", hProbe); err != nil {
 		return nil, err
 	}
 
@@ -91,13 +92,14 @@ func NewEKF(model *EKFModel, x0 *mat.VecDense, P0 *mat.Dense) (*EKF, error) {
 
 // Predict performs the EKF prediction step using control input u.
 func (e *EKF) Predict(u *mat.VecDense) error {
+	contract := newLocalApproximationContract("EKF.Predict", e.n, 0, e.p)
 	xPred := e.model.F(e.X, u)
-	if err := validateVecResult("EKF.Predict: F", xPred, e.n); err != nil {
+	if err := contract.validateStateResult("F", xPred); err != nil {
 		return err
 	}
 
 	A := e.model.FJac(e.X, u)
-	if err := validateDenseResult("EKF.Predict: FJac", A, e.n, e.n); err != nil {
+	if err := contract.validateStateJacobian("FJac", A); err != nil {
 		return err
 	}
 
@@ -115,14 +117,15 @@ func (e *EKF) Update(z *mat.VecDense) error {
 	if z.Len() != e.p {
 		return fmt.Errorf("EKF.Update: z length %d, want %d: %w", z.Len(), e.p, ErrDimensionMismatch)
 	}
+	contract := newLocalApproximationContract("EKF.Update", e.n, 0, e.p)
 
 	yPred := e.model.H(e.X)
-	if err := validateVecResult("EKF.Update: H", yPred, e.p); err != nil {
+	if err := contract.validateMeasurementResult("H", yPred); err != nil {
 		return err
 	}
 
 	C := e.model.HJac(e.X)
-	if err := validateDenseResult("EKF.Update: HJac", C, e.p, e.n); err != nil {
+	if err := contract.validateMeasurementJacobian("HJac", C); err != nil {
 		return err
 	}
 

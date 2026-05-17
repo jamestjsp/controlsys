@@ -1,7 +1,6 @@
 package controlsys
 
 import (
-	"fmt"
 	"math/cmplx"
 	"sort"
 )
@@ -85,26 +84,7 @@ func (z *ZPK) Dims() (p, m int) {
 }
 
 func (z *ZPK) validateShape() (p, m int, err error) {
-	if z == nil {
-		return 0, 0, fmt.Errorf("ZPK: nil model: %w", ErrDimensionMismatch)
-	}
-	p = len(z.Gain)
-	if p == 0 {
-		return 0, 0, fmt.Errorf("ZPK: zero output channels: %w", ErrDimensionMismatch)
-	}
-	m = len(z.Gain[0])
-	if m == 0 {
-		return 0, 0, fmt.Errorf("ZPK: zero input channels: %w", ErrDimensionMismatch)
-	}
-	if len(z.Zeros) != p || len(z.Poles) != p {
-		return 0, 0, fmt.Errorf("ZPK: channel rows do not match gain rows: %w", ErrDimensionMismatch)
-	}
-	for i := 0; i < p; i++ {
-		if len(z.Gain[i]) != m || len(z.Zeros[i]) != m || len(z.Poles[i]) != m {
-			return 0, 0, fmt.Errorf("ZPK: row %d channel count mismatch: %w", i, ErrDimensionMismatch)
-		}
-	}
-	return p, m, nil
+	return validateZPKChannelShape(z)
 }
 
 func (z *ZPK) IsContinuous() bool { return z.Dt == 0 }
@@ -229,8 +209,8 @@ func (tf *TransferFunc) ZPK() (*ZPK, error) {
 		for j := 0; j < m; j++ {
 			z.Poles[i][j] = copyComplex(rowPoles)
 
-			num := tf.Num[i][j]
-			if len(num) == 0 || (len(num) == 1 && num[0] == 0) {
+			num := trimLeadingFloatZeros(tf.Num[i][j])
+			if len(num) == 1 && num[0] == 0 {
 				z.Gain[i][j] = 0
 				continue
 			}
@@ -240,7 +220,7 @@ func (tf *TransferFunc) ZPK() (*ZPK, error) {
 				return nil, err
 			}
 			z.Zeros[i][j] = zeros
-			z.Gain[i][j] = num[0] / tf.Den[i][0]
+			z.Gain[i][j] = channelPolynomialGain(num, tf.Den[i])
 		}
 	}
 	z.InputName = copyStringSlice(tf.InputName)
