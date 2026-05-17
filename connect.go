@@ -478,6 +478,7 @@ func Feedback(plant, controller *System, sign float64) (*System, error) {
 		return feedbackWithLFT(plant, controller, sign)
 	}
 
+	feedbackSign := sign
 	// User convention: sign=-1 for negative feedback, +1 for positive.
 	// AB05ND formula uses opposite convention internally.
 	sign = -sign
@@ -486,27 +487,9 @@ func Feedback(plant, controller *System, sign float64) (*System, error) {
 	m := m1
 	p := p1
 
-	M := mat.NewDense(p1, p1, nil)
-	M.Mul(plant.D, controller.D)
-	M.Scale(sign, M)
-	for i := 0; i < p1; i++ {
-		M.Set(i, i, M.At(i, i)+1)
-	}
-
-	var lu mat.LU
-	lu.Factorize(M)
-	if luNearSingular(&lu) {
-		return nil, fmt.Errorf("feedback: (I + sign*D1*D2) singular: %w", ErrSingularTransform)
-	}
-
-	eyeData := make([]float64, p1*p1)
-	for i := 0; i < p1; i++ {
-		eyeData[i*(p1+1)] = 1
-	}
-	eye := mat.NewDense(p1, p1, eyeData)
-	E21 := mat.NewDense(p1, p1, nil)
-	if err := lu.SolveTo(E21, false, eye); err != nil {
-		return nil, fmt.Errorf("feedback: LU solve failed: %w", ErrSingularTransform)
+	E21, err := solveFeedbackFeedthrough(plant.D, controller.D, feedbackSign, p1, "feedback", ErrSingularTransform)
+	if err != nil {
+		return nil, err
 	}
 
 	e12Data := make([]float64, m1*m1)

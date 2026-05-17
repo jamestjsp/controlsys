@@ -43,20 +43,8 @@ func H2Syn(P *System, nmeas, ncont int) (*H2SynResult, error) {
 		}
 	}
 
-	stab, err := IsStabilizable(A, B2, true)
-	if err != nil {
+	if err := gp.validateControllerChannels(); err != nil {
 		return nil, err
-	}
-	if !stab {
-		return nil, ErrNotStabilizable
-	}
-
-	det, err := IsDetectable(A, C2, true)
-	if err != nil {
-		return nil, err
-	}
-	if !det {
-		return nil, ErrNotDetectable
 	}
 
 	// State-feedback CARE: A'X + XA - (XB2+S1)*R1^{-1}*(B2'X+S1') + Q1 = 0
@@ -89,7 +77,6 @@ func H2Syn(P *System, nmeas, ncont int) (*H2SynResult, error) {
 	L := mat.DenseCopyOf(resY.K.T())
 
 	var Ak, Bk, Ck *mat.Dense
-	var Dk *mat.Dense
 
 	// Ak = A + B2*F - L*C2
 	BF := mulDense(B2, F)
@@ -100,40 +87,16 @@ func H2Syn(P *System, nmeas, ncont int) (*H2SynResult, error) {
 
 	Bk = denseCopy(L)
 	Ck = denseCopy(F)
-	Dk = mat.NewDense(gp.m2, gp.p2, nil)
 
-	K, err := New(Ak, Bk, Ck, Dk, 0)
+	K, err := gp.newController(Ak, Bk, Ck)
 	if err != nil {
 		return nil, err
 	}
-	gp.applyControllerNames(K)
 
-	// Closed-loop A matrix for pole computation
-	// CL_A = [A + B2*Dk*C2,  B2*Ck;  Bk*C2,  Ak]
-	nn := 2 * n
-	clA := mat.NewDense(nn, nn, nil)
-
-	// top-left: A + B2*Dk*C2
-	topLeft := denseCopy(A)
-	setBlock(clA, 0, 0, topLeft)
-
-	// top-right: B2*Ck
-	BC := mulDense(B2, Ck)
-	setBlock(clA, 0, n, BC)
-
-	// bottom-left: Bk*C2
-	BkC := mulDense(Bk, C2)
-	setBlock(clA, n, 0, BkC)
-
-	// bottom-right: Ak
-	setBlock(clA, n, n, Ak)
-
-	var eig mat.Eigen
-	ok := eig.Factorize(clA, mat.EigenNone)
-	if !ok {
-		return nil, ErrSchurFailed
+	clPoles, err := gp.closedLoopPoles(Ak, Bk, Ck)
+	if err != nil {
+		return nil, err
 	}
-	clPoles := eig.Values(nil)
 
 	return &H2SynResult{K: K, X: X, Y: Y, CLPoles: clPoles}, nil
 }

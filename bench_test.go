@@ -937,6 +937,49 @@ func BenchmarkHinfNorm(b *testing.B) {
 	}
 }
 
+func BenchmarkH2Syn_Simple(b *testing.B) {
+	A := mat.NewDense(2, 2, []float64{0, 1, -2, -1})
+	B := mat.NewDense(2, 2, []float64{0, 0, 1, 1})
+	C := mat.NewDense(3, 2, []float64{
+		1, 0,
+		0, 0,
+		1, 0,
+	})
+	D := mat.NewDense(3, 2, []float64{
+		0, 0,
+		0, 1,
+		0.1, 0,
+	})
+	P, _ := New(A, B, C, D, 0)
+	b.ResetTimer()
+	for b.Loop() {
+		H2Syn(P, 1, 1)
+	}
+}
+
+func BenchmarkHinfSyn_Simple(b *testing.B) {
+	A := mat.NewDense(2, 2, []float64{0, 1, -2, -3})
+	B := mat.NewDense(2, 3, []float64{
+		1, 0, 0,
+		0, 1, 1,
+	})
+	C := mat.NewDense(3, 2, []float64{
+		1, 0,
+		0, 0,
+		1, 0,
+	})
+	D := mat.NewDense(3, 3, []float64{
+		0, 0, 0,
+		0, 0, 1,
+		0.1, 0.1, 0,
+	})
+	P, _ := New(A, B, C, D, 0)
+	b.ResetTimer()
+	for b.Loop() {
+		HinfSyn(P, 1, 1)
+	}
+}
+
 func BenchmarkBalreal(b *testing.B) {
 	sys := benchSys(10, 2, 3)
 	b.ResetTimer()

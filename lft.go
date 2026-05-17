@@ -181,22 +181,7 @@ func lftSimple(M, Delta *System, nu, ny int) (*System, error) {
 }
 
 func solveLFTLoop(D22M, DDelta *mat.Dense, w int) (*mat.Dense, error) {
-	eye := eyeDense(w)
-	loop := mat.NewDense(w, w, nil)
-	loop.Mul(D22M, DDelta)
-	loop.Sub(eye, loop)
-
-	var lu mat.LU
-	lu.Factorize(loop)
-	if luNearSingular(&lu) {
-		return nil, fmt.Errorf("lft: (I - D22*D_Delta) singular: %w", ErrAlgebraicLoop)
-	}
-
-	F := mat.NewDense(w, w, nil)
-	if err := lu.SolveTo(F, false, eye); err != nil {
-		return nil, fmt.Errorf("lft: LU solve failed: %w", ErrAlgebraicLoop)
-	}
-	return F, nil
+	return solveIdentityMinusProduct(D22M, DDelta, w, "lft", ErrAlgebraicLoop)
 }
 
 func lftWithDelay(M, Delta *System, nu, ny int) (*System, error) {

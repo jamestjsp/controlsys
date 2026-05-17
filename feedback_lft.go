@@ -1,10 +1,6 @@
 package controlsys
 
-import (
-	"fmt"
-
-	"gonum.org/v1/gonum/mat"
-)
+import "gonum.org/v1/gonum/mat"
 
 func feedbackWithLFT(plant, controller *System, sign float64) (*System, error) {
 	savedPlantInput := copySliceOrNil(plant.InputDelay)
@@ -96,23 +92,9 @@ func feedbackWithLFT(plant, controller *System, sign float64) (*System, error) {
 	D1ee := extract(pH.D, 0, 0, p1, m1)
 	D2ee := extract(cH.D, 0, 0, m1, p1)
 
-	M := mat.NewDense(p1, p1, nil)
-	M.Mul(D1ee, D2ee)
-	M.Scale(isign, M)
-	mRaw := M.RawMatrix()
-	for i := 0; i < p1; i++ {
-		mRaw.Data[i*mRaw.Stride+i] += 1
-	}
-
-	var lu mat.LU
-	lu.Factorize(M)
-	if luNearSingular(&lu) {
-		return nil, fmt.Errorf("feedback: (I + sign*D1*D2) singular: %w", ErrSingularTransform)
-	}
-
-	E21 := mat.NewDense(p1, p1, nil)
-	if err := lu.SolveTo(E21, false, eyeDense(p1)); err != nil {
-		return nil, fmt.Errorf("feedback: LU solve failed: %w", ErrSingularTransform)
+	E21, err := solveFeedbackFeedthrough(D1ee, D2ee, sign, p1, "feedback", ErrSingularTransform)
+	if err != nil {
+		return nil, err
 	}
 
 	E12 := eyeDense(m1)

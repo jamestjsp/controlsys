@@ -116,6 +116,21 @@ func (sys *System) FRD(omega []float64) (*FRD, error) {
 	}, nil
 }
 
+func newFRDFromFreqResponse(resp *FreqResponseMatrix, dt float64) (*FRD, error) {
+	if resp == nil {
+		return nil, ErrInsufficientData
+	}
+	response, data := newFRDResponseStorage(resp.NFreq, resp.P, resp.M)
+	copy(data, resp.Data)
+	frd, err := NewFRD(response, resp.Omega, dt)
+	if err != nil {
+		return nil, err
+	}
+	frd.InputName = copyStringSlice(resp.InputName)
+	frd.OutputName = copyStringSlice(resp.OutputName)
+	return frd, nil
+}
+
 func newFRDResponseStorage(nw, p, m int) ([][][]complex128, []complex128) {
 	response := make([][][]complex128, nw)
 	if nw == 0 || p == 0 || m == 0 {
@@ -219,15 +234,7 @@ func (f *FRD) FreqResponse() *FreqResponseMatrix {
 			}
 		}
 	}
-	return &FreqResponseMatrix{
-		Data:       data,
-		Omega:      copyFloatSlice(f.Omega),
-		NFreq:      nw,
-		P:          p,
-		M:          m,
-		InputName:  copyStringSlice(f.InputName),
-		OutputName: copyStringSlice(f.OutputName),
-	}
+	return newFreqResponseMatrixOwned(data, f.Omega, p, m, f.InputName, f.OutputName)
 }
 
 // Bode computes magnitude (dB) and phase (degrees) from the FRD data.

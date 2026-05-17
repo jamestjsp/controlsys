@@ -22,6 +22,22 @@ func (f *FreqResponseMatrix) At(freq, output, input int) complex128 {
 	return f.Data[freq*f.P*f.M+output*f.M+input]
 }
 
+func newFreqResponseMatrix(data []complex128, omega []float64, p, m int, inputName, outputName []string) *FreqResponseMatrix {
+	return &FreqResponseMatrix{
+		Data:       data,
+		Omega:      omega,
+		NFreq:      len(omega),
+		P:          p,
+		M:          m,
+		InputName:  copyStringSlice(inputName),
+		OutputName: copyStringSlice(outputName),
+	}
+}
+
+func newFreqResponseMatrixOwned(data []complex128, omega []float64, p, m int, inputName, outputName []string) *FreqResponseMatrix {
+	return newFreqResponseMatrix(data, copyFloatSlice(omega), p, m, inputName, outputName)
+}
+
 type BodeResult struct {
 	Omega      []float64
 	magDB      []float64
@@ -208,11 +224,7 @@ func (e frequencyEvaluator) evalStateSpaceInto(s complex128, dst []complex128) e
 }
 
 func (e frequencyEvaluator) matrix(data []complex128, omega []float64) *FreqResponseMatrix {
-	return &FreqResponseMatrix{
-		Data: data, Omega: omega, NFreq: len(omega), P: e.p, M: e.m,
-		InputName:  copyStringSlice(e.sys.InputName),
-		OutputName: copyStringSlice(e.sys.OutputName),
-	}
+	return newFreqResponseMatrix(data, omega, e.p, e.m, e.sys.InputName, e.sys.OutputName)
 }
 
 func autoBodeFreqs(sys *System, nPoints int) ([]float64, error) {
@@ -405,7 +417,7 @@ func freqResponseLFT(sys *System, omega []float64, p, m int) (*FreqResponseMatri
 		copy(data[k*p*m:], ws.g[:p*m])
 	}
 
-	return &FreqResponseMatrix{Data: data, Omega: omega, NFreq: nw, P: p, M: m}, nil
+	return newFreqResponseMatrix(data, omega, p, m, nil, nil), nil
 }
 
 type lftWorkspace struct {

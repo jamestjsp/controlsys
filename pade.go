@@ -53,24 +53,9 @@ func (sys *System) Pade(order int) (*System, error) {
 	D22 := lft.LFT.D22
 
 	Dd := delayBank.D
-	D22Dd := mat.NewDense(N, N, nil)
-	D22Dd.Mul(D22, Dd)
-	E := mat.NewDense(N, N, nil)
-	eRaw := E.RawMatrix()
-	for i := 0; i < N; i++ {
-		eRaw.Data[i*eRaw.Stride+i] = 1
-	}
-	E.Sub(E, D22Dd)
-	var lu mat.LU
-	lu.Factorize(E)
-	D22Dd.Zero()
-	idRaw := D22Dd.RawMatrix()
-	for i := 0; i < N; i++ {
-		idRaw.Data[i*idRaw.Stride+i] = 1
-	}
-	Einv := mat.NewDense(N, N, nil)
-	if err := lu.SolveTo(Einv, false, D22Dd); err != nil {
-		return nil, fmt.Errorf("Pade: (I - D22*Dd) singular: %w", ErrSingularTransform)
+	Einv, err := solveIdentityMinusProduct(D22, Dd, N, "Pade", ErrSingularTransform)
+	if err != nil {
+		return nil, err
 	}
 
 	DdE := mat.NewDense(N, N, nil)
