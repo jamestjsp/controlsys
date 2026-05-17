@@ -1461,21 +1461,9 @@ func connectWithDelay(sys *System, Q *mat.Dense, inputs, outputs []int) (*System
 	nH, _, _ := H.Dims()
 
 	Dcore := extractBlock(H.D, 0, 0, p, m)
-	QD := mat.NewDense(m, m, nil)
-	QD.Mul(Q, Dcore)
-	IQD := eyeDense(m)
-	IQD.Sub(IQD, QD)
-
-	var lu mat.LU
-	lu.Factorize(IQD)
-	if luNearSingular(&lu) {
-		return nil, fmt.Errorf("connect: (I-Q*D) singular, algebraic loop: %w", ErrAlgebraicLoop)
-	}
-
-	eyeM := eyeDense(m)
-	E := mat.NewDense(m, m, nil)
-	if err := lu.SolveTo(E, false, eyeM); err != nil {
-		return nil, fmt.Errorf("connect: LU solve failed: %w", ErrSingularTransform)
+	E, err := solveIdentityMinusProduct(Q, Dcore, m, "connect", ErrAlgebraicLoop)
+	if err != nil {
+		return nil, err
 	}
 
 	EQ := mat.NewDense(m, p, nil)
@@ -1641,21 +1629,9 @@ func connectSimple(sys *System, Q *mat.Dense, inputs, outputs []int, n, m, p int
 	mExt := len(inputs)
 	pExt := len(outputs)
 
-	QD := mat.NewDense(m, m, nil)
-	QD.Mul(Q, sys.D)
-	IQD := eyeDense(m)
-	IQD.Sub(IQD, QD)
-
-	var lu mat.LU
-	lu.Factorize(IQD)
-	if luNearSingular(&lu) {
-		return nil, fmt.Errorf("connect: (I-Q*D) singular, algebraic loop: %w", ErrAlgebraicLoop)
-	}
-
-	eyeM := eyeDense(m)
-	E := mat.NewDense(m, m, nil)
-	if err := lu.SolveTo(E, false, eyeM); err != nil {
-		return nil, fmt.Errorf("connect: LU solve failed: %w", ErrSingularTransform)
+	E, err := solveIdentityMinusProduct(Q, sys.D, m, "connect", ErrAlgebraicLoop)
+	if err != nil {
+		return nil, err
 	}
 
 	EQ := mat.NewDense(m, p, nil)

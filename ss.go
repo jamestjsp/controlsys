@@ -2,7 +2,6 @@ package controlsys
 
 import (
 	"fmt"
-	"math/cmplx"
 
 	"gonum.org/v1/gonum/mat"
 )
@@ -139,17 +138,9 @@ func (sys *System) IsStable() (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	if sys.IsContinuous() {
-		for _, p := range poles {
-			if real(p) >= 0 {
-				return false, nil
-			}
-		}
-	} else {
-		for _, p := range poles {
-			if cmplx.Abs(p) >= 1 {
-				return false, nil
-			}
+	for _, p := range poles {
+		if poleOnOrOutsideStabilityBoundary(p, sys.IsContinuous(), 0) {
+			return false, nil
 		}
 	}
 	return true, nil

@@ -1,9 +1,6 @@
 package controlsys
 
 import (
-	"math"
-	"math/cmplx"
-
 	"gonum.org/v1/gonum/blas"
 	"gonum.org/v1/gonum/blas/blas64"
 	"gonum.org/v1/gonum/mat"
@@ -194,15 +191,8 @@ func IsStabilizable(A, B *mat.Dense, continuous bool) (bool, error) {
 	vals := eig.Values(nil)
 
 	for _, v := range vals {
-		tol := 1e-10 * math.Max(1, cmplx.Abs(v))
-		if continuous {
-			if real(v) >= -tol {
-				return false, nil
-			}
-		} else {
-			if cmplx.Abs(v) >= 1-tol {
-				return false, nil
-			}
+		if poleOnOrOutsideStabilityBoundary(v, continuous, poleStabilityTolerance(v)) {
+			return false, nil
 		}
 	}
 	return true, nil

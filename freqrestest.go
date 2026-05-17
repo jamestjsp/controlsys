@@ -20,6 +20,7 @@ type FreqRespEstOpts struct {
 type FreqRespEstResult struct {
 	H         *FreqResponseMatrix
 	Omega     []float64
+	Dt        float64
 	Coherence []float64
 }
 
@@ -28,6 +29,15 @@ func (r *FreqRespEstResult) CoherenceAt(freq, output, input int) float64 {
 		return 0
 	}
 	return r.Coherence[freq*r.H.P*r.H.M+output*r.H.M+input]
+}
+
+func (r *FreqRespEstResult) FRD() (*FRD, error) {
+	if r == nil || r.H == nil {
+		return nil, ErrInsufficientData
+	}
+	response, data := newFRDResponseStorage(r.H.NFreq, r.H.P, r.H.M)
+	copy(data, r.H.Data)
+	return NewFRD(response, r.Omega, r.Dt)
 }
 
 func FreqRespEst(input, output *mat.Dense, dt float64, opts *FreqRespEstOpts) (*FreqRespEstResult, error) {
@@ -49,6 +59,9 @@ func FreqRespEst(input, output *mat.Dense, dt float64, opts *FreqRespEstOpts) (*
 	}
 
 	nfft, winFunc, noverlap, method := resolveOpts(opts, N)
+	if err := validateFreqRespEstMethod(method, m, p); err != nil {
+		return nil, err
+	}
 
 	win := make([]float64, nfft)
 	for i := range win {
@@ -100,6 +113,18 @@ func FreqRespEst(input, output *mat.Dense, dt float64, opts *FreqRespEstOpts) (*
 
 	return welchMIMO(fft, seg, coeff, win, input, output,
 		dt, m, p, nfft, nFreq, hop, nSeg, winPower, method)
+}
+
+func validateFreqRespEstMethod(method string, m, p int) error {
+	switch method {
+	case "h1", "h2", "fft":
+	default:
+		return fmt.Errorf("FreqRespEst: unknown method %q: %w", method, ErrDimensionMismatch)
+	}
+	if method == "h2" && (m != 1 || p != 1) {
+		return fmt.Errorf("FreqRespEst: h2 estimator is only supported for SISO data: %w", ErrDimensionMismatch)
+	}
+	return nil
 }
 
 func resolveOpts(opts *FreqRespEstOpts, N int) (nfft int, winFunc func([]float64) []float64, noverlap int, method string) {
@@ -162,8 +187,8 @@ func welchSISO(fft *fourier.FFT, seg []float64, _ []complex128, win []float64,
 		fft.Coefficients(yCoeff, seg)
 
 		for f := 0; f < nFreq; f++ {
-			Suu[f] += real(uCoeff[f]) * real(uCoeff[f]) + imag(uCoeff[f]) * imag(uCoeff[f])
-			Syy[f] += real(yCoeff[f]) * real(yCoeff[f]) + imag(yCoeff[f]) * imag(yCoeff[f])
+			Suu[f] += real(uCoeff[f])*real(uCoeff[f]) + imag(uCoeff[f])*imag(uCoeff[f])
+			Syy[f] += real(yCoeff[f])*real(yCoeff[f]) + imag(yCoeff[f])*imag(yCoeff[f])
 			Syu[f] += cmplx.Conj(uCoeff[f]) * yCoeff[f]
 		}
 	}
@@ -210,8 +235,9 @@ func welchSISO(fft *fourier.FFT, seg []float64, _ []complex128, win []float64,
 	}
 
 	return &FreqRespEstResult{
-		H:         &FreqResponseMatrix{Data: H, NFreq: nFreq, P: 1, M: 1},
+		H:         &FreqResponseMatrix{Data: H, Omega: omega, NFreq: nFreq, P: 1, M: 1},
 		Omega:     omega,
+		Dt:        dt,
 		Coherence: coh,
 	}, nil
 }
@@ -332,8 +358,9 @@ func welchMIMO(fft *fourier.FFT, seg []float64, _ []complex128, win []float64,
 	}
 
 	return &FreqRespEstResult{
-		H:         &FreqResponseMatrix{Data: H, NFreq: nFreq, P: p, M: m},
+		H:         &FreqResponseMatrix{Data: H, Omega: omega, NFreq: nFreq, P: p, M: m},
 		Omega:     omega,
+		Dt:        dt,
 		Coherence: coh,
 	}, nil
 }
@@ -383,7 +410,8 @@ func freqRespEstFFT(input, output *mat.Dense, dt float64, m, p, _, nfft int,
 	}
 
 	return &FreqRespEstResult{
-		H:     &FreqResponseMatrix{Data: H, NFreq: nFreq, P: p, M: m},
+		H:     &FreqResponseMatrix{Data: H, Omega: omega, NFreq: nFreq, P: p, M: m},
 		Omega: omega,
+		Dt:    dt,
 	}, nil
 }

@@ -11,6 +11,7 @@ import (
 
 type FreqResponseMatrix struct {
 	Data       []complex128
+	Omega      []float64
 	NFreq      int
 	P, M       int
 	InputName  []string
@@ -39,6 +40,12 @@ func (b *BodeResult) PhaseAt(freq, output, input int) float64 {
 }
 
 func bodeResultFromResponse(omega []float64, data []complex128, p, m int, inputName, outputName []string) *BodeResult {
+	return bodeResultFromAccessor(omega, p, m, inputName, outputName, func(k, i, j int) complex128 {
+		return data[(k*p+i)*m+j]
+	})
+}
+
+func bodeResultFromAccessor(omega []float64, p, m int, inputName, outputName []string, at func(k, i, j int) complex128) *BodeResult {
 	nw := len(omega)
 	pm := p * m
 	magDB := make([]float64, nw*pm)
@@ -48,7 +55,7 @@ func bodeResultFromResponse(omega []float64, data []complex128, p, m int, inputN
 		for i := 0; i < p; i++ {
 			for j := 0; j < m; j++ {
 				off := (k*p+i)*m + j
-				h := data[off]
+				h := at(k, i, j)
 				magDB[off] = 20 * math.Log10(cmplx.Abs(h))
 				phase[off] = cmplx.Phase(h) * 180 / math.Pi
 			}
@@ -150,7 +157,7 @@ func (e frequencyEvaluator) response(omega []float64) (*FreqResponseMatrix, erro
 			return nil, err
 		}
 		applyIODelayAtS(e.sys, s, data, e.p, e.m, true)
-		return e.matrix(data, nw), nil
+		return e.matrix(data, omega), nil
 	}
 
 	res, err := e.sys.TransferFunction(nil)
@@ -161,7 +168,7 @@ func (e frequencyEvaluator) response(omega []float64) (*FreqResponseMatrix, erro
 		res.TF.evalInto(e.sAt(w), data[k*pm:(k+1)*pm])
 	}
 	applyIODelayPhase(e.sys, omega, data, e.p, e.m, false)
-	return e.matrix(data, nw), nil
+	return e.matrix(data, omega), nil
 }
 
 func (e frequencyEvaluator) eval(s complex128) ([][]complex128, error) {
@@ -200,9 +207,9 @@ func (e frequencyEvaluator) evalStateSpaceInto(s complex128, dst []complex128) e
 	return nil
 }
 
-func (e frequencyEvaluator) matrix(data []complex128, nw int) *FreqResponseMatrix {
+func (e frequencyEvaluator) matrix(data []complex128, omega []float64) *FreqResponseMatrix {
 	return &FreqResponseMatrix{
-		Data: data, NFreq: nw, P: e.p, M: e.m,
+		Data: data, Omega: omega, NFreq: len(omega), P: e.p, M: e.m,
 		InputName:  copyStringSlice(e.sys.InputName),
 		OutputName: copyStringSlice(e.sys.OutputName),
 	}
@@ -398,7 +405,7 @@ func freqResponseLFT(sys *System, omega []float64, p, m int) (*FreqResponseMatri
 		copy(data[k*p*m:], ws.g[:p*m])
 	}
 
-	return &FreqResponseMatrix{Data: data, NFreq: nw, P: p, M: m}, nil
+	return &FreqResponseMatrix{Data: data, Omega: omega, NFreq: nw, P: p, M: m}, nil
 }
 
 type lftWorkspace struct {

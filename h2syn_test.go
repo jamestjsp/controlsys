@@ -25,6 +25,8 @@ func TestH2Syn_Simple(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	P.InputName = []string{"disturbance", "control"}
+	P.OutputName = []string{"performance1", "performance2", "measurement"}
 
 	res, err := H2Syn(P, 1, 1)
 	if err != nil {
@@ -53,6 +55,12 @@ func TestH2Syn_Simple(t *testing.T) {
 	}
 	if res.Y == nil {
 		t.Error("Y is nil")
+	}
+	if !stringSlicesEqual(res.K.InputName, []string{"measurement"}) {
+		t.Fatalf("controller input names = %v, want [measurement]", res.K.InputName)
+	}
+	if !stringSlicesEqual(res.K.OutputName, []string{"control"}) {
+		t.Fatalf("controller output names = %v, want [control]", res.K.OutputName)
 	}
 }
 

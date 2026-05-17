@@ -261,6 +261,46 @@ func TestFRD_CrossValidateWithFreqResponse(t *testing.T) {
 	}
 }
 
+func TestFreqResponseMatrixCarriesFrequencyGrid(t *testing.T) {
+	sys, err := New(
+		mat.NewDense(1, 1, []float64{-2}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{3}),
+		mat.NewDense(1, 1, []float64{0.5}),
+		0,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	omega := []float64{0.2, 1.5, 4.0}
+
+	resp, err := sys.FreqResponse(omega)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Omega) != len(omega) {
+		t.Fatalf("len(FreqResponse.Omega) = %d, want %d", len(resp.Omega), len(omega))
+	}
+	for i := range omega {
+		if resp.Omega[i] != omega[i] {
+			t.Fatalf("FreqResponse.Omega[%d] = %v, want %v", i, resp.Omega[i], omega[i])
+		}
+	}
+	frd, err := sys.FRD(resp.Omega)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fromFRD := frd.FreqResponse()
+	if len(fromFRD.Omega) != frd.NumFrequencies() {
+		t.Fatalf("len(FRD.FreqResponse.Omega) = %d, want %d", len(fromFRD.Omega), frd.NumFrequencies())
+	}
+	for i := range fromFRD.Omega {
+		if fromFRD.Omega[i] != frd.Omega[i] {
+			t.Fatalf("FRD.FreqResponse.Omega[%d] = %v, want %v", i, fromFRD.Omega[i], frd.Omega[i])
+		}
+	}
+}
+
 func TestFRD_CrossValidateMIMO(t *testing.T) {
 	sys, err := New(
 		mat.NewDense(2, 2, []float64{0, 1, -2, -3}),
@@ -494,6 +534,10 @@ func TestFRD_Bode(t *testing.T) {
 	}
 
 	bode := frd.Bode()
+	modelBode, err := sys.Bode(omega, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
 	wantMagDB := []float64{
 		20 * math.Log10(1.0/math.Sqrt(1.01)),
 		20 * math.Log10(1.0/math.Sqrt(2)),
@@ -503,6 +547,12 @@ func TestFRD_Bode(t *testing.T) {
 		got := bode.MagDBAt(k, 0, 0)
 		if math.Abs(got-wantMagDB[k]) > 1e-8 {
 			t.Errorf("w=%v: magDB=%v, want %v", omega[k], got, wantMagDB[k])
+		}
+		if math.Abs(got-modelBode.MagDBAt(k, 0, 0)) > 1e-12 {
+			t.Errorf("w=%v: FRD magDB=%v, model magDB=%v", omega[k], got, modelBode.MagDBAt(k, 0, 0))
+		}
+		if math.Abs(bode.PhaseAt(k, 0, 0)-modelBode.PhaseAt(k, 0, 0)) > 1e-12 {
+			t.Errorf("w=%v: FRD phase=%v, model phase=%v", omega[k], bode.PhaseAt(k, 0, 0), modelBode.PhaseAt(k, 0, 0))
 		}
 	}
 }

@@ -14,44 +14,20 @@ type H2SynResult struct {
 }
 
 func H2Syn(P *System, nmeas, ncont int) (*H2SynResult, error) {
-	if !P.IsContinuous() {
-		return nil, ErrWrongDomain
+	gp, err := partitionGeneralizedPlant(P, nmeas, ncont)
+	if err != nil {
+		return nil, err
 	}
-	if P.IsDescriptor() {
-		return nil, ErrDescriptorRiccati
-	}
-
-	n, m, p := P.Dims()
-	if n == 0 {
-		return nil, ErrInvalidPartition
-	}
-	if ncont <= 0 || nmeas <= 0 || ncont > m || nmeas > p {
-		return nil, ErrInvalidPartition
-	}
-
-	m1 := m - ncont
-	m2 := ncont
-	p1 := p - nmeas
-	p2 := nmeas
-
-	if m1 <= 0 || p1 <= 0 {
-		return nil, ErrInvalidPartition
-	}
-
-	A := P.A
-	B1 := extractBlock(P.B, 0, 0, n, m1)
-	B2 := extractBlock(P.B, 0, m1, n, m2)
-	C1 := extractBlock(P.C, 0, 0, p1, n)
-	C2 := extractBlock(P.C, p1, 0, p2, n)
-	D11 := extractBlock(P.D, 0, 0, p1, m1)
-	D12 := extractBlock(P.D, 0, m1, p1, m2)
-	D21 := extractBlock(P.D, p1, 0, p2, m1)
-	D22 := extractBlock(P.D, p1, m1, p2, m2)
+	n := gp.n
+	A := gp.A
+	B1, B2 := gp.B1, gp.B2
+	C1, C2 := gp.C1, gp.C2
+	D11, D12, D21, D22 := gp.D11, gp.D12, gp.D21, gp.D22
 
 	tol := 1e-10
 	d11Raw := D11.RawMatrix()
-	for i := range p1 {
-		for j := range m1 {
+	for i := range gp.p1 {
+		for j := range gp.m1 {
 			if math.Abs(d11Raw.Data[i*d11Raw.Stride+j]) > tol {
 				return nil, ErrNoFiniteH2Norm
 			}
@@ -59,8 +35,8 @@ func H2Syn(P *System, nmeas, ncont int) (*H2SynResult, error) {
 	}
 
 	d22Raw := D22.RawMatrix()
-	for i := range p2 {
-		for j := range m2 {
+	for i := range gp.p2 {
+		for j := range gp.m2 {
 			if math.Abs(d22Raw.Data[i*d22Raw.Stride+j]) > tol {
 				return nil, ErrH2DirectFeedthrough
 			}
@@ -95,7 +71,7 @@ func H2Syn(P *System, nmeas, ncont int) (*H2SynResult, error) {
 	X := resX.X
 
 	// F = -K_care (state feedback gain u = F*x)
-	F := mat.NewDense(m2, n, nil)
+	F := mat.NewDense(gp.m2, n, nil)
 	F.Scale(-1, resX.K)
 
 	// Filter CARE (dual): Care(A', C2', B1*B1', D21*D21', S=B1*D21')
@@ -124,12 +100,13 @@ func H2Syn(P *System, nmeas, ncont int) (*H2SynResult, error) {
 
 	Bk = denseCopy(L)
 	Ck = denseCopy(F)
-	Dk = mat.NewDense(m2, p2, nil)
+	Dk = mat.NewDense(gp.m2, gp.p2, nil)
 
 	K, err := New(Ak, Bk, Ck, Dk, 0)
 	if err != nil {
 		return nil, err
 	}
+	gp.applyControllerNames(K)
 
 	// Closed-loop A matrix for pole computation
 	// CL_A = [A + B2*Dk*C2,  B2*Ck;  Bk*C2,  Ak]
