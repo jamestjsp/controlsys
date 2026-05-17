@@ -8,10 +8,7 @@ import (
 )
 
 func domainMatch(sys1, sys2 *System) error {
-	if sys1.Dt != sys2.Dt {
-		return ErrDomainMismatch
-	}
-	return nil
+	return newTimeDomain(sys1.Dt).ensureCompatible(newTimeDomain(sys2.Dt))
 }
 
 func setBlock(dst *mat.Dense, r0, c0 int, src *mat.Dense) {
@@ -111,9 +108,7 @@ func seriesSimple(sys1, sys2 *System) (*System, error) {
 		}
 		sys.InputDelay = inDel
 		sys.OutputDelay = outDel
-		sys.InputName = copyStringSlice(sys1.InputName)
-		sys.OutputName = copyStringSlice(sys2.OutputName)
-		sys.StateName = concatStringSlices([][]string{sys1.StateName, sys2.StateName}, []int{n1, n2})
+		seriesMetadata(sys1, sys2, n1, n2).applyAllOwned(sys)
 		return sys, nil
 	}
 

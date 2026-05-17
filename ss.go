@@ -62,8 +62,8 @@ func (sys *System) Dims() (n, m, p int) {
 	return
 }
 
-func (sys *System) IsContinuous() bool { return sys.Dt == 0 }
-func (sys *System) IsDiscrete() bool   { return sys.Dt > 0 }
+func (sys *System) IsContinuous() bool { return newTimeDomain(sys.Dt).isContinuous() }
+func (sys *System) IsDiscrete() bool   { return newTimeDomain(sys.Dt).isDiscrete() }
 
 func (sys *System) Validate() error {
 	if sys == nil {
@@ -147,8 +147,8 @@ func (sys *System) IsStable() (bool, error) {
 }
 
 func validateDims(A, B, C, D *mat.Dense, dt float64) (n, m, p int, err error) {
-	if dt < 0 {
-		return 0, 0, 0, ErrInvalidSampleTime
+	if err := newTimeDomain(dt).validateSampleTime(); err != nil {
+		return 0, 0, 0, err
 	}
 	if A != nil {
 		r, c := A.Dims()

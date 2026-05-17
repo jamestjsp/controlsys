@@ -197,116 +197,11 @@ type C2DOptions struct {
 }
 
 func (sys *System) DiscretizeWithOpts(dt float64, opts C2DOptions) (*System, error) {
-	if sys.IsDiscrete() {
-		return nil, fmt.Errorf("DiscretizeWithOpts: system already discrete: %w", ErrWrongDomain)
-	}
-	if dt <= 0 {
-		return nil, ErrInvalidSampleTime
-	}
-
-	delayModeling := opts.DelayModeling
-	if delayModeling == "" {
-		delayModeling = "state"
-	}
-	if delayModeling != "state" && delayModeling != "internal" {
-		return nil, fmt.Errorf("DiscretizeWithOpts: unknown DelayModeling %q", delayModeling)
-	}
-
-	method := opts.Method
-	if method == "" {
-		method = "zoh"
-	}
-
-	contInputDelay := sys.InputDelay
-	contOutputDelay := sys.OutputDelay
-
-	cp := sys.Copy()
-	cp.InputDelay = nil
-	cp.OutputDelay = nil
-
-	if sys.Delay != nil && (opts.ThiranOrder > 0 || delayModeling == "internal") {
-		inD, outD, residual := DecomposeIODelay(sys.Delay)
-		hasResidual := false
-		raw := residual.RawMatrix()
-		for _, v := range raw.Data[:raw.Rows*raw.Cols] {
-			if v != 0 {
-				hasResidual = true
-				break
-			}
-		}
-		if hasResidual {
-			cp.Delay = residual
-		} else {
-			cp.Delay = nil
-		}
-		contInputDelay = mergeDelays(sys.InputDelay, inD)
-		contOutputDelay = mergeDelays(sys.OutputDelay, outD)
-	}
-	workSys := cp
-
-	if workSys.HasInternalDelay() {
-		disc, err := discretizeWithInternalDelay(workSys, dt, opts)
-		if err != nil {
-			return nil, err
-		}
-		disc.InputDelay, err = convertSliceDelayToDiscrete(contInputDelay, dt, opts.ThiranOrder)
-		if err != nil {
-			return nil, err
-		}
-		disc.OutputDelay, err = convertSliceDelayToDiscrete(contOutputDelay, dt, opts.ThiranOrder)
-		if err != nil {
-			return nil, err
-		}
-		if opts.ThiranOrder > 0 {
-			disc, err = absorbFractionalDelays(disc, contInputDelay, contOutputDelay, dt, opts.ThiranOrder)
-			if err != nil {
-				return nil, err
-			}
-		}
-		return disc, nil
-	}
-
-	var disc *System
-	var err error
-	switch method {
-	case "zoh":
-		disc, err = workSys.DiscretizeZOH(dt)
-	case "tustin":
-		disc, err = workSys.Discretize(dt)
-	case "foh":
-		disc, err = workSys.DiscretizeFOH(dt)
-	case "impulse":
-		disc, err = workSys.DiscretizeImpulse(dt)
-	case "matched":
-		disc, err = workSys.DiscretizeMatched(dt)
-	default:
-		return nil, fmt.Errorf("DiscretizeWithOpts: unknown method %q", method)
-	}
+	plan, err := newC2DPlan(sys, dt, opts)
 	if err != nil {
 		return nil, err
 	}
-
-	if delayModeling == "internal" {
-		return discretizeDelaysAsInternal(disc, contInputDelay, contOutputDelay, dt)
-	}
-
-	disc.InputDelay, err = convertSliceDelayToDiscrete(contInputDelay, dt, opts.ThiranOrder)
-	if err != nil {
-		return nil, err
-	}
-	disc.OutputDelay, err = convertSliceDelayToDiscrete(contOutputDelay, dt, opts.ThiranOrder)
-	if err != nil {
-		return nil, err
-	}
-
-	if opts.ThiranOrder > 0 {
-		disc, err = absorbFractionalDelays(disc, contInputDelay, contOutputDelay, dt, opts.ThiranOrder)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	return disc, nil
+	return plan.run()
 }
 
 func discretizeDelaysAsInternal(disc *System, contInputDelay, contOutputDelay []float64, dt float64) (*System, error) {
@@ -1177,19 +1072,7 @@ func buildFOHSystem(sys *System, n, m, p int, dt float64, adData, g0Data, g1Data
 }
 
 func fohAugmentStateNames(out, src *System, n, m int) {
-	if src.StateName == nil && src.InputName == nil {
-		return
-	}
-	names := make([]string, n+m)
-	if src.StateName != nil {
-		copy(names, src.StateName)
-	}
-	for j := 0; j < m; j++ {
-		if src.InputName != nil && j < len(src.InputName) {
-			names[n+j] = src.InputName[j] + "_prev"
-		}
-	}
-	out.StateName = names
+	out.StateName = fohStateMetadata(src, n, m)
 }
 
 func discretizeFOHAugmented(sys *System, dt float64) (*System, *mat.Dense, error) {
@@ -1426,17 +1309,11 @@ func matchedGainFallback(num, den Poly, discZeros, discPoles []complex128, dt fl
 //
 // Delay fields are converted back to continuous (τ_c = τ_d · Dt).
 func (sys *System) D2C(method string) (*System, error) {
-	if sys.IsContinuous() {
-		return nil, fmt.Errorf("D2C: system already continuous: %w", ErrWrongDomain)
+	plan, err := newD2CPlan(sys, method)
+	if err != nil {
+		return nil, err
 	}
-	switch method {
-	case "", "zoh":
-		return sys.d2cZOH()
-	case "tustin":
-		return sys.Undiscretize()
-	default:
-		return nil, fmt.Errorf("D2C: unknown method %q (supported: \"tustin\", \"zoh\")", method)
-	}
+	return plan.run()
 }
 
 func (sys *System) d2cZOH() (*System, error) {
@@ -1518,25 +1395,9 @@ func d2cPropagateDelays(out, sys *System, dt float64) {
 }
 
 func (sys *System) D2D(newDt float64, opts C2DOptions) (*System, error) {
-	if sys.IsContinuous() {
-		return nil, fmt.Errorf("D2D: system is continuous: %w", ErrWrongDomain)
-	}
-	if newDt <= 0 {
-		return nil, ErrInvalidSampleTime
-	}
-	if math.Abs(newDt-sys.Dt) < 1e-14*math.Max(newDt, sys.Dt) {
-		return sys.Copy(), nil
-	}
-
-	contSys, err := sys.Undiscretize()
+	plan, err := newD2DPlan(sys, newDt, opts)
 	if err != nil {
-		return nil, fmt.Errorf("D2D: %w", err)
+		return nil, err
 	}
-
-	result, err := contSys.DiscretizeWithOpts(newDt, opts)
-	if err != nil {
-		return nil, fmt.Errorf("D2D: %w", err)
-	}
-	propagateNames(result, sys)
-	return result, nil
+	return plan.run()
 }

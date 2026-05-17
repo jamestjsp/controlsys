@@ -77,15 +77,11 @@ func lookupSignalIndices(names []string, targets []string) ([]int, error) {
 }
 
 func propagateNames(result, src *System) {
-	result.InputName = copyStringSlice(src.InputName)
-	result.OutputName = copyStringSlice(src.OutputName)
-	result.StateName = copyStringSlice(src.StateName)
-	result.Notes = src.Notes
+	metadataFromSystem(src).applyAll(result)
 }
 
 func propagateIONames(result, src *System) {
-	result.InputName = copyStringSlice(src.InputName)
-	result.OutputName = copyStringSlice(src.OutputName)
+	metadataFromSystem(src).applyIO(result)
 }
 
 func expandName(name string, count int) []string {
@@ -295,8 +291,7 @@ func (sys *System) SelectByIndex(inputs, outputs []int) (*System, error) {
 		if err != nil {
 			return nil, err
 		}
-		result.InputName = selectStringSlice(sys.InputName, inputs)
-		result.OutputName = selectStringSlice(sys.OutputName, outputs)
+		metadataFromSystem(sys).selectIO(inputs, outputs).applyIOOwned(result)
 		return result, nil
 	}
 
@@ -307,9 +302,7 @@ func (sys *System) SelectByIndex(inputs, outputs []int) (*System, error) {
 	if err != nil {
 		return nil, err
 	}
-	result.InputName = selectStringSlice(sys.InputName, inputs)
-	result.OutputName = selectStringSlice(sys.OutputName, outputs)
-	result.StateName = copyStringSlice(sys.StateName)
+	metadataFromSystem(sys).selectIO(inputs, outputs).applyAllOwned(result)
 
 	if sys.InputDelay != nil {
 		result.InputDelay = make([]float64, mSel)
