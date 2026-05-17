@@ -68,21 +68,15 @@ func (sys *System) Nyquist(omega []float64, nPoints int) (*NyquistResult, error)
 func countRHPPoles(poles []complex128, continuous bool, tol float64) int {
 	count := 0
 	for _, pole := range poles {
-		if continuous {
-			if real(pole) > tol {
-				count++
-			}
-		} else {
-			if cmplx.Abs(pole) > 1+tol {
-				count++
-			}
+		if poleOutsideStabilityBoundary(pole, continuous, tol) {
+			count++
 		}
 	}
 	return count
 }
 
 type imagAxisPole struct {
-	w0          float64
+	w0           float64
 	multiplicity int
 }
 
@@ -102,10 +96,10 @@ func findImagAxisPoles(poles []complex128, continuous bool, dt, tol float64) []i
 		var onAxis bool
 		var w0 float64
 		if continuous {
-			onAxis = math.Abs(real(pole)) < tol
+			onAxis = poleOnStabilityBoundary(pole, continuous, tol)
 			w0 = math.Abs(imag(pole))
 		} else {
-			onAxis = math.Abs(cmplx.Abs(pole)-1) < tol
+			onAxis = poleOnStabilityBoundary(pole, continuous, tol)
 			if onAxis {
 				angle := cmplx.Phase(pole)
 				if dt > 0 {

@@ -1,7 +1,5 @@
 package controlsys
 
-import "math/cmplx"
-
 type StabsepResult struct {
 	Stable   *System
 	Unstable *System
@@ -9,10 +7,7 @@ type StabsepResult struct {
 
 func Stabsep(sys *System) (*StabsepResult, error) {
 	isStable := func(ev complex128) bool {
-		if sys.IsContinuous() {
-			return real(ev) < 0
-		}
-		return cmplx.Abs(ev) < 1
+		return poleInsideStabilityBoundary(ev, sys.IsContinuous(), 0)
 	}
 
 	stable, unstable, err := decomposeByEigenvalues(sys, isStable)

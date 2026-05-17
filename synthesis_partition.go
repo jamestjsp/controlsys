@@ -62,6 +62,49 @@ func (gp *generalizedPlantPartition) applyControllerNames(K *System) {
 	K.OutputName = copyStringSlice(gp.controlNames)
 }
 
+func (gp *generalizedPlantPartition) validateControllerChannels() error {
+	stab, err := IsStabilizable(gp.A, gp.B2, true)
+	if err != nil {
+		return err
+	}
+	if !stab {
+		return ErrNotStabilizable
+	}
+
+	det, err := IsDetectable(gp.A, gp.C2, true)
+	if err != nil {
+		return err
+	}
+	if !det {
+		return ErrNotDetectable
+	}
+	return nil
+}
+
+func (gp *generalizedPlantPartition) newController(Ak, Bk, Ck *mat.Dense) (*System, error) {
+	K, err := New(Ak, Bk, Ck, mat.NewDense(gp.m2, gp.p2, nil), 0)
+	if err != nil {
+		return nil, err
+	}
+	gp.applyControllerNames(K)
+	return K, nil
+}
+
+func (gp *generalizedPlantPartition) closedLoopPoles(Ak, Bk, Ck *mat.Dense) ([]complex128, error) {
+	clN := 2 * gp.n
+	clA := mat.NewDense(clN, clN, nil)
+	setBlock(clA, 0, 0, gp.A)
+	setBlock(clA, 0, gp.n, mulDense(gp.B2, Ck))
+	setBlock(clA, gp.n, 0, mulDense(Bk, gp.C2))
+	setBlock(clA, gp.n, gp.n, Ak)
+
+	var eig mat.Eigen
+	if ok := eig.Factorize(clA, mat.EigenNone); !ok {
+		return nil, ErrSchurFailed
+	}
+	return eig.Values(nil), nil
+}
+
 func selectTrailingNames(names []string, start, count int) []string {
 	if names == nil {
 		return nil

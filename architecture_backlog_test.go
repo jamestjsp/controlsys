@@ -1,6 +1,7 @@
 package controlsys
 
 import (
+	"errors"
 	"math"
 	"math/cmplx"
 	"testing"
@@ -177,6 +178,123 @@ func TestTransferFunctionPreservesRowRealizationBehavior(t *testing.T) {
 				assertComplexApprox(t, tfEval[i][j], resp.At(k, i, j), 1e-8)
 			}
 		}
+	}
+}
+
+func TestDirectFeedthroughLoopBehaviorAcrossPublicInterconnections(t *testing.T) {
+	t.Run("singular", func(t *testing.T) {
+		plant, err := NewGain(mat.NewDense(1, 1, []float64{1}), 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		controller, err := NewGain(mat.NewDense(1, 1, []float64{1}), 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := Feedback(plant, controller, 1); !errors.Is(err, ErrSingularTransform) {
+			t.Fatalf("Feedback err = %v, want ErrSingularTransform", err)
+		}
+
+		lftPlant, err := NewGain(mat.NewDense(2, 2, []float64{0, 1, 1, 1}), 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := LFT(lftPlant, controller, 1, 1); !errors.Is(err, ErrAlgebraicLoop) {
+			t.Fatalf("LFT err = %v, want ErrAlgebraicLoop", err)
+		}
+	})
+
+	t.Run("nonsingular", func(t *testing.T) {
+		plant, err := NewGain(mat.NewDense(1, 1, []float64{2}), 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		controller, err := NewGain(mat.NewDense(1, 1, []float64{0.25}), 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		closed, err := Feedback(plant, controller, -1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, want := closed.D.At(0, 0), 4.0/3.0; math.Abs(got-want) > 1e-12 {
+			t.Fatalf("Feedback D = %v, want %v", got, want)
+		}
+
+		lftPlant, err := NewGain(mat.NewDense(2, 2, []float64{2, 2, 1, 0}), 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		lftClosed, err := LFT(lftPlant, controller, 1, 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, want := lftClosed.D.At(0, 0), 2.5; math.Abs(got-want) > 1e-12 {
+			t.Fatalf("LFT D = %v, want %v", got, want)
+		}
+	})
+}
+
+func TestStabilityBoundaryClassificationAcrossPublicConsumers(t *testing.T) {
+	continuous, err := New(
+		mat.NewDense(1, 1, []float64{0}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, nil),
+		0,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stable, err := continuous.IsStable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stable {
+		t.Fatal("continuous boundary pole reported stable")
+	}
+	sep, err := Stabsep(continuous)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ns, _, _ := sep.Stable.Dims()
+	nu, _, _ := sep.Unstable.Dims()
+	if ns != 0 || nu != 1 {
+		t.Fatalf("continuous Stabsep orders = stable %d unstable %d, want 0 and 1", ns, nu)
+	}
+	nyq, err := continuous.Nyquist([]float64{0.1, 1, 10}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if nyq.RHPPoles != 0 {
+		t.Fatalf("continuous boundary pole counted as RHP: got %d", nyq.RHPPoles)
+	}
+
+	discrete, err := New(
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, nil),
+		0.1,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stable, err = discrete.IsStable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stable {
+		t.Fatal("discrete unit-circle pole reported stable")
+	}
+	sep, err = Stabsep(discrete)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ns, _, _ = sep.Stable.Dims()
+	nu, _, _ = sep.Unstable.Dims()
+	if ns != 0 || nu != 1 {
+		t.Fatalf("discrete Stabsep orders = stable %d unstable %d, want 0 and 1", ns, nu)
 	}
 }
 

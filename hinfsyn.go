@@ -26,26 +26,14 @@ func HinfSyn(P *System, nmeas, ncont int) (*HinfSynResult, error) {
 	B1, B2 := gp.B1, gp.B2
 	C1, C2 := gp.C1, gp.C2
 	D11, D12, D21 := gp.D11, gp.D12, gp.D21
-	stab, err := IsStabilizable(A, B2, true)
-	if err != nil {
+	if err := gp.validateControllerChannels(); err != nil {
 		return nil, err
-	}
-	if !stab {
-		return nil, ErrNotStabilizable
-	}
-
-	det, err := IsDetectable(A, C2, true)
-	if err != nil {
-		return nil, err
-	}
-	if !det {
-		return nil, ErrNotDetectable
 	}
 
 	gammaLB := maxSVD(D11)
 	gammaUB := gammaLB*2 + 1
 
-	for !hinfFeasible(A, B1, B2, C1, C2, D12, D21, n, gp.m1, gp.m2, gp.p1, gp.p2, gammaUB) {
+	for !hinfFeasible(gp, gammaUB) {
 		gammaUB *= 2
 		if gammaUB > 1e12 {
 			return nil, ErrGammaNotAchievable
@@ -54,7 +42,7 @@ func HinfSyn(P *System, nmeas, ncont int) (*HinfSynResult, error) {
 
 	for gammaUB-gammaLB > 1e-6*gammaUB {
 		mid := (gammaLB + gammaUB) / 2
-		if hinfFeasible(A, B1, B2, C1, C2, D12, D21, n, gp.m1, gp.m2, gp.p1, gp.p2, mid) {
+		if hinfFeasible(gp, mid) {
 			gammaUB = mid
 		} else {
 			gammaLB = mid
@@ -62,7 +50,7 @@ func HinfSyn(P *System, nmeas, ncont int) (*HinfSynResult, error) {
 	}
 
 	gamma := gammaUB
-	X, Y, err := hinfSolveRiccatis(A, B1, B2, C1, C2, D12, D21, n, gp.m1, gp.m2, gp.p1, gp.p2, gamma)
+	X, Y, err := hinfSolveRiccatis(gp, gamma)
 	if err != nil {
 		return nil, err
 	}
@@ -128,43 +116,35 @@ func HinfSyn(P *System, nmeas, ncont int) (*HinfSynResult, error) {
 	Bk := mulDense(Zp, L)
 	Bk.Scale(-1, Bk)
 	Ck := denseCopy(F)
-	Dk := mat.NewDense(gp.m2, gp.p2, nil)
 
-	K, err := New(Ak, Bk, Ck, Dk, 0)
+	K, err := gp.newController(Ak, Bk, Ck)
 	if err != nil {
 		return nil, err
 	}
-	gp.applyControllerNames(K)
 
-	clN := 2 * n
-	clA := mat.NewDense(clN, clN, nil)
-	setBlock(clA, 0, 0, A)
-	BC := mulDense(B2, Ck)
-	setBlock(clA, 0, n, BC)
-	BkC := mulDense(Bk, C2)
-	setBlock(clA, n, 0, BkC)
-	setBlock(clA, n, n, Ak)
-
-	var eig mat.Eigen
-	ok := eig.Factorize(clA, mat.EigenNone)
-	if !ok {
-		return nil, ErrSchurFailed
+	clPoles, err := gp.closedLoopPoles(Ak, Bk, Ck)
+	if err != nil {
+		return nil, err
 	}
-	clPoles := eig.Values(nil)
 
 	return &HinfSynResult{K: K, GammaOpt: gamma, X: X, Y: Y, CLPoles: clPoles}, nil
 }
 
-func hinfFeasible(A, B1, B2, C1, C2, D12, D21 *mat.Dense, n, m1, m2, p1, p2 int, gamma float64) bool {
-	_, _, err := hinfSolveRiccatis(A, B1, B2, C1, C2, D12, D21, n, m1, m2, p1, p2, gamma)
+func hinfFeasible(gp *generalizedPlantPartition, gamma float64) bool {
+	_, _, err := hinfSolveRiccatis(gp, gamma)
 	return err == nil
 }
 
-func hinfSolveRiccatis(A, B1, B2, C1, C2, D12, D21 *mat.Dense, n, m1, m2, p1, p2 int, gamma float64) (*mat.Dense, *mat.Dense, error) {
+func hinfSolveRiccatis(gp *generalizedPlantPartition, gamma float64) (*mat.Dense, *mat.Dense, error) {
+	A := gp.A
+	B1, B2 := gp.B1, gp.B2
+	C1, C2 := gp.C1, gp.C2
+	D12, D21 := gp.D12, gp.D21
+	n := gp.n
 	ginv2 := 1.0 / (gamma * gamma)
 
 	R1 := mulDense(mat.DenseCopyOf(D12.T()), D12)
-	R1inv, err := invertSmall(R1, m2)
+	R1inv, err := invertSmall(R1, gp.m2)
 	if err != nil {
 		return nil, nil, ErrInvalidPartition
 	}
@@ -204,7 +184,7 @@ func hinfSolveRiccatis(A, B1, B2, C1, C2, D12, D21 *mat.Dense, n, m1, m2, p1, p2
 
 	// Y-Riccati
 	R2 := mulDense(D21, mat.DenseCopyOf(D21.T()))
-	R2inv, err := invertSmall(R2, p2)
+	R2inv, err := invertSmall(R2, gp.p2)
 	if err != nil {
 		return nil, nil, ErrInvalidPartition
 	}

@@ -135,6 +135,37 @@ func TestFRD_DirectConstruction(t *testing.T) {
 	}
 }
 
+func TestFRD_OwnsConstructedAndExportedSampledResponseData(t *testing.T) {
+	resp := [][][]complex128{
+		{{1 + 2i}},
+		{{3 + 4i}},
+	}
+	omega := []float64{1, 2}
+	frd, err := NewFRD(resp, omega, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	resp[0][0][0] = 99
+	omega[0] = 99
+	if got := frd.At(0, 0, 0); got != 1+2i {
+		t.Fatalf("FRD response aliases constructor input: got %v", got)
+	}
+	if got := frd.Omega[0]; got != 1 {
+		t.Fatalf("FRD omega aliases constructor input: got %v", got)
+	}
+
+	matrix := frd.FreqResponse()
+	matrix.Data[0] = 77
+	matrix.Omega[0] = 77
+	if got := frd.At(0, 0, 0); got != 1+2i {
+		t.Fatalf("FreqResponse data aliases FRD storage: got %v", got)
+	}
+	if got := frd.Omega[0]; got != 1 {
+		t.Fatalf("FreqResponse omega aliases FRD storage: got %v", got)
+	}
+}
+
 func TestFRD_Discrete(t *testing.T) {
 	sys, err := New(
 		mat.NewDense(1, 1, []float64{0.5}),

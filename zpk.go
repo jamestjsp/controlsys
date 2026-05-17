@@ -144,11 +144,7 @@ func (z *ZPK) FreqResponse(omega []float64) (*FreqResponseMatrix, error) {
 			}
 		}
 	}
-	return &FreqResponseMatrix{
-		Data: data, Omega: omega, NFreq: len(omega), P: p, M: m,
-		InputName:  copyStringSlice(z.InputName),
-		OutputName: copyStringSlice(z.OutputName),
-	}, nil
+	return newFreqResponseMatrix(data, omega, p, m, z.InputName, z.OutputName), nil
 }
 
 func (z *ZPK) TransferFunction() (*TransferFunc, error) {

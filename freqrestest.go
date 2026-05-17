@@ -35,9 +35,7 @@ func (r *FreqRespEstResult) FRD() (*FRD, error) {
 	if r == nil || r.H == nil {
 		return nil, ErrInsufficientData
 	}
-	response, data := newFRDResponseStorage(r.H.NFreq, r.H.P, r.H.M)
-	copy(data, r.H.Data)
-	return NewFRD(response, r.Omega, r.Dt)
+	return newFRDFromFreqResponse(r.H, r.Dt)
 }
 
 func FreqRespEst(input, output *mat.Dense, dt float64, opts *FreqRespEstOpts) (*FreqRespEstResult, error) {
@@ -235,7 +233,7 @@ func welchSISO(fft *fourier.FFT, seg []float64, _ []complex128, win []float64,
 	}
 
 	return &FreqRespEstResult{
-		H:         &FreqResponseMatrix{Data: H, Omega: omega, NFreq: nFreq, P: 1, M: 1},
+		H:         newFreqResponseMatrix(H, omega, 1, 1, nil, nil),
 		Omega:     omega,
 		Dt:        dt,
 		Coherence: coh,
@@ -358,7 +356,7 @@ func welchMIMO(fft *fourier.FFT, seg []float64, _ []complex128, win []float64,
 	}
 
 	return &FreqRespEstResult{
-		H:         &FreqResponseMatrix{Data: H, Omega: omega, NFreq: nFreq, P: p, M: m},
+		H:         newFreqResponseMatrix(H, omega, p, m, nil, nil),
 		Omega:     omega,
 		Dt:        dt,
 		Coherence: coh,
@@ -410,7 +408,7 @@ func freqRespEstFFT(input, output *mat.Dense, dt float64, m, p, _, nfft int,
 	}
 
 	return &FreqRespEstResult{
-		H:     &FreqResponseMatrix{Data: H, Omega: omega, NFreq: nFreq, P: p, M: m},
+		H:     newFreqResponseMatrix(H, omega, p, m, nil, nil),
 		Omega: omega,
 		Dt:    dt,
 	}, nil
