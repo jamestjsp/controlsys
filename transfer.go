@@ -98,93 +98,117 @@ type TransferFuncResult struct {
 }
 
 func (sys *System) TransferFunction(opts *TransferFuncOpts) (*TransferFuncResult, error) {
-	n, m, p := sys.Dims()
-
 	if opts == nil {
 		opts = &TransferFuncOpts{}
 	}
+	return newRowRealizationConverter(sys, opts).convert()
+}
+
+type rowRealizationConverter struct {
+	sys  *System
+	opts *TransferFuncOpts
+	n    int
+	m    int
+	p    int
+	tf   *TransferFunc
+	rows []int
+	dRaw blas64.General
+}
+
+func newRowRealizationConverter(sys *System, opts *TransferFuncOpts) rowRealizationConverter {
+	n, m, p := sys.Dims()
 
 	tf := &TransferFunc{
 		Num: make([][][]float64, p),
 		Den: make([][]float64, p),
 		Dt:  sys.Dt,
 	}
-	rowDeg := make([]int, p)
-
 	var dRaw blas64.General
 	if sys.D != nil {
 		dRaw = sys.D.RawMatrix()
 	}
+	return rowRealizationConverter{
+		sys:  sys,
+		opts: opts,
+		n:    n,
+		m:    m,
+		p:    p,
+		tf:   tf,
+		rows: make([]int, p),
+		dRaw: dRaw,
+	}
+}
 
-	if n == 0 || p == 0 || m == 0 {
-		for i := 0; i < p; i++ {
-			tf.Den[i] = []float64{1}
-			tf.Num[i] = make([][]float64, m)
-			for j := 0; j < m; j++ {
-				if p > 0 && m > 0 {
-					tf.Num[i][j] = []float64{dRaw.Data[i*dRaw.Stride+j]}
-				} else {
-					tf.Num[i][j] = []float64{0}
-				}
-			}
-		}
-		tf.InputName = copyStringSlice(sys.InputName)
-		tf.OutputName = copyStringSlice(sys.OutputName)
-		return &TransferFuncResult{TF: tf, MinimalOrder: 0, RowDegrees: rowDeg}, nil
+func (c rowRealizationConverter) convert() (*TransferFuncResult, error) {
+	if c.n == 0 || c.p == 0 || c.m == 0 {
+		c.fillStaticRows()
+		return c.result(0), nil
 	}
 
-	stair := ControllabilityStaircase(sys.A, sys.B, sys.C, opts.ControllabilityTol)
+	stair := ControllabilityStaircase(c.sys.A, c.sys.B, c.sys.C, c.opts.ControllabilityTol)
 	ncont := stair.NCont
 
 	if ncont == 0 {
-		for i := 0; i < p; i++ {
-			tf.Den[i] = []float64{1}
-			tf.Num[i] = make([][]float64, m)
-			for j := 0; j < m; j++ {
-				tf.Num[i][j] = []float64{dRaw.Data[i*dRaw.Stride+j]}
-			}
-		}
-		tf.InputName = copyStringSlice(sys.InputName)
-		tf.OutputName = copyStringSlice(sys.OutputName)
-		return &TransferFuncResult{TF: tf, MinimalOrder: 0, RowDegrees: rowDeg}, nil
+		c.fillStaticRows()
+		return c.result(0), nil
 	}
 
-	Ac := extractSubmatrix(stair.A, 0, ncont, 0, ncont)
-	Bc := extractSubmatrix(stair.B, 0, ncont, 0, m)
-	Cc := extractSubmatrix(stair.C, 0, p, 0, ncont)
+	totalOrder := c.convertDynamicRows(stair, ncont)
+	return c.result(totalOrder), nil
+}
 
+func (c rowRealizationConverter) convertDynamicRows(stair *StaircaseResult, ncont int) int {
+	Ac := extractSubmatrix(stair.A, 0, ncont, 0, ncont)
+	Bc := extractSubmatrix(stair.B, 0, ncont, 0, c.m)
+	Cc := extractSubmatrix(stair.C, 0, c.p, 0, ncont)
 	var ws *tfWorkspace
 	if ncont > 0 {
-		ws = newTFWorkspace(ncont, m)
+		ws = newTFWorkspace(ncont, c.m)
 	}
 
 	totalOrder := 0
-	for i := 0; i < p; i++ {
-		nobs, den, numCoeffs := ssToTFRow(Ac, Bc, Cc, i, ncont, m, opts.ObservabilityTol, ws)
-		rowDeg[i] = nobs
+	for i := 0; i < c.p; i++ {
+		nobs, den, numCoeffs := ssToTFRow(Ac, Bc, Cc, i, ncont, c.m, c.opts.ObservabilityTol, ws)
+		c.rows[i] = nobs
 		totalOrder += nobs
 
-		tf.Den[i] = den
-		tf.Num[i] = make([][]float64, m)
-		for j := 0; j < m; j++ {
+		c.tf.Den[i] = den
+		c.tf.Num[i] = make([][]float64, c.m)
+		for j := 0; j < c.m; j++ {
 			num := numCoeffs[j]
-			dij := dRaw.Data[i*dRaw.Stride+j]
+			dij := c.dRaw.Data[i*c.dRaw.Stride+j]
 			if dij != 0 {
 				numWithD := Poly(num).Add(Poly(den).Scale(dij))
-				tf.Num[i][j] = []float64(numWithD)
+				c.tf.Num[i][j] = []float64(numWithD)
 			} else {
-				tf.Num[i][j] = num
+				c.tf.Num[i][j] = num
 			}
 		}
 	}
+	return totalOrder
+}
 
-	if sys.Delay != nil {
-		tf.Delay = denseToSlice2D(sys.Delay)
+func (c rowRealizationConverter) fillStaticRows() {
+	for i := 0; i < c.p; i++ {
+		c.tf.Den[i] = []float64{1}
+		c.tf.Num[i] = make([][]float64, c.m)
+		for j := 0; j < c.m; j++ {
+			if c.p > 0 && c.m > 0 {
+				c.tf.Num[i][j] = []float64{c.dRaw.Data[i*c.dRaw.Stride+j]}
+			} else {
+				c.tf.Num[i][j] = []float64{0}
+			}
+		}
 	}
+}
 
-	tf.InputName = copyStringSlice(sys.InputName)
-	tf.OutputName = copyStringSlice(sys.OutputName)
-	return &TransferFuncResult{TF: tf, MinimalOrder: totalOrder, RowDegrees: rowDeg}, nil
+func (c rowRealizationConverter) result(order int) *TransferFuncResult {
+	if c.sys.Delay != nil {
+		c.tf.Delay = denseToSlice2D(c.sys.Delay)
+	}
+	c.tf.InputName = copyStringSlice(c.sys.InputName)
+	c.tf.OutputName = copyStringSlice(c.sys.OutputName)
+	return &TransferFuncResult{TF: c.tf, MinimalOrder: order, RowDegrees: c.rows}
 }
 
 type tfWorkspace struct {

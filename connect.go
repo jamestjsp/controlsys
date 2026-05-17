@@ -29,53 +29,65 @@ func setBlock(dst *mat.Dense, r0, c0 int, src *mat.Dense) {
 	}
 }
 
+type interconnectionPlan struct {
+	sys1, sys2 *System
+	n1, m1, p1 int
+	n2, m2, p2 int
+}
+
+func newInterconnectionPlan(sys1, sys2 *System) interconnectionPlan {
+	n1, m1, p1 := sys1.Dims()
+	n2, m2, p2 := sys2.Dims()
+	return interconnectionPlan{
+		sys1: sys1, sys2: sys2,
+		n1: n1, m1: m1, p1: p1,
+		n2: n2, m2: m2, p2: p2,
+	}
+}
+
+func (plan interconnectionPlan) seriesNeedsLFT() bool {
+	if plan.sys1.HasInternalDelay() || plan.sys2.HasInternalDelay() {
+		return true
+	}
+	if !plan.sys1.HasDelay() && !plan.sys2.HasDelay() {
+		return false
+	}
+	ioCheck := seriesDelay(plan.sys1, plan.sys2)
+	if ioCheck == nil && (plan.sys1.Delay != nil || plan.sys2.Delay != nil) {
+		return true
+	}
+	if plan.sys1.OutputDelay == nil && plan.sys2.InputDelay == nil {
+		return false
+	}
+	for k := 1; k < plan.p1; k++ {
+		if math.Abs(plan.intermediateSeriesDelay(k)-plan.intermediateSeriesDelay(0)) > 1e-12 {
+			return true
+		}
+	}
+	return false
+}
+
+func (plan interconnectionPlan) intermediateSeriesDelay(k int) float64 {
+	var delay float64
+	if plan.sys1.OutputDelay != nil {
+		delay += plan.sys1.OutputDelay[k]
+	}
+	if plan.sys2.InputDelay != nil {
+		delay += plan.sys2.InputDelay[k]
+	}
+	return delay
+}
+
 func Series(sys1, sys2 *System) (*System, error) {
 	if err := domainMatch(sys1, sys2); err != nil {
 		return nil, err
 	}
-	_, _, p1 := sys1.Dims()
-	_, m2, _ := sys2.Dims()
-	if p1 != m2 {
-		return nil, fmt.Errorf("series: sys1 outputs %d != sys2 inputs %d: %w", p1, m2, ErrDimensionMismatch)
+	plan := newInterconnectionPlan(sys1, sys2)
+	if plan.p1 != plan.m2 {
+		return nil, fmt.Errorf("series: sys1 outputs %d != sys2 inputs %d: %w", plan.p1, plan.m2, ErrDimensionMismatch)
 	}
 
-	if sys1.HasInternalDelay() || sys2.HasInternalDelay() {
-		return seriesLFT(sys1, sys2)
-	}
-
-	needsLFT := false
-	if sys1.HasDelay() || sys2.HasDelay() {
-		ioCheck := seriesDelay(sys1, sys2)
-		if ioCheck == nil && (sys1.Delay != nil || sys2.Delay != nil) {
-			needsLFT = true
-		}
-		if !needsLFT && (sys1.OutputDelay != nil || sys2.InputDelay != nil) {
-			for k := 0; k < p1; k++ {
-				var od, id float64
-				if sys1.OutputDelay != nil {
-					od = sys1.OutputDelay[k]
-				}
-				if sys2.InputDelay != nil {
-					id = sys2.InputDelay[k]
-				}
-				if k > 0 {
-					var od0, id0 float64
-					if sys1.OutputDelay != nil {
-						od0 = sys1.OutputDelay[0]
-					}
-					if sys2.InputDelay != nil {
-						id0 = sys2.InputDelay[0]
-					}
-					if math.Abs((od+id)-(od0+id0)) > 1e-12 {
-						needsLFT = true
-						break
-					}
-				}
-			}
-		}
-	}
-
-	if needsLFT {
+	if plan.seriesNeedsLFT() {
 		return seriesLFT(sys1, sys2)
 	}
 
@@ -242,10 +254,9 @@ func Parallel(sys1, sys2 *System) (*System, error) {
 	if err := domainMatch(sys1, sys2); err != nil {
 		return nil, err
 	}
-	_, m1, p1 := sys1.Dims()
-	_, m2, p2 := sys2.Dims()
-	if m1 != m2 || p1 != p2 {
-		return nil, fmt.Errorf("parallel: dims (%d,%d) vs (%d,%d): %w", p1, m1, p2, m2, ErrDimensionMismatch)
+	plan := newInterconnectionPlan(sys1, sys2)
+	if plan.m1 != plan.m2 || plan.p1 != plan.p2 {
+		return nil, fmt.Errorf("parallel: dims (%d,%d) vs (%d,%d): %w", plan.p1, plan.m1, plan.p2, plan.m2, ErrDimensionMismatch)
 	}
 
 	if sys1.HasInternalDelay() || sys2.HasInternalDelay() {
@@ -280,31 +291,7 @@ func parallelNeedsLFT(sys1, sys2 *System) bool {
 }
 
 func totalDelayMatrix(sys *System, p, m int) *mat.Dense {
-	if sys.Delay == nil && sys.InputDelay == nil && sys.OutputDelay == nil {
-		return nil
-	}
-	data := make([]float64, p*m)
-	if sys.Delay != nil {
-		raw := sys.Delay.RawMatrix()
-		for i := 0; i < p; i++ {
-			copy(data[i*m:i*m+m], raw.Data[i*raw.Stride:i*raw.Stride+m])
-		}
-	}
-	if sys.InputDelay != nil {
-		for j := 0; j < m; j++ {
-			for i := 0; i < p; i++ {
-				data[i*m+j] += sys.InputDelay[j]
-			}
-		}
-	}
-	if sys.OutputDelay != nil {
-		for i := 0; i < p; i++ {
-			for j := 0; j < m; j++ {
-				data[i*m+j] += sys.OutputDelay[i]
-			}
-		}
-	}
-	return mat.NewDense(p, m, data)
+	return effectiveIODelayMatrix(sys, p, m, true)
 }
 
 func parallelSimple(sys1, sys2 *System) (*System, error) {
@@ -792,6 +779,9 @@ func concatDelay(d1 []float64, n1 int, d2 []float64, n2 int) []float64 {
 func mulDense(a, b *mat.Dense) *mat.Dense {
 	ar, _ := a.Dims()
 	_, bc := b.Dims()
+	if ar == 0 || bc == 0 {
+		return &mat.Dense{}
+	}
 	r := mat.NewDense(ar, bc, nil)
 	r.Mul(a, b)
 	return r
