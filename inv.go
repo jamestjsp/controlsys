@@ -7,6 +7,9 @@ import (
 )
 
 func Inv(sys *System) (*System, error) {
+	if err := newDescriptorPolicy(sys).requireStandard("Inv"); err != nil {
+		return nil, err
+	}
 	if sys.HasDelay() {
 		return nil, fmt.Errorf("Inv: system with delays not supported; use Pade/AbsorbDelay first")
 	}

@@ -1,6 +1,7 @@
 package controlsys
 
 import (
+	"errors"
 	"math"
 	"testing"
 
@@ -178,6 +179,37 @@ func TestLinearize_NilChecks(t *testing.T) {
 	wrongU := mat.NewVecDense(2, []float64{0, 0})
 	if _, err := Linearize(validModel, x0, wrongU); err == nil {
 		t.Error("expected error for wrong u0 dimension")
+	}
+}
+
+func TestLinearize_RejectsWrongFunctionOutputDimensions(t *testing.T) {
+	x0 := mat.NewVecDense(2, []float64{0, 0})
+	u0 := mat.NewVecDense(1, []float64{0})
+
+	tests := []struct {
+		name string
+		F    func(x, u *mat.VecDense) *mat.VecDense
+		H    func(x, u *mat.VecDense) *mat.VecDense
+	}{
+		{
+			name: "state function",
+			F:    func(x, u *mat.VecDense) *mat.VecDense { return mat.NewVecDense(1, nil) },
+			H:    func(x, u *mat.VecDense) *mat.VecDense { return mat.NewVecDense(1, nil) },
+		},
+		{
+			name: "measurement function",
+			F:    func(x, u *mat.VecDense) *mat.VecDense { return mat.NewVecDense(2, nil) },
+			H:    func(x, u *mat.VecDense) *mat.VecDense { return mat.NewVecDense(2, nil) },
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			model := &NonlinearModel{F: tc.F, H: tc.H, N: 2, M: 1, P: 1}
+			if _, err := Linearize(model, x0, u0); !errors.Is(err, ErrDimensionMismatch) {
+				t.Fatalf("got %v, want ErrDimensionMismatch", err)
+			}
+		})
 	}
 }
 

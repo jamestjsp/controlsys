@@ -22,8 +22,8 @@ func Lqg(sys *System, Q, R, Qn, Rn *mat.Dense, opts *RiccatiOpts) (*LqgResult, e
 	if n == 0 {
 		return nil, fmt.Errorf("Lqg: system has no states: %w", ErrDimensionMismatch)
 	}
-	if sys.IsDescriptor() {
-		return nil, fmt.Errorf("Lqg: %w", ErrDescriptorRiccati)
+	if err := newDescriptorPolicy(sys).requireRiccatiStandard("Lqg"); err != nil {
+		return nil, err
 	}
 
 	var kRes *RiccatiResult
@@ -51,7 +51,7 @@ func Lqg(sys *System, Q, R, Qn, Rn *mat.Dense, opts *RiccatiOpts) (*LqgResult, e
 		Controller: ctrl,
 		K:          kRes.K,
 		L:          lRes.K,
-		Xc:        kRes.X,
-		Xf:        lRes.X,
+		Xc:         kRes.X,
+		Xf:         lRes.X,
 	}, nil
 }

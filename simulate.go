@@ -25,6 +25,9 @@ func (sys *System) Simulate(u *mat.Dense, x0 *mat.VecDense, opts *SimulateOpts) 
 	if sys.IsContinuous() {
 		return nil, ErrWrongDomain
 	}
+	if err := newDescriptorPolicy(sys).requireStandard("Simulate"); err != nil {
+		return nil, err
+	}
 	if err := sys.validateSimulateInputs(u, x0, opts); err != nil {
 		return nil, err
 	}
@@ -85,40 +88,58 @@ func (sys *System) validateSimulateInputs(u *mat.Dense, x0 *mat.VecDense, opts *
 	return nil
 }
 
-func (sys *System) simulateNoDelay(u *mat.Dense, x0 *mat.VecDense, opts *SimulateOpts) (*Response, error) {
+type simulationProblem struct {
+	sys   *System
+	u     *mat.Dense
+	x0    *mat.VecDense
+	opts  *SimulateOpts
+	n     int
+	m     int
+	p     int
+	steps int
+}
+
+func newSimulationProblem(sys *System, u *mat.Dense, x0 *mat.VecDense, opts *SimulateOpts) simulationProblem {
 	n, m, p := sys.Dims()
-
-	var steps int
+	problem := simulationProblem{sys: sys, u: u, x0: x0, opts: opts, n: n, m: m, p: p}
 	if u != nil {
-		_, steps = u.Dims()
+		_, problem.steps = u.Dims()
 	}
+	return problem
+}
 
-	makeXFinal := func() *mat.VecDense {
-		if n == 0 {
-			return nil
-		}
-		v := mat.NewVecDense(n, nil)
-		if x0 != nil {
-			v.CopyVec(x0)
-		}
-		return v
+func (p simulationProblem) newXFinal() *mat.VecDense {
+	if p.n == 0 {
+		return nil
 	}
+	x := mat.NewVecDense(p.n, nil)
+	if p.x0 != nil {
+		x.CopyVec(p.x0)
+	}
+	return x
+}
+
+func (p simulationProblem) newY() *mat.Dense {
+	if p.p == 0 || p.steps == 0 {
+		return nil
+	}
+	if p.opts != nil && p.opts.yBuf != nil {
+		p.opts.yBuf.Zero()
+		return p.opts.yBuf
+	}
+	return mat.NewDense(p.p, p.steps, nil)
+}
+
+func (sys *System) simulateNoDelay(u *mat.Dense, x0 *mat.VecDense, opts *SimulateOpts) (*Response, error) {
+	problem := newSimulationProblem(sys, u, x0, opts)
+	n, m, p, steps := problem.n, problem.m, problem.p, problem.steps
 
 	if p == 0 || steps == 0 {
-		return &Response{
-			Y:      nil,
-			XFinal: makeXFinal(),
-		}, nil
+		return &Response{Y: nil, XFinal: problem.newXFinal()}, nil
 	}
 
-	var Y *mat.Dense
-	if opts != nil && opts.yBuf != nil {
-		Y = opts.yBuf
-		Y.Zero()
-	} else {
-		Y = mat.NewDense(p, steps, nil)
-	}
-	x := makeXFinal()
+	Y := problem.newY()
+	x := problem.newXFinal()
 
 	if n > 0 {
 		var tmp *mat.VecDense
@@ -188,27 +209,17 @@ func (sys *System) simulateNoDelay(u *mat.Dense, x0 *mat.VecDense, opts *Simulat
 }
 
 func (sys *System) simulateWithDelay(u *mat.Dense, x0 *mat.VecDense) (*Response, error) {
-	n, m, p := sys.Dims()
+	problem := newSimulationProblem(sys, u, x0, nil)
+	n, m, p, steps := problem.n, problem.m, problem.p, problem.steps
 
 	totalDelay := sys.TotalDelay()
 	if totalDelay == nil {
 		totalDelay = mat.NewDense(p, m, nil)
 	}
 
-	var steps int
-	if u != nil {
-		_, steps = u.Dims()
-	}
-
-	var xFinal *mat.VecDense
-	if n > 0 {
-		xFinal = mat.NewVecDense(n, nil)
-	}
+	xFinal := problem.newXFinal()
 
 	if p == 0 || steps == 0 {
-		if n > 0 && x0 != nil {
-			xFinal.CopyVec(x0)
-		}
 		return &Response{Y: nil, XFinal: xFinal}, nil
 	}
 
@@ -312,27 +323,12 @@ func (sys *System) simulateWithDelay(u *mat.Dense, x0 *mat.VecDense) (*Response,
 }
 
 func (sys *System) simulateWithInternalDelay(u *mat.Dense, x0 *mat.VecDense) (*Response, error) {
-	n, m, p := sys.Dims()
+	problem := newSimulationProblem(sys, u, x0, nil)
+	n, m, p, steps := problem.n, problem.m, problem.p, problem.steps
 	N := sys.internalDelayCount()
 
-	var steps int
-	if u != nil {
-		_, steps = u.Dims()
-	}
-
-	makeXFinal := func() *mat.VecDense {
-		if n == 0 {
-			return nil
-		}
-		v := mat.NewVecDense(n, nil)
-		if x0 != nil {
-			v.CopyVec(x0)
-		}
-		return v
-	}
-
 	if p == 0 || steps == 0 {
-		return &Response{Y: nil, XFinal: makeXFinal()}, nil
+		return &Response{Y: nil, XFinal: problem.newXFinal()}, nil
 	}
 
 	delays := make([]int, N)
@@ -350,7 +346,7 @@ func (sys *System) simulateWithInternalDelay(u *mat.Dense, x0 *mat.VecDense) (*R
 	}
 
 	Y := mat.NewDense(p, steps, nil)
-	x := makeXFinal()
+	x := problem.newXFinal()
 
 	var zBuf []float64
 	if N > 0 {

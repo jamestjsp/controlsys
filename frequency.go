@@ -110,6 +110,9 @@ func unwrapBodePhase(phase []float64, p, m, nw int) {
 }
 
 func (sys *System) FreqResponse(omega []float64) (*FreqResponseMatrix, error) {
+	if err := newDescriptorPolicy(sys).requireStandard("FreqResponse"); err != nil {
+		return nil, err
+	}
 	return newFrequencyEvaluator(sys).response(omega)
 }
 
@@ -134,6 +137,9 @@ func (sys *System) Bode(omega []float64, nPoints int) (*BodeResult, error) {
 }
 
 func (sys *System) EvalFr(s complex128) ([][]complex128, error) {
+	if err := newDescriptorPolicy(sys).requireStandard("EvalFr"); err != nil {
+		return nil, err
+	}
 	return newFrequencyEvaluator(sys).eval(s)
 }
 

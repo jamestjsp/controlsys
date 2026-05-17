@@ -1,6 +1,7 @@
 package controlsys
 
 import (
+	"errors"
 	"math"
 	"math/cmplx"
 	"testing"
@@ -206,6 +207,29 @@ func TestNewZPKMIMO_DimensionMismatch(t *testing.T) {
 	_, err := NewZPKMIMO(zeros, poles, gain, 0)
 	if err != ErrDimensionMismatch {
 		t.Errorf("got err = %v, want ErrDimensionMismatch", err)
+	}
+}
+
+func TestZPKTransferFunctionRejectsMalformedRawModel(t *testing.T) {
+	tests := []struct {
+		name string
+		z    *ZPK
+	}{
+		{name: "missing zeros", z: &ZPK{Poles: [][][]complex128{{nil}}, Gain: [][]float64{{1}}}},
+		{name: "missing poles", z: &ZPK{Zeros: [][][]complex128{{nil}}, Gain: [][]float64{{1}}}},
+		{name: "ragged gain", z: &ZPK{
+			Zeros: [][][]complex128{{nil}, {nil}},
+			Poles: [][][]complex128{{nil}, {nil}},
+			Gain:  [][]float64{{1}, {1, 2}},
+		}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := tc.z.TransferFunction(); !errors.Is(err, ErrDimensionMismatch) {
+				t.Fatalf("got %v, want ErrDimensionMismatch", err)
+			}
+		})
 	}
 }
 

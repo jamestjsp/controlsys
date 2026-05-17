@@ -1,6 +1,7 @@
 package controlsys
 
 import (
+	"errors"
 	"math"
 	"math/cmplx"
 	"math/rand"
@@ -124,6 +125,10 @@ func TestFreqRespEst_EdgeCases(t *testing.T) {
 	_, err = FreqRespEst(u, y2, -1, nil)
 	if err == nil {
 		t.Error("expected error for dt<0")
+	}
+
+	if _, err := FreqRespEst(&mat.Dense{}, &mat.Dense{}, 0.01, nil); !errors.Is(err, ErrInsufficientData) {
+		t.Fatalf("empty matrices: got %v, want ErrInsufficientData", err)
 	}
 }
 

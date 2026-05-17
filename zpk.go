@@ -1,6 +1,7 @@
 package controlsys
 
 import (
+	"fmt"
 	"math/cmplx"
 	"sort"
 )
@@ -83,6 +84,29 @@ func (z *ZPK) Dims() (p, m int) {
 	return
 }
 
+func (z *ZPK) validateShape() (p, m int, err error) {
+	if z == nil {
+		return 0, 0, fmt.Errorf("ZPK: nil model: %w", ErrDimensionMismatch)
+	}
+	p = len(z.Gain)
+	if p == 0 {
+		return 0, 0, fmt.Errorf("ZPK: zero output channels: %w", ErrDimensionMismatch)
+	}
+	m = len(z.Gain[0])
+	if m == 0 {
+		return 0, 0, fmt.Errorf("ZPK: zero input channels: %w", ErrDimensionMismatch)
+	}
+	if len(z.Zeros) != p || len(z.Poles) != p {
+		return 0, 0, fmt.Errorf("ZPK: channel rows do not match gain rows: %w", ErrDimensionMismatch)
+	}
+	for i := 0; i < p; i++ {
+		if len(z.Gain[i]) != m || len(z.Zeros[i]) != m || len(z.Poles[i]) != m {
+			return 0, 0, fmt.Errorf("ZPK: row %d channel count mismatch: %w", i, ErrDimensionMismatch)
+		}
+	}
+	return p, m, nil
+}
+
 func (z *ZPK) IsContinuous() bool { return z.Dt == 0 }
 func (z *ZPK) IsDiscrete() bool   { return z.Dt > 0 }
 
@@ -148,7 +172,10 @@ func (z *ZPK) FreqResponse(omega []float64) (*FreqResponseMatrix, error) {
 }
 
 func (z *ZPK) TransferFunction() (*TransferFunc, error) {
-	p, m := z.Dims()
+	p, m, err := z.validateShape()
+	if err != nil {
+		return nil, err
+	}
 	tf := &TransferFunc{
 		Num: make([][][]float64, p),
 		Den: make([][]float64, p),
@@ -179,7 +206,10 @@ func (z *ZPK) TransferFunction() (*TransferFunc, error) {
 }
 
 func (tf *TransferFunc) ZPK() (*ZPK, error) {
-	p, m := tf.Dims()
+	p, m, err := tf.validateShape()
+	if err != nil {
+		return nil, err
+	}
 	z := &ZPK{
 		Zeros: make([][][]complex128, p),
 		Poles: make([][][]complex128, p),
