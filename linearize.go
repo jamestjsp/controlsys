@@ -2,7 +2,6 @@ package controlsys
 
 import (
 	"fmt"
-	"math"
 
 	"gonum.org/v1/gonum/mat"
 )
@@ -22,102 +21,14 @@ func Linearize(model *NonlinearModel, x0, u0 *mat.VecDense) (*System, error) {
 	if model.F == nil || model.H == nil {
 		return nil, fmt.Errorf("controlsys: nil F or H function: %w", ErrDimensionMismatch)
 	}
-	if x0 == nil || u0 == nil {
-		return nil, fmt.Errorf("controlsys: nil x0 or u0: %w", ErrDimensionMismatch)
+	contract := newLocalApproximationContract("Linearize", model.N, model.M, model.P)
+	if err := contract.validateOperatingPoint(x0, u0); err != nil {
+		return nil, err
 	}
-	if x0.Len() != model.N {
-		return nil, fmt.Errorf("controlsys: x0 length %d != N %d: %w", x0.Len(), model.N, ErrDimensionMismatch)
+	A, B, C, D, err := finiteDifferenceLocalModel(contract, model.F, model.H, x0, u0)
+	if err != nil {
+		return nil, err
 	}
-	if u0.Len() != model.M {
-		return nil, fmt.Errorf("controlsys: u0 length %d != M %d: %w", u0.Len(), model.M, ErrDimensionMismatch)
-	}
-
-	sqrtEps := math.Sqrt(eps())
-	n, m, p := model.N, model.M, model.P
-
-	aData := make([]float64, n*n)
-	bData := make([]float64, n*m)
-	cData := make([]float64, p*n)
-	dData := make([]float64, p*m)
-
-	xp := mat.NewVecDense(n, nil)
-	xm := mat.NewVecDense(n, nil)
-
-	for j := 0; j < n; j++ {
-		h := sqrtEps * math.Max(math.Abs(x0.AtVec(j)), 1.0)
-		inv2h := 1.0 / (2.0 * h)
-
-		xp.CopyVec(x0)
-		xm.CopyVec(x0)
-		xp.SetVec(j, x0.AtVec(j)+h)
-		xm.SetVec(j, x0.AtVec(j)-h)
-
-		fp := model.F(xp, u0)
-		fm := model.F(xm, u0)
-		if err := validateVecResult("Linearize: F(x+h,u)", fp, n); err != nil {
-			return nil, err
-		}
-		if err := validateVecResult("Linearize: F(x-h,u)", fm, n); err != nil {
-			return nil, err
-		}
-		for i := 0; i < n; i++ {
-			aData[i*n+j] = (fp.AtVec(i) - fm.AtVec(i)) * inv2h
-		}
-
-		hp := model.H(xp, u0)
-		hm := model.H(xm, u0)
-		if err := validateVecResult("Linearize: H(x+h,u)", hp, p); err != nil {
-			return nil, err
-		}
-		if err := validateVecResult("Linearize: H(x-h,u)", hm, p); err != nil {
-			return nil, err
-		}
-		for i := 0; i < p; i++ {
-			cData[i*n+j] = (hp.AtVec(i) - hm.AtVec(i)) * inv2h
-		}
-	}
-
-	up := mat.NewVecDense(m, nil)
-	um := mat.NewVecDense(m, nil)
-
-	for j := 0; j < m; j++ {
-		h := sqrtEps * math.Max(math.Abs(u0.AtVec(j)), 1.0)
-		inv2h := 1.0 / (2.0 * h)
-
-		up.CopyVec(u0)
-		um.CopyVec(u0)
-		up.SetVec(j, u0.AtVec(j)+h)
-		um.SetVec(j, u0.AtVec(j)-h)
-
-		fp := model.F(x0, up)
-		fm := model.F(x0, um)
-		if err := validateVecResult("Linearize: F(x,u+h)", fp, n); err != nil {
-			return nil, err
-		}
-		if err := validateVecResult("Linearize: F(x,u-h)", fm, n); err != nil {
-			return nil, err
-		}
-		for i := 0; i < n; i++ {
-			bData[i*m+j] = (fp.AtVec(i) - fm.AtVec(i)) * inv2h
-		}
-
-		hp := model.H(x0, up)
-		hm := model.H(x0, um)
-		if err := validateVecResult("Linearize: H(x,u+h)", hp, p); err != nil {
-			return nil, err
-		}
-		if err := validateVecResult("Linearize: H(x,u-h)", hm, p); err != nil {
-			return nil, err
-		}
-		for i := 0; i < p; i++ {
-			dData[i*m+j] = (hp.AtVec(i) - hm.AtVec(i)) * inv2h
-		}
-	}
-
-	A := mat.NewDense(n, n, aData)
-	B := mat.NewDense(n, m, bData)
-	C := mat.NewDense(p, n, cData)
-	D := mat.NewDense(p, m, dData)
 
 	return New(A, B, C, D, 0)
 }

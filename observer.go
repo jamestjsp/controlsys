@@ -36,26 +36,7 @@ func Lqe(A, G, C, Qn, Rn *mat.Dense, opts *RiccatiOpts) (*RiccatiResult, error) 
 		return &RiccatiResult{X: &mat.Dense{}, K: &mat.Dense{}, Eig: nil}, nil
 	}
 
-	GQnGt := inputNoiseIntensity(G, Qn, n, g)
-
-	// Transpose A and C into flat arrays for Care(A', C', ...)
-	atData := make([]float64, n*n)
-	aRaw := A.RawMatrix()
-	for i := range n {
-		for j := range n {
-			atData[i*n+j] = aRaw.Data[j*aRaw.Stride+i]
-		}
-	}
-	At := mat.NewDense(n, n, atData)
-
-	cRaw := C.RawMatrix()
-	ctData := make([]float64, n*p)
-	for i := range n {
-		for j := range p {
-			ctData[i*p+j] = cRaw.Data[j*cRaw.Stride+i]
-		}
-	}
-	Ct := mat.NewDense(n, p, ctData)
+	GQnGt, At, Ct := dualRiccatiSetup(A, G, C, Qn, n, g, p)
 
 	res, err := Care(At, Ct, GQnGt, Rn, opts)
 	if err != nil {
@@ -74,17 +55,11 @@ func Lqe(A, G, C, Qn, Rn *mat.Dense, opts *RiccatiOpts) (*RiccatiResult, error) 
 //
 // Qn is m×m (process noise covariance), Rn is p×p (measurement noise covariance).
 func Kalman(sys *System, Qn, Rn *mat.Dense, opts *RiccatiOpts) (*RiccatiResult, error) {
-	n, m, p := sys.Dims()
-	if n == 0 {
-		return nil, fmt.Errorf("Kalman: system has no states: %w", ErrDimensionMismatch)
-	}
-	if err := requireStandardEstimatorSystem(sys, "Kalman"); err != nil {
+	policy, err := newControllerObserverPolicy(sys, "Kalman")
+	if err != nil {
 		return nil, err
 	}
-	if err := validateCovarianceRole("Kalman", covarianceProcessNoise, Qn, m); err != nil {
-		return nil, err
-	}
-	if err := validateCovarianceRole("Kalman", covarianceMeasurementNoise, Rn, p); err != nil {
+	if err := policy.validateNoise(Qn, Rn); err != nil {
 		return nil, err
 	}
 
@@ -92,7 +67,7 @@ func Kalman(sys *System, Qn, Rn *mat.Dense, opts *RiccatiOpts) (*RiccatiResult, 
 		return Lqe(sys.A, sys.B, sys.C, Qn, Rn, opts)
 	}
 
-	GQnGt, At, Ct := dualRiccatiSetup(sys.A, sys.B, sys.C, Qn, n, m, p)
+	GQnGt, At, Ct := dualRiccatiSetup(sys.A, sys.B, sys.C, Qn, policy.n, policy.m, policy.p)
 
 	res, err := Dare(At, Ct, GQnGt, Rn, opts)
 	if err != nil {
@@ -115,19 +90,14 @@ func Kalmd(sys *System, Qn, Rn *mat.Dense, dt float64, opts *RiccatiOpts) (*Ricc
 	if dt <= 0 {
 		return nil, ErrInvalidSampleTime
 	}
-	n, m, p := sys.Dims()
-	if n == 0 {
-		return nil, fmt.Errorf("Kalmd: system has no states: %w", ErrDimensionMismatch)
-	}
-	if err := requireStandardEstimatorSystem(sys, "Kalmd"); err != nil {
+	policy, err := newControllerObserverPolicy(sys, "Kalmd")
+	if err != nil {
 		return nil, err
 	}
-	if err := validateCovarianceRole("Kalmd", covarianceProcessNoise, Qn, m); err != nil {
+	if err := policy.validateNoise(Qn, Rn); err != nil {
 		return nil, err
 	}
-	if err := validateCovarianceRole("Kalmd", covarianceMeasurementNoise, Rn, p); err != nil {
-		return nil, err
-	}
+	n, m, p := policy.n, policy.m, policy.p
 
 	GQnGt := inputNoiseIntensity(sys.B, Qn, n, m)
 
@@ -265,17 +235,9 @@ func Estim(sys *System, L *mat.Dense) (*System, error) {
 //
 // K is m×n, L is n×p. Returns system with n states, p inputs, m outputs.
 func Reg(sys *System, K, L *mat.Dense) (*System, error) {
-	n, m, p := sys.Dims()
-	if n == 0 {
-		return nil, fmt.Errorf("Reg: system has no states: %w", ErrDimensionMismatch)
-	}
-	kr, kc := K.Dims()
-	if kr != m || kc != n {
-		return nil, ErrDimensionMismatch
-	}
-	lr, lc := L.Dims()
-	if lr != n || lc != p {
-		return nil, ErrDimensionMismatch
+	n, m, p, err := validateRegulatorGains("Reg", sys, K, L)
+	if err != nil {
+		return nil, err
 	}
 
 	// Ar = A - B*K - L*C + L*D*K

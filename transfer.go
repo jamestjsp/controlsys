@@ -31,40 +31,7 @@ func (tf *TransferFunc) Dims() (p, m int) {
 }
 
 func (tf *TransferFunc) validateShape() (p, m int, err error) {
-	if tf == nil {
-		return 0, 0, fmt.Errorf("TransferFunc: nil model: %w", ErrDimensionMismatch)
-	}
-	p = len(tf.Den)
-	if p == 0 {
-		return 0, 0, nil
-	}
-	if len(tf.Num) != p {
-		return 0, 0, fmt.Errorf("TransferFunc: numerator has %d rows, want %d: %w", len(tf.Num), p, ErrDimensionMismatch)
-	}
-	m = len(tf.Num[0])
-	if m == 0 {
-		return 0, 0, fmt.Errorf("TransferFunc: zero input channels: %w", ErrDimensionMismatch)
-	}
-	if tf.Delay != nil && len(tf.Delay) != p {
-		return 0, 0, fmt.Errorf("TransferFunc: delay has %d rows, want %d: %w", len(tf.Delay), p, ErrDimensionMismatch)
-	}
-	for i := 0; i < p; i++ {
-		if len(tf.Den[i]) == 0 {
-			return 0, 0, fmt.Errorf("TransferFunc: row %d has empty denominator: %w", i, ErrDimensionMismatch)
-		}
-		if len(tf.Num[i]) != m {
-			return 0, 0, fmt.Errorf("TransferFunc: row %d has %d numerator channels, want %d: %w", i, len(tf.Num[i]), m, ErrDimensionMismatch)
-		}
-		if tf.Delay != nil && len(tf.Delay[i]) != m {
-			return 0, 0, fmt.Errorf("TransferFunc: row %d has %d delays, want %d: %w", i, len(tf.Delay[i]), m, ErrDimensionMismatch)
-		}
-		for j := 0; j < m; j++ {
-			if len(tf.Num[i][j]) == 0 {
-				return 0, 0, fmt.Errorf("TransferFunc: channel (%d,%d) has empty numerator: %w", i, j, ErrDimensionMismatch)
-			}
-		}
-	}
-	return p, m, nil
+	return validateTransferChannelShape(tf)
 }
 
 func (tf *TransferFunc) Eval(s complex128) [][]complex128 {

@@ -40,33 +40,11 @@ func sisoZeros(sys *System) (*ZerosResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	num := tfr.TF.Num[0][0]
-	if len(num) <= 1 {
-		return &ZerosResult{}, nil
+	zeros, err := Poly(tfr.TF.Num[0][0]).Roots()
+	if err != nil {
+		return nil, err
 	}
-
-	lead := num[0]
-	if lead == 0 {
-		return &ZerosResult{}, nil
-	}
-
-	deg := len(num) - 1
-	data := make([]float64, deg*deg)
-	for i := 0; i < deg; i++ {
-		data[i*deg+deg-1] = -num[deg-i] / lead
-		if i > 0 {
-			data[i*deg+i-1] = 1
-		}
-	}
-	comp := mat.NewDense(deg, deg, data)
-
-	var eig mat.Eigen
-	if !eig.Factorize(comp, mat.EigenNone) {
-		return nil, ErrSingularTransform
-	}
-	zeros := eig.Values(nil)
-	sortZeros(zeros)
-	return &ZerosResult{Zeros: zeros, Rank: deg}, nil
+	return &ZerosResult{Zeros: zeros, Rank: len(zeros)}, nil
 }
 
 func mimoZeros(sys *System) (*ZerosResult, error) {

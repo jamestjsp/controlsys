@@ -18,26 +18,17 @@ type LqgResult struct {
 // Q, R are state/input weights for LQR; Qn, Rn are process/measurement noise covariances.
 // Returns the observer-based controller and all intermediate gains and Riccati solutions.
 func Lqg(sys *System, Q, R, Qn, Rn *mat.Dense, opts *RiccatiOpts) (*LqgResult, error) {
-	n, _, _ := sys.Dims()
-	if n == 0 {
-		return nil, fmt.Errorf("Lqg: system has no states: %w", ErrDimensionMismatch)
-	}
-	if err := requireStandardEstimatorSystem(sys, "Lqg"); err != nil {
+	policy, err := newControllerObserverPolicy(sys, "Lqg")
+	if err != nil {
 		return nil, err
 	}
 
-	var kRes *RiccatiResult
-	var err error
-	if sys.IsContinuous() {
-		kRes, err = Lqr(sys.A, sys.B, Q, R, opts)
-	} else {
-		kRes, err = Dlqr(sys.A, sys.B, Q, R, opts)
-	}
+	kRes, err := policy.regulator(Q, R, opts)
 	if err != nil {
 		return nil, fmt.Errorf("Lqg: %w", err)
 	}
 
-	lRes, err := Kalman(sys, Qn, Rn, opts)
+	lRes, err := policy.estimator(Qn, Rn, opts)
 	if err != nil {
 		return nil, fmt.Errorf("Lqg: %w", err)
 	}
