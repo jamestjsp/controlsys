@@ -221,6 +221,7 @@ func (f *FRD) FreqResponse() *FreqResponseMatrix {
 	}
 	return &FreqResponseMatrix{
 		Data:       data,
+		Omega:      copyFloatSlice(f.Omega),
 		NFreq:      nw,
 		P:          p,
 		M:          m,
@@ -233,34 +234,11 @@ func (f *FRD) FreqResponse() *FreqResponseMatrix {
 func (f *FRD) Bode() *BodeResult {
 	p, m := f.Dims()
 	nw := len(f.Omega)
-	pm := p * m
-	magDB := make([]float64, nw*pm)
-	phase := make([]float64, nw*pm)
-
-	for k := 0; k < nw; k++ {
-		for i := 0; i < p; i++ {
-			for j := 0; j < m; j++ {
-				off := k*pm + i*m + j
-				h := f.Response[k][i][j]
-				magDB[off] = 20 * math.Log10(cmplx.Abs(h))
-				phase[off] = cmplx.Phase(h) * 180 / math.Pi
-			}
-		}
-	}
-	unwrapBodePhase(phase, p, m, nw)
-
 	omega := make([]float64, nw)
 	copy(omega, f.Omega)
-
-	return &BodeResult{
-		Omega:      omega,
-		magDB:      magDB,
-		phase:      phase,
-		p:          p,
-		m:          m,
-		InputName:  copyStringSlice(f.InputName),
-		OutputName: copyStringSlice(f.OutputName),
-	}
+	return bodeResultFromAccessor(omega, p, m, copyStringSlice(f.InputName), copyStringSlice(f.OutputName), func(k, i, j int) complex128 {
+		return f.Response[k][i][j]
+	})
 }
 
 func (f *FRD) Nyquist() (*NyquistResult, error) {

@@ -29,6 +29,8 @@ func TestHinfSyn_Simple(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	P.InputName = []string{"disturbance1", "disturbance2", "control"}
+	P.OutputName = []string{"performance1", "performance2", "measurement"}
 
 	res, err := HinfSyn(P, 1, 1)
 	if err != nil {
@@ -60,6 +62,12 @@ func TestHinfSyn_Simple(t *testing.T) {
 	}
 	if res.GammaOpt <= 0 {
 		t.Errorf("gamma should be positive, got %v", res.GammaOpt)
+	}
+	if !stringSlicesEqual(res.K.InputName, []string{"measurement"}) {
+		t.Fatalf("controller input names = %v, want [measurement]", res.K.InputName)
+	}
+	if !stringSlicesEqual(res.K.OutputName, []string{"control"}) {
+		t.Fatalf("controller output names = %v, want [control]", res.K.OutputName)
 	}
 }
 

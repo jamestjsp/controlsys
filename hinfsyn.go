@@ -17,38 +17,15 @@ type HinfSynResult struct {
 }
 
 func HinfSyn(P *System, nmeas, ncont int) (*HinfSynResult, error) {
-	if !P.IsContinuous() {
-		return nil, ErrWrongDomain
+	gp, err := partitionGeneralizedPlant(P, nmeas, ncont)
+	if err != nil {
+		return nil, err
 	}
-	if P.IsDescriptor() {
-		return nil, ErrDescriptorRiccati
-	}
-
-	n, m, p := P.Dims()
-	if n == 0 {
-		return nil, ErrInvalidPartition
-	}
-	if ncont <= 0 || nmeas <= 0 || ncont > m || nmeas > p {
-		return nil, ErrInvalidPartition
-	}
-
-	m1 := m - ncont
-	m2 := ncont
-	p1 := p - nmeas
-	p2 := nmeas
-
-	if m1 <= 0 || p1 <= 0 {
-		return nil, ErrInvalidPartition
-	}
-
-	A := P.A
-	B1 := extractBlock(P.B, 0, 0, n, m1)
-	B2 := extractBlock(P.B, 0, m1, n, m2)
-	C1 := extractBlock(P.C, 0, 0, p1, n)
-	C2 := extractBlock(P.C, p1, 0, p2, n)
-	D11 := extractBlock(P.D, 0, 0, p1, m1)
-	D12 := extractBlock(P.D, 0, m1, p1, m2)
-	D21 := extractBlock(P.D, p1, 0, p2, m1)
+	n := gp.n
+	A := gp.A
+	B1, B2 := gp.B1, gp.B2
+	C1, C2 := gp.C1, gp.C2
+	D11, D12, D21 := gp.D11, gp.D12, gp.D21
 	stab, err := IsStabilizable(A, B2, true)
 	if err != nil {
 		return nil, err
@@ -68,7 +45,7 @@ func HinfSyn(P *System, nmeas, ncont int) (*HinfSynResult, error) {
 	gammaLB := maxSVD(D11)
 	gammaUB := gammaLB*2 + 1
 
-	for !hinfFeasible(A, B1, B2, C1, C2, D12, D21, n, m1, m2, p1, p2, gammaUB) {
+	for !hinfFeasible(A, B1, B2, C1, C2, D12, D21, n, gp.m1, gp.m2, gp.p1, gp.p2, gammaUB) {
 		gammaUB *= 2
 		if gammaUB > 1e12 {
 			return nil, ErrGammaNotAchievable
@@ -77,7 +54,7 @@ func HinfSyn(P *System, nmeas, ncont int) (*HinfSynResult, error) {
 
 	for gammaUB-gammaLB > 1e-6*gammaUB {
 		mid := (gammaLB + gammaUB) / 2
-		if hinfFeasible(A, B1, B2, C1, C2, D12, D21, n, m1, m2, p1, p2, mid) {
+		if hinfFeasible(A, B1, B2, C1, C2, D12, D21, n, gp.m1, gp.m2, gp.p1, gp.p2, mid) {
 			gammaUB = mid
 		} else {
 			gammaLB = mid
@@ -85,20 +62,20 @@ func HinfSyn(P *System, nmeas, ncont int) (*HinfSynResult, error) {
 	}
 
 	gamma := gammaUB
-	X, Y, err := hinfSolveRiccatis(A, B1, B2, C1, C2, D12, D21, n, m1, m2, p1, p2, gamma)
+	X, Y, err := hinfSolveRiccatis(A, B1, B2, C1, C2, D12, D21, n, gp.m1, gp.m2, gp.p1, gp.p2, gamma)
 	if err != nil {
 		return nil, err
 	}
 
 	R1 := mulDense(mat.DenseCopyOf(D12.T()), D12)
-	R1inv, err := invertSmall(R1, m2)
+	R1inv, err := invertSmall(R1, gp.m2)
 	if err != nil {
 		return nil, err
 	}
 	S1 := mulDense(mat.DenseCopyOf(D12.T()), C1)
 
 	R2 := mulDense(D21, mat.DenseCopyOf(D21.T()))
-	R2inv, err := invertSmall(R2, p2)
+	R2inv, err := invertSmall(R2, gp.p2)
 	if err != nil {
 		return nil, err
 	}
@@ -151,12 +128,13 @@ func HinfSyn(P *System, nmeas, ncont int) (*HinfSynResult, error) {
 	Bk := mulDense(Zp, L)
 	Bk.Scale(-1, Bk)
 	Ck := denseCopy(F)
-	Dk := mat.NewDense(m2, p2, nil)
+	Dk := mat.NewDense(gp.m2, gp.p2, nil)
 
 	K, err := New(Ak, Bk, Ck, Dk, 0)
 	if err != nil {
 		return nil, err
 	}
+	gp.applyControllerNames(K)
 
 	clN := 2 * n
 	clA := mat.NewDense(clN, clN, nil)
@@ -393,4 +371,3 @@ func maxSVD(M *mat.Dense) float64 {
 	}
 	return maxS
 }
-

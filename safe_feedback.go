@@ -19,6 +19,9 @@ func WithPadeOrder(n int) SafeFeedbackOption {
 	}
 }
 
+// WithThiranOrder is reserved for future fractional discrete-delay feedback
+// workflows. SafeFeedback currently absorbs exact integer discrete delays and
+// uses Pade approximation for continuous transport delays.
 func WithThiranOrder(n int) SafeFeedbackOption {
 	return func(c *safeFeedbackConfig) {
 		c.thiranOrder = n
@@ -62,17 +65,7 @@ func SafeFeedback(plant, controller *System, sign float64, opts ...SafeFeedbackO
 		_, mPlant, pPlant := p.Dims()
 		_, mCtrl, pCtrl := c.Dims()
 		if pPlant == mCtrl && pCtrl == mPlant {
-			dp := p.D
-			dc := c.D
-			tmp := mat.NewDense(pPlant, pPlant, nil)
-			tmp.Product(dp, dc)
-			tmp.Scale(sign, tmp)
-			eye := mat.NewDense(pPlant, pPlant, nil)
-			for i := 0; i < pPlant; i++ {
-				eye.Set(i, i, 1)
-			}
-			eye.Sub(eye, tmp)
-			if det := mat.Det(eye); det == 0 {
+			if _, err := solveFeedbackFeedthrough(p.D, c.D, sign, pPlant, "SafeFeedback", ErrAlgebraicLoop); err != nil {
 				return nil, fmt.Errorf("SafeFeedback: Pade approximation creates singular algebraic loop; try a different padeOrder (even vs odd) to flip feedthrough sign")
 			}
 		}

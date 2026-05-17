@@ -32,6 +32,15 @@ func denseCopy(m *mat.Dense) *mat.Dense {
 	return mat.DenseCopyOf(m)
 }
 
+func copyFloatSlice(s []float64) []float64 {
+	if s == nil {
+		return nil
+	}
+	out := make([]float64, len(s))
+	copy(out, s)
+	return out
+}
+
 func denseCopySafe(m *mat.Dense, r, c int) *mat.Dense {
 	if r == 0 || c == 0 {
 		return &mat.Dense{}

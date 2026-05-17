@@ -145,7 +145,7 @@ func (z *ZPK) FreqResponse(omega []float64) (*FreqResponseMatrix, error) {
 		}
 	}
 	return &FreqResponseMatrix{
-		Data: data, NFreq: len(omega), P: p, M: m,
+		Data: data, Omega: omega, NFreq: len(omega), P: p, M: m,
 		InputName:  copyStringSlice(z.InputName),
 		OutputName: copyStringSlice(z.OutputName),
 	}, nil
@@ -354,4 +354,3 @@ func poleSetDifference(all, subset []complex128) []complex128 {
 	}
 	return remaining
 }
-

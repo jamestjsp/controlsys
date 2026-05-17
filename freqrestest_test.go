@@ -253,6 +253,72 @@ func TestFreqRespEst_MIMO(t *testing.T) {
 	}
 }
 
+func TestFreqRespEstResultFRD(t *testing.T) {
+	dt := 0.01
+	sys, err := NewFromSlices(2, 2, 2,
+		[]float64{0.8, 0.1, -0.2, 0.6},
+		[]float64{0.2, 0.1, 0.05, 0.4},
+		[]float64{1, 0, 0, 1},
+		[]float64{0, 0, 0, 0},
+		dt,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	N := 2048
+	rng := rand.New(rand.NewSource(91))
+	uData := make([]float64, 2*N)
+	for i := range uData {
+		uData[i] = rng.NormFloat64()
+	}
+	u := mat.NewDense(2, N, uData)
+
+	resp, err := sys.Simulate(u, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	est, err := FreqRespEst(u, resp.Y, dt, &FreqRespEstOpts{NFFT: 512})
+	if err != nil {
+		t.Fatal(err)
+	}
+	frd, err := est.FRD()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if frd.Dt != dt {
+		t.Fatalf("FRD sample time = %v, want %v", frd.Dt, dt)
+	}
+	if frd.NumFrequencies() != len(est.Omega) {
+		t.Fatalf("NumFrequencies = %d, want %d", frd.NumFrequencies(), len(est.Omega))
+	}
+	p, m := frd.Dims()
+	if p != est.H.P || m != est.H.M {
+		t.Fatalf("FRD dims = (%d,%d), want (%d,%d)", p, m, est.H.P, est.H.M)
+	}
+	for k := range est.Omega {
+		for i := 0; i < p; i++ {
+			for j := 0; j < m; j++ {
+				if frd.At(k, i, j) != est.H.At(k, i, j) {
+					t.Fatalf("FRD[%d,%d,%d] = %v, want %v", k, i, j, frd.At(k, i, j), est.H.At(k, i, j))
+				}
+			}
+		}
+	}
+}
+
+func TestFreqRespEstRejectsUnknownMethod(t *testing.T) {
+	u := mat.NewDense(1, 16, []float64{1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0})
+	y := mat.NewDense(1, 16, []float64{0.5, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0.5, 0})
+
+	_, err := FreqRespEst(u, y, 0.1, &FreqRespEstOpts{Method: "bogus"})
+	if err == nil {
+		t.Fatal("expected unknown method error")
+	}
+}
+
 func TestFreqRespEst_ShortData(t *testing.T) {
 	uData := []float64{1, 2, 3, 4, 5}
 	yData := []float64{0.5, 1, 1.5, 2, 2.5}

@@ -1326,6 +1326,32 @@ func TestCrossval_Stability(t *testing.T) {
 	} else if s {
 		t.Error("expected unstable discrete system")
 	}
+
+	marginal, _ := New(
+		denseFromRows([][]float64{{0, 1}, {0, 0}}),
+		denseFromFlat(2, 1, []float64{0, 1}),
+		denseFromFlat(1, 2, []float64{1, 0}),
+		denseFromFlat(1, 1, []float64{0}),
+		0,
+	)
+	if s, err := marginal.IsStable(); err != nil {
+		t.Fatal(err)
+	} else if s {
+		t.Error("expected marginally stable continuous system to be unstable")
+	}
+
+	marginalD, _ := New(
+		denseFromRows([][]float64{{1, 0}, {0, 0.3}}),
+		denseFromFlat(2, 1, []float64{1, 1}),
+		denseFromFlat(1, 2, []float64{1, 0}),
+		denseFromFlat(1, 1, []float64{0}),
+		1.0,
+	)
+	if s, err := marginalD.IsStable(); err != nil {
+		t.Fatal(err)
+	} else if s {
+		t.Error("expected marginally stable discrete system to be unstable")
+	}
 }
 
 // ---------------------------------------------------------------------------
