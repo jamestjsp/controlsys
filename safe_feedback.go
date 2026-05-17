@@ -2,6 +2,7 @@ package controlsys
 
 import (
 	"fmt"
+	"math"
 
 	"gonum.org/v1/gonum/mat"
 )
@@ -38,37 +39,10 @@ func SafeFeedback(plant, controller *System, sign float64, opts ...SafeFeedbackO
 		o(&cfg)
 	}
 
-	var p, c *System
-	var err error
-
-	if plant.IsDiscrete() {
-		p, err = plant.AbsorbDelay()
-		if err != nil {
-			return nil, fmt.Errorf("SafeFeedback: absorb plant: %w", err)
-		}
-		c, err = controller.AbsorbDelay()
-		if err != nil {
-			return nil, fmt.Errorf("SafeFeedback: absorb controller: %w", err)
-		}
-	} else {
-		p, err = replaceContinuousDelays(plant, cfg.padeOrder)
-		if err != nil {
-			return nil, fmt.Errorf("SafeFeedback: pade plant: %w", err)
-		}
-		c, err = replaceContinuousDelays(controller, cfg.padeOrder)
-		if err != nil {
-			return nil, fmt.Errorf("SafeFeedback: pade controller: %w", err)
-		}
-
-		// Well-posedness check for Pade approximations (§7.6)
-		// Pade approximants have D = (-1)^N, which might create a singular algebraic loop.
-		_, mPlant, pPlant := p.Dims()
-		_, mCtrl, pCtrl := c.Dims()
-		if pPlant == mCtrl && pCtrl == mPlant {
-			if _, err := solveFeedbackFeedthrough(p.D, c.D, sign, pPlant, "SafeFeedback", ErrAlgebraicLoop); err != nil {
-				return nil, fmt.Errorf("SafeFeedback: Pade approximation creates singular algebraic loop; try a different padeOrder (even vs odd) to flip feedthrough sign")
-			}
-		}
+	strategy := safeFeedbackDelayStrategy{cfg: cfg}
+	p, c, err := strategy.prepare(plant, controller, sign)
+	if err != nil {
+		return nil, err
 	}
 
 	result, err := Feedback(p, c, sign)
@@ -78,6 +52,153 @@ func SafeFeedback(plant, controller *System, sign float64, opts ...SafeFeedbackO
 	result.InputName = copyStringSlice(plant.InputName)
 	result.OutputName = copyStringSlice(plant.OutputName)
 	return result, nil
+}
+
+type safeFeedbackDelayStrategy struct {
+	cfg safeFeedbackConfig
+}
+
+func (s safeFeedbackDelayStrategy) prepare(plant, controller *System, sign float64) (*System, *System, error) {
+	if plant.IsDiscrete() {
+		p, err := s.replaceDiscreteDelays(plant, "plant")
+		if err != nil {
+			return nil, nil, err
+		}
+		c, err := s.replaceDiscreteDelays(controller, "controller")
+		if err != nil {
+			return nil, nil, err
+		}
+		return p, c, nil
+	}
+
+	p, err := replaceContinuousDelays(plant, s.cfg.padeOrder)
+	if err != nil {
+		return nil, nil, fmt.Errorf("SafeFeedback: pade plant: %w", err)
+	}
+	c, err := replaceContinuousDelays(controller, s.cfg.padeOrder)
+	if err != nil {
+		return nil, nil, fmt.Errorf("SafeFeedback: pade controller: %w", err)
+	}
+	if err := s.requireWellPosedPade(p, c, sign); err != nil {
+		return nil, nil, err
+	}
+	return p, c, nil
+}
+
+func (s safeFeedbackDelayStrategy) replaceDiscreteDelays(sys *System, role string) (*System, error) {
+	if s.cfg.thiranOrder == 0 {
+		if err := sys.Validate(); err != nil {
+			return nil, fmt.Errorf("SafeFeedback: validate %s: %w", role, err)
+		}
+		out, err := sys.AbsorbDelay()
+		if err != nil {
+			return nil, fmt.Errorf("SafeFeedback: absorb %s: %w", role, err)
+		}
+		return out, nil
+	}
+	out, err := replaceDiscreteExternalDelaysWithThiran(sys, s.cfg.thiranOrder)
+	if err != nil {
+		return nil, fmt.Errorf("SafeFeedback: thiran %s: %w", role, err)
+	}
+	return out, nil
+}
+
+func (s safeFeedbackDelayStrategy) requireWellPosedPade(plant, controller *System, sign float64) error {
+	_, mPlant, pPlant := plant.Dims()
+	_, mCtrl, pCtrl := controller.Dims()
+	if pPlant != mCtrl || pCtrl != mPlant {
+		return nil
+	}
+	if _, err := solveFeedbackFeedthrough(plant.D, controller.D, sign, pPlant, "SafeFeedback", ErrAlgebraicLoop); err != nil {
+		return fmt.Errorf("SafeFeedback: Pade approximation creates singular algebraic loop; try a different padeOrder (even vs odd) to flip feedthrough sign")
+	}
+	return nil
+}
+
+func replaceDiscreteExternalDelaysWithThiran(sys *System, thiranOrder int) (*System, error) {
+	if !sys.HasDelay() {
+		return sys.Copy(), nil
+	}
+	if sys.HasInternalDelay() {
+		if err := validateSliceDelay(sys.LFT.Tau, len(sys.LFT.Tau), sys.Dt); err != nil {
+			return nil, err
+		}
+	}
+
+	cur := sys.Copy()
+	if cur.HasInternalDelay() {
+		var err error
+		cur, err = absorbInternalDelay(cur)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	inputDelay, outputDelay, err := newDelayTopology(cur).decomposableExternal("SafeFeedback")
+	if err != nil {
+		return nil, err
+	}
+	if !delaySliceHasNonzero(inputDelay) && !delaySliceHasNonzero(outputDelay) {
+		cur.Delay = nil
+		cur.InputDelay = nil
+		cur.OutputDelay = nil
+		return cur, nil
+	}
+
+	result := &System{A: cur.A, B: cur.B, C: cur.C, D: cur.D, Dt: cur.Dt}
+	if delaySliceHasNonzero(inputDelay) {
+		bank, err := buildDiscreteSampleDelayBank(inputDelay, len(inputDelay), cur.Dt, thiranOrder)
+		if err != nil {
+			return nil, err
+		}
+		result, err = Series(bank, result)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if delaySliceHasNonzero(outputDelay) {
+		bank, err := buildDiscreteSampleDelayBank(outputDelay, len(outputDelay), cur.Dt, thiranOrder)
+		if err != nil {
+			return nil, err
+		}
+		result, err = Series(result, bank)
+		if err != nil {
+			return nil, err
+		}
+	}
+	propagateNames(result, cur)
+	result.InputDelay = nil
+	result.OutputDelay = nil
+	result.Delay = nil
+	return result, nil
+}
+
+func buildDiscreteSampleDelayBank(sampleDelay []float64, n int, dt float64, thiranOrder int) (*System, error) {
+	var bank *System
+	for i := 0; i < n; i++ {
+		tau := sampleDelay[i] * dt
+		var ch *System
+		var err error
+		if tau == 0 {
+			ch, err = NewGain(mat.NewDense(1, 1, []float64{1}), dt)
+		} else if math.Abs(sampleDelay[i]-math.Round(sampleDelay[i])) < 1e-9 {
+			ch, err = integerDelaySS(int(math.Round(sampleDelay[i])), dt)
+		} else {
+			ch, err = ThiranDelay(tau, thiranOrder, dt)
+		}
+		if err != nil {
+			return nil, err
+		}
+		if bank == nil {
+			bank = ch
+			continue
+		}
+		bank, err = Append(bank, ch)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return bank, nil
 }
 
 func replaceContinuousDelays(sys *System, padeOrder int) (*System, error) {
@@ -90,13 +211,13 @@ func replaceContinuousDelays(sys *System, padeOrder int) (*System, error) {
 	cur := sys.Copy()
 
 	if cur.Delay != nil {
-		inDel, outDel, residual := DecomposeIODelay(cur.Delay)
-		if delayMatrixHasNonzeroTol(residual, delayTopologyTol) {
-			return nil, fmt.Errorf("SafeFeedback: non-decomposable IODelay residual: %w", ErrFeedbackDelay)
+		decomp := decomposedDelayMatrix(cur.Delay)
+		if decomp.hasResidual() {
+			return nil, &delayTopologyResidualError{context: "SafeFeedback"}
 		}
 		cur.Delay = nil
-		cur.InputDelay = mergeDelays(cur.InputDelay, inDel)
-		cur.OutputDelay = mergeDelays(cur.OutputDelay, outDel)
+		cur.InputDelay = mergeDelays(cur.InputDelay, decomp.inputDelay)
+		cur.OutputDelay = mergeDelays(cur.OutputDelay, decomp.outputDelay)
 	}
 
 	result := &System{A: cur.A, B: cur.B, C: cur.C, D: cur.D, Dt: cur.Dt}

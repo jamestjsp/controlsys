@@ -59,14 +59,14 @@ func newC2DPlan(sys *System, dt float64, opts C2DOptions) (c2dPlan, error) {
 	plan.workSys.InputDelay = nil
 	plan.workSys.OutputDelay = nil
 	if sys.Delay != nil && (opts.ThiranOrder > 0 || delayModeling == "internal") {
-		inD, outD, residual := DecomposeIODelay(sys.Delay)
-		if delayMatrixHasNonzeroTol(residual, delayTopologyTol) {
-			plan.workSys.Delay = residual
+		decomp := decomposedDelayMatrix(sys.Delay)
+		if decomp.hasResidual() {
+			plan.workSys.Delay = decomp.residual
 		} else {
 			plan.workSys.Delay = nil
 		}
-		plan.contInputDelay = mergeDelays(sys.InputDelay, inD)
-		plan.contOutputDelay = mergeDelays(sys.OutputDelay, outD)
+		plan.contInputDelay = mergeDelays(sys.InputDelay, decomp.inputDelay)
+		plan.contOutputDelay = mergeDelays(sys.OutputDelay, decomp.outputDelay)
 	}
 
 	return plan, nil

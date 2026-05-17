@@ -271,8 +271,8 @@ func parallelNeedsLFT(sys1, sys2 *System) bool {
 	}
 	_, m, p := sys1.Dims()
 
-	td1 := totalDelayMatrix(sys1, p, m)
-	td2 := totalDelayMatrix(sys2, p, m)
+	td1 := totalDelayMatrix(sys1)
+	td2 := totalDelayMatrix(sys2)
 	if td1 == nil && td2 == nil {
 		return false
 	}
@@ -285,8 +285,8 @@ func parallelNeedsLFT(sys1, sys2 *System) bool {
 	return !mat.Equal(td1, td2)
 }
 
-func totalDelayMatrix(sys *System, p, m int) *mat.Dense {
-	return effectiveIODelayMatrix(sys, p, m, true)
+func totalDelayMatrix(sys *System) *mat.Dense {
+	return newDelayTopology(sys).totalExternal(true)
 }
 
 func parallelSimple(sys1, sys2 *System) (*System, error) {
