@@ -9,7 +9,7 @@ import (
 type ReduceMode int
 
 const (
-	ReduceAll            ReduceMode = iota
+	ReduceAll ReduceMode = iota
 	ReduceUncontrollable
 	ReduceUnobservable
 )
@@ -31,10 +31,14 @@ func (sys *System) Reduce(opts *ReduceOpts) (*ReduceResult, error) {
 		opts = &ReduceOpts{}
 	}
 
-	n, m, p := sys.Dims()
+	policy := newRealizationTransformPolicy(sys)
+	if err := policy.requireStandard("Reduce"); err != nil {
+		return nil, err
+	}
+	n, m, p := policy.n, policy.m, policy.p
 
 	if n == 0 {
-		return &ReduceResult{Sys: copySys(sys, n, m, p), Order: 0}, nil
+		return &ReduceResult{Sys: policy.zeroOrderCopy(), Order: 0}, nil
 	}
 
 	if m == 0 && (opts.Mode == ReduceAll || opts.Mode == ReduceUncontrollable) {
@@ -142,7 +146,6 @@ func copySys(sys *System, n, m, p int) *System {
 	propagateIONames(cp, sys)
 	return cp
 }
-
 
 func zeroOrderResult(sys *System, m, p int) *ReduceResult {
 	s := &System{

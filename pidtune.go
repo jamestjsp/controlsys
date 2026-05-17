@@ -13,9 +13,8 @@ type PidtuneOptions struct {
 }
 
 func Pidtune(plant *System, pidType string, opts ...PidtuneOptions) (*PID, error) {
-	_, m, p := plant.Dims()
-	if p != 1 || m != 1 {
-		return nil, fmt.Errorf("pidtune: SISO plant required: %w", ErrDimensionMismatch)
+	if _, err := newSISOLoopModel(plant, "pidtune"); err != nil {
+		return nil, err
 	}
 
 	var opt PidtuneOptions

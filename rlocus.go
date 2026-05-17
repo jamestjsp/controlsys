@@ -20,10 +20,10 @@ type RootLocusResult struct {
 }
 
 func RootLocus(sys *System, gains []float64) (*RootLocusResult, error) {
-	n, m, p := sys.Dims()
-	if m != 1 || p != 1 {
-		return nil, ErrNotSISO
+	if _, err := newSISOLoopModel(sys, "RootLocus"); err != nil {
+		return nil, err
 	}
+	n, _, _ := sys.Dims()
 
 	dRaw := sys.D.RawMatrix()
 	if dRaw.Data[0] != 0 {

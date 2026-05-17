@@ -1,18 +1,18 @@
 package controlsys
 
-import (
-	"fmt"
-
-	"gonum.org/v1/gonum/mat"
-)
+import "gonum.org/v1/gonum/mat"
 
 func Sminreal(sys *System) (*System, error) {
-	if sys.HasDelay() {
-		return nil, fmt.Errorf("controlsys: Sminreal does not support delayed systems; use Pade/AbsorbDelay first")
+	policy := newRealizationTransformPolicy(sys)
+	if err := policy.requireStandard("Sminreal"); err != nil {
+		return nil, err
 	}
-	n, m, p := sys.Dims()
+	if err := policy.requireDelayFree("Sminreal"); err != nil {
+		return nil, err
+	}
+	n, m, p := policy.n, policy.m, policy.p
 	if n == 0 {
-		return sys.Copy(), nil
+		return policy.zeroOrderCopy(), nil
 	}
 
 	aRaw := sys.A.RawMatrix()
@@ -111,10 +111,5 @@ func Sminreal(sys *System) (*System, error) {
 		}
 	}
 
-	result, err := newNoCopy(ar, br, cr, denseCopy(sys.D), sys.Dt)
-	if err != nil {
-		return nil, err
-	}
-	propagateIONames(result, sys)
-	return result, nil
+	return policy.result(ar, br, cr, denseCopy(sys.D))
 }

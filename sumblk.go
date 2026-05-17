@@ -91,211 +91,213 @@ func tokenize(expr string) ([]token, error) {
 	return tokens, nil
 }
 
-func parseEquations(tokens []token) ([]equation, error) {
-	pos := 0
+type sumblkParser struct {
+	tokens []token
+	pos    int
+}
 
-	peek := func() token { return tokens[pos] }
-	advance := func() token {
-		t := tokens[pos]
-		pos++
-		return t
+func (p *sumblkParser) peek() token {
+	return p.tokens[p.pos]
+}
+
+func (p *sumblkParser) advance() token {
+	t := p.tokens[p.pos]
+	p.pos++
+	return t
+}
+
+func (p *sumblkParser) expect(k tokenKind) (token, error) {
+	t := p.peek()
+	if t.kind != k {
+		return t, fmt.Errorf("sumblk: expected %d, got %q: %w", k, t.text, ErrInvalidExpression)
 	}
-	expect := func(k tokenKind) (token, error) {
-		t := peek()
-		if t.kind != k {
-			return t, fmt.Errorf("sumblk: expected %d, got %q: %w", k, t.text, ErrInvalidExpression)
+	p.advance()
+	return t, nil
+}
+
+func (p *sumblkParser) parseTerm() (signalTerm, error) {
+	coeff := 1.0
+	sign := 1.0
+	for p.peek().kind == tokPlus || p.peek().kind == tokMinus {
+		if p.advance().kind == tokMinus {
+			sign = -sign
 		}
-		advance()
-		return t, nil
 	}
 
-	parseTerm := func(isFirst bool) (signalTerm, error) {
-		coeff := 1.0
-		neg := false
-
-		if isFirst {
-			if peek().kind == tokMinus {
-				advance()
-				neg = true
-			}
+	if p.peek().kind == tokNumber {
+		t := p.advance()
+		if _, err := p.expect(tokStar); err != nil {
+			return signalTerm{}, fmt.Errorf("sumblk: expected '*' after number: %w", ErrInvalidExpression)
 		}
+		coeff = t.num
+	}
 
-		if peek().kind == tokNumber {
-			t := advance()
-			if _, err := expect(tokStar); err != nil {
-				return signalTerm{}, fmt.Errorf("sumblk: expected '*' after number: %w", ErrInvalidExpression)
-			}
-			coeff = t.num
-		}
+	ident, err := p.expect(tokIdent)
+	if err != nil {
+		return signalTerm{}, fmt.Errorf("sumblk: expected signal name: %w", ErrInvalidExpression)
+	}
+	return signalTerm{name: ident.text, coeff: sign * coeff}, nil
+}
 
-		ident, err := expect(tokIdent)
+func (p *sumblkParser) parseEquation() (equation, error) {
+	out, err := p.expect(tokIdent)
+	if err != nil {
+		return equation{}, fmt.Errorf("sumblk: expected output name: %w", ErrInvalidExpression)
+	}
+	if _, err := p.expect(tokEquals); err != nil {
+		return equation{}, err
+	}
+
+	first, err := p.parseTerm()
+	if err != nil {
+		return equation{}, err
+	}
+	terms := []signalTerm{first}
+
+	for p.peek().kind == tokPlus || p.peek().kind == tokMinus {
+		t, err := p.parseTerm()
 		if err != nil {
-			return signalTerm{}, fmt.Errorf("sumblk: expected signal name: %w", ErrInvalidExpression)
-		}
-
-		if neg {
-			coeff = -coeff
-		}
-		return signalTerm{name: ident.text, coeff: coeff}, nil
-	}
-
-	parseEq := func() (equation, error) {
-		out, err := expect(tokIdent)
-		if err != nil {
-			return equation{}, fmt.Errorf("sumblk: expected output name: %w", ErrInvalidExpression)
-		}
-		if _, err := expect(tokEquals); err != nil {
 			return equation{}, err
 		}
-
-		first, err := parseTerm(true)
-		if err != nil {
-			return equation{}, err
-		}
-		terms := []signalTerm{first}
-
-		for peek().kind == tokPlus || peek().kind == tokMinus {
-			op := advance()
-			t, err := parseTerm(false)
-			if err != nil {
-				return equation{}, err
-			}
-			if op.kind == tokMinus {
-				t.coeff = -t.coeff
-			}
-			terms = append(terms, t)
-		}
-		return equation{output: out.text, terms: terms}, nil
+		terms = append(terms, t)
 	}
+	return equation{output: out.text, terms: terms}, nil
+}
 
+func (p *sumblkParser) parse() ([]equation, error) {
 	var eqs []equation
-	eq, err := parseEq()
+	eq, err := p.parseEquation()
 	if err != nil {
 		return nil, err
 	}
 	eqs = append(eqs, eq)
 
-	for peek().kind == tokSemicolon {
-		advance()
-		if peek().kind == tokEOF {
+	for p.peek().kind == tokSemicolon {
+		p.advance()
+		if p.peek().kind == tokEOF {
 			break
 		}
-		eq, err := parseEq()
+		eq, err := p.parseEquation()
 		if err != nil {
 			return nil, err
 		}
 		eqs = append(eqs, eq)
 	}
 
-	if peek().kind != tokEOF {
-		return nil, fmt.Errorf("sumblk: unexpected token %q: %w", peek().text, ErrInvalidExpression)
+	if p.peek().kind != tokEOF {
+		return nil, fmt.Errorf("sumblk: unexpected token %q: %w", p.peek().text, ErrInvalidExpression)
 	}
 	return eqs, nil
 }
 
-func SumBlk(expr string, widths ...int) (*System, error) {
+func parseEquations(tokens []token) ([]equation, error) {
+	return (&sumblkParser{tokens: tokens}).parse()
+}
+
+type parsedSumBlock struct {
+	equations []equation
+	outputs   []string
+	inputs    []string
+	signals   []string
+	widths    map[string]int
+}
+
+func parseSumBlock(expr string) (*parsedSumBlock, error) {
 	trimmed := strings.TrimSpace(expr)
 	if trimmed == "" {
 		return nil, fmt.Errorf("sumblk: empty expression: %w", ErrInvalidExpression)
 	}
-
 	tokens, err := tokenize(trimmed)
 	if err != nil {
 		return nil, err
 	}
-
 	eqs, err := parseEquations(tokens)
 	if err != nil {
 		return nil, err
 	}
+	parsed := &parsedSumBlock{equations: eqs}
+	if err := parsed.collectSignals(); err != nil {
+		return nil, err
+	}
+	return parsed, nil
+}
 
+func (p *parsedSumBlock) collectSignals() error {
 	outputSet := make(map[string]bool)
-	var outputs []string
-	for _, eq := range eqs {
+	for _, eq := range p.equations {
 		if outputSet[eq.output] {
-			return nil, fmt.Errorf("sumblk: duplicate output %q: %w", eq.output, ErrInvalidExpression)
+			return fmt.Errorf("sumblk: duplicate output %q: %w", eq.output, ErrInvalidExpression)
 		}
 		outputSet[eq.output] = true
-		outputs = append(outputs, eq.output)
+		p.outputs = append(p.outputs, eq.output)
 	}
 
 	inputSet := make(map[string]bool)
-	var inputs []string
-	for _, eq := range eqs {
+	for _, eq := range p.equations {
 		for _, t := range eq.terms {
 			if !inputSet[t.name] {
 				inputSet[t.name] = true
-				inputs = append(inputs, t.name)
+				p.inputs = append(p.inputs, t.name)
 			}
 		}
 	}
 
-	signals := make([]string, 0, len(outputs)+len(inputs))
-	signals = append(signals, outputs...)
-	for _, inp := range inputs {
+	p.signals = make([]string, 0, len(p.outputs)+len(p.inputs))
+	p.signals = append(p.signals, p.outputs...)
+	for _, inp := range p.inputs {
 		if !outputSet[inp] {
-			signals = append(signals, inp)
+			p.signals = append(p.signals, inp)
 		}
 	}
+	return nil
+}
 
-	sigWidth := make(map[string]int, len(signals))
+func (p *parsedSumBlock) applyWidths(widths []int) error {
+	p.widths = make(map[string]int, len(p.signals))
 	switch len(widths) {
 	case 0:
-		for _, s := range signals {
-			sigWidth[s] = 1
-		}
-		for _, inp := range inputs {
-			if outputSet[inp] && sigWidth[inp] == 0 {
-				sigWidth[inp] = 1
-			}
+		for _, s := range p.signals {
+			p.widths[s] = 1
 		}
 	case 1:
-		for _, s := range signals {
-			sigWidth[s] = widths[0]
-		}
-		for _, inp := range inputs {
-			if outputSet[inp] {
-				sigWidth[inp] = widths[0]
-			}
+		for _, s := range p.signals {
+			p.widths[s] = widths[0]
 		}
 	default:
-		if len(widths) != len(signals) {
-			return nil, fmt.Errorf("sumblk: got %d widths for %d signals: %w", len(widths), len(signals), ErrInvalidExpression)
+		if len(widths) != len(p.signals) {
+			return fmt.Errorf("sumblk: got %d widths for %d signals: %w", len(widths), len(p.signals), ErrInvalidExpression)
 		}
-		for i, s := range signals {
-			sigWidth[s] = widths[i]
+		for i, s := range p.signals {
+			p.widths[s] = widths[i]
 		}
 	}
+	return nil
+}
 
+func (p *parsedSumBlock) directMatrix() *mat.Dense {
 	totalRows := 0
-	for _, o := range outputs {
-		totalRows += sigWidth[o]
-	}
-
-	allInputs := make([]string, 0, len(inputs))
-	for _, inp := range inputs {
-		allInputs = append(allInputs, inp)
+	for _, o := range p.outputs {
+		totalRows += p.widths[o]
 	}
 
 	totalCols := 0
-	inputColStart := make(map[string]int, len(allInputs))
-	for _, inp := range allInputs {
+	inputColStart := make(map[string]int, len(p.inputs))
+	for _, inp := range p.inputs {
 		inputColStart[inp] = totalCols
-		totalCols += sigWidth[inp]
+		totalCols += p.widths[inp]
 	}
 
 	D := mat.NewDense(totalRows, totalCols, nil)
-
 	rowOff := 0
-	for _, eq := range eqs {
-		w := sigWidth[eq.output]
+	for _, eq := range p.equations {
+		w := p.widths[eq.output]
 		merged := make(map[string]float64)
 		for _, t := range eq.terms {
 			merged[t.name] += t.coeff
 		}
 		for name, coeff := range merged {
 			col0 := inputColStart[name]
-			wIn := sigWidth[name]
+			wIn := p.widths[name]
 			diag := w
 			if wIn < diag {
 				diag = wIn
@@ -306,36 +308,38 @@ func SumBlk(expr string, widths ...int) (*System, error) {
 		}
 		rowOff += w
 	}
+	return D
+}
 
-	sys, err := NewGain(D, 0)
+func expandSignalNames(signals []string, widths map[string]int) []string {
+	var expanded []string
+	for _, signal := range signals {
+		w := widths[signal]
+		if w == 1 {
+			expanded = append(expanded, signal)
+			continue
+		}
+		for k := 1; k <= w; k++ {
+			expanded = append(expanded, fmt.Sprintf("%s(%d)", signal, k))
+		}
+	}
+	return expanded
+}
+
+func SumBlk(expr string, widths ...int) (*System, error) {
+	parsed, err := parseSumBlock(expr)
 	if err != nil {
 		return nil, err
 	}
-
-	var expandedOutputs []string
-	for _, o := range outputs {
-		w := sigWidth[o]
-		if w == 1 {
-			expandedOutputs = append(expandedOutputs, o)
-		} else {
-			for k := 1; k <= w; k++ {
-				expandedOutputs = append(expandedOutputs, fmt.Sprintf("%s(%d)", o, k))
-			}
-		}
+	if err := parsed.applyWidths(widths); err != nil {
+		return nil, err
 	}
-	var expandedInputs []string
-	for _, inp := range allInputs {
-		w := sigWidth[inp]
-		if w == 1 {
-			expandedInputs = append(expandedInputs, inp)
-		} else {
-			for k := 1; k <= w; k++ {
-				expandedInputs = append(expandedInputs, fmt.Sprintf("%s(%d)", inp, k))
-			}
-		}
-	}
-	sys.OutputName = expandedOutputs
-	sys.InputName = expandedInputs
 
+	sys, err := NewGain(parsed.directMatrix(), 0)
+	if err != nil {
+		return nil, err
+	}
+	sys.OutputName = expandSignalNames(parsed.outputs, parsed.widths)
+	sys.InputName = expandSignalNames(parsed.inputs, parsed.widths)
 	return sys, nil
 }

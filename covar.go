@@ -1,17 +1,15 @@
 package controlsys
 
-import (
-	"fmt"
-
-	"gonum.org/v1/gonum/mat"
-)
+import "gonum.org/v1/gonum/mat"
 
 func Covar(sys *System, W *mat.Dense) (*mat.Dense, error) {
 	n, m, p := sys.Dims()
 
-	wr, wc := W.Dims()
-	if wr != m || wc != m {
-		return nil, fmt.Errorf("W must be %d×%d, got %d×%d: %w", m, m, wr, wc, ErrDimensionMismatch)
+	if err := requireStandardCovarianceSystem(sys, "Covar"); err != nil {
+		return nil, err
+	}
+	if err := validateCovarianceRole("Covar", covarianceInputNoise, W, m); err != nil {
+		return nil, err
 	}
 
 	stable, err := sys.IsStable()
@@ -22,11 +20,7 @@ func Covar(sys *System, W *mat.Dense) (*mat.Dense, error) {
 		return nil, ErrUnstable
 	}
 
-	// Q = B*W*B'
-	var BW mat.Dense
-	BW.Mul(sys.B, W)
-	Q := mat.NewDense(n, n, nil)
-	Q.Mul(&BW, sys.B.T())
+	Q := inputNoiseIntensity(sys.B, W, n, m)
 
 	// symmetrize Q for Lyapunov solver
 	qRaw := Q.RawMatrix()

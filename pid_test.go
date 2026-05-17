@@ -191,6 +191,14 @@ func TestPID_PDNoFilter_Error(t *testing.T) {
 	}
 }
 
+func TestPID_UnfilteredDerivativeWithIntegral_Error(t *testing.T) {
+	c := NewPID(1, 2, 3)
+	_, err := c.System()
+	if err == nil {
+		t.Fatal("expected error for unfiltered derivative term")
+	}
+}
+
 func TestPID_DiscretePI(t *testing.T) {
 	c := NewPID(1, 2, 0, WithTs(0.1))
 	sys, err := c.System()

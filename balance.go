@@ -12,7 +12,7 @@ import (
 type BalredMethod int
 
 const (
-	Truncate             BalredMethod = iota
+	Truncate BalredMethod = iota
 	SingularPerturbation
 )
 
@@ -28,10 +28,16 @@ type BalrealResult struct {
 // The returned system has equal controllability and observability gramians,
 // both equal to diag(σ₁, σ₂, …, σₙ) where σᵢ are the Hankel singular values.
 func Balreal(sys *System) (*BalrealResult, error) {
-	n, m, p := sys.Dims()
+	policy := newRealizationTransformPolicy(sys)
+	if err := policy.requireStandard("Balreal"); err != nil {
+		return nil, err
+	}
+	if err := policy.requireDelayFree("Balreal"); err != nil {
+		return nil, err
+	}
+	n, m, p := policy.n, policy.m, policy.p
 	if n == 0 {
-		cp := sys.Copy()
-		return &BalrealResult{Sys: cp}, nil
+		return &BalrealResult{Sys: policy.zeroOrderCopy()}, nil
 	}
 
 	stable, err := sys.IsStable()
@@ -204,8 +210,7 @@ func Balreal(sys *System) (*BalrealResult, error) {
 	Cb := mat.NewDense(p, n, cbData)
 	Db := denseCopy(sys.D)
 
-	balSys, _ := newNoCopy(Ab, Bb, Cb, Db, sys.Dt)
-	propagateIONames(balSys, sys)
+	balSys, _ := policy.result(Ab, Bb, Cb, Db)
 
 	return &BalrealResult{
 		Sys:  balSys,
@@ -269,9 +274,16 @@ func Balred(sys *System, order int, method BalredMethod) (*System, []float64, er
 // elim contains 0-based indices of states to remove.
 // method selects Truncate or SingularPerturbation (DC-gain matching).
 func Modred(sys *System, elim []int, method BalredMethod) (*System, error) {
-	n, m, p := sys.Dims()
+	policy := newRealizationTransformPolicy(sys)
+	if err := policy.requireStandard("Modred"); err != nil {
+		return nil, err
+	}
+	if err := policy.requireDelayFree("Modred"); err != nil {
+		return nil, err
+	}
+	n, m, p := policy.n, policy.m, policy.p
 	if n == 0 || len(elim) == 0 {
-		return sys.Copy(), nil
+		return policy.zeroOrderCopy(), nil
 	}
 
 	elimSet := make(map[int]bool, len(elim))
@@ -350,11 +362,10 @@ func Modred(sys *System, elim []int, method BalredMethod) (*System, error) {
 	C1 := extractSubmatrix(Cp, 0, p, 0, r)
 
 	if method == Truncate {
-		red, err := newNoCopy(A11, B1, C1, denseCopy(sys.D), sys.Dt)
+		red, err := policy.result(A11, B1, C1, denseCopy(sys.D))
 		if err != nil {
 			return nil, err
 		}
-		propagateIONames(red, sys)
 		return red, nil
 	}
 

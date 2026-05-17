@@ -22,7 +22,7 @@ func Lqg(sys *System, Q, R, Qn, Rn *mat.Dense, opts *RiccatiOpts) (*LqgResult, e
 	if n == 0 {
 		return nil, fmt.Errorf("Lqg: system has no states: %w", ErrDimensionMismatch)
 	}
-	if err := newDescriptorPolicy(sys).requireRiccatiStandard("Lqg"); err != nil {
+	if err := requireStandardEstimatorSystem(sys, "Lqg"); err != nil {
 		return nil, err
 	}
 

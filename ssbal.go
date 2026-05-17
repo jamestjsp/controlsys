@@ -1,7 +1,6 @@
 package controlsys
 
 import (
-	"fmt"
 	"math"
 
 	"gonum.org/v1/gonum/mat"
@@ -13,14 +12,17 @@ type SsbalResult struct {
 }
 
 func Ssbal(sys *System) (*SsbalResult, error) {
-	if sys.HasDelay() {
-		return nil, fmt.Errorf("controlsys: Ssbal does not support delayed systems; use Pade/AbsorbDelay first")
+	policy := newRealizationTransformPolicy(sys)
+	if err := policy.requireStandard("Ssbal"); err != nil {
+		return nil, err
 	}
-	n, m, p := sys.Dims()
+	if err := policy.requireDelayFree("Ssbal"); err != nil {
+		return nil, err
+	}
+	n, m, p := policy.n, policy.m, policy.p
 	if n == 0 {
-		cp := sys.Copy()
 		eye := &mat.Dense{}
-		return &SsbalResult{Sys: cp, T: eye}, nil
+		return &SsbalResult{Sys: policy.zeroOrderCopy(), T: eye}, nil
 	}
 
 	aRaw := sys.A.RawMatrix()
@@ -110,11 +112,9 @@ func Ssbal(sys *System) (*SsbalResult, error) {
 		T.Set(i, i, d[i])
 	}
 
-	newSys, err := newNoCopy(Anew, Bnew, Cnew, Dnew, sys.Dt)
+	newSys, err := policy.result(Anew, Bnew, Cnew, Dnew)
 	if err != nil {
 		return nil, err
 	}
-	propagateIONames(newSys, sys)
-
 	return &SsbalResult{Sys: newSys, T: T}, nil
 }

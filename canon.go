@@ -25,8 +25,12 @@ type CanonResult struct {
 }
 
 func Canon(sys *System, form CanonForm) (*CanonResult, error) {
-	if sys.HasDelay() {
-		return nil, fmt.Errorf("controlsys: Canon does not support delayed systems; use Pade/AbsorbDelay first")
+	policy := newRealizationTransformPolicy(sys)
+	if err := policy.requireStandard("Canon"); err != nil {
+		return nil, err
+	}
+	if err := policy.requireDelayFree("Canon"); err != nil {
+		return nil, err
 	}
 	switch form {
 	case CanonModal:
@@ -46,10 +50,10 @@ type eigBlock struct {
 }
 
 func canonModal(sys *System) (*CanonResult, error) {
-	n, m, p := sys.Dims()
+	policy := newRealizationTransformPolicy(sys)
+	n, m, p := policy.n, policy.m, policy.p
 	if n == 0 {
-		cp := sys.Copy()
-		return &CanonResult{Sys: cp, T: &mat.Dense{}}, nil
+		return &CanonResult{Sys: policy.zeroOrderCopy(), T: &mat.Dense{}}, nil
 	}
 
 	res, err := canonModalEig(sys, n, m, p)
@@ -273,10 +277,10 @@ func schurSortByMagnitude(t, z []float64, n int) {
 }
 
 func canonCompanion(sys *System) (*CanonResult, error) {
-	n, m, p := sys.Dims()
+	policy := newRealizationTransformPolicy(sys)
+	n, m, p := policy.n, policy.m, policy.p
 	if n == 0 {
-		cp := sys.Copy()
-		return &CanonResult{Sys: cp, T: &mat.Dense{}}, nil
+		return &CanonResult{Sys: policy.zeroOrderCopy(), T: &mat.Dense{}}, nil
 	}
 	if m != 1 || p != 1 {
 		return nil, fmt.Errorf("controlsys: companion form requires SISO system: %w", ErrNotSISO)

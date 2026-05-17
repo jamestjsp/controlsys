@@ -1,7 +1,6 @@
 package controlsys
 
 import (
-	"fmt"
 	"math"
 
 	"gonum.org/v1/gonum/lapack"
@@ -18,13 +17,17 @@ type PrescaleResult struct {
 }
 
 func Prescale(sys *System) (*PrescaleResult, error) {
-	if sys.HasDelay() {
-		return nil, fmt.Errorf("controlsys: Prescale does not support delayed systems; use Pade/AbsorbDelay first")
+	policy := newRealizationTransformPolicy(sys)
+	if err := policy.requireStandard("Prescale"); err != nil {
+		return nil, err
 	}
-	n, m, p := sys.Dims()
+	if err := policy.requireDelayFree("Prescale"); err != nil {
+		return nil, err
+	}
+	n, m, p := policy.n, policy.m, policy.p
 
 	if n == 0 {
-		result := &PrescaleResult{Sys: sys.Copy()}
+		result := &PrescaleResult{Sys: policy.zeroOrderCopy()}
 		result.Info.InputScale = ones(m)
 		result.Info.OutputScale = ones(p)
 		return result, nil
@@ -99,11 +102,10 @@ func Prescale(sys *System) (*PrescaleResult, error) {
 		}
 	}
 
-	scaled, err := newNoCopy(Ab, Bb, Cb, Db, sys.Dt)
+	scaled, err := policy.result(Ab, Bb, Cb, Db)
 	if err != nil {
 		return nil, err
 	}
-	propagateIONames(scaled, sys)
 
 	result := &PrescaleResult{Sys: scaled}
 	result.Info.StateScale = stateScale

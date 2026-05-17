@@ -2,7 +2,6 @@ package controlsys
 
 import (
 	"gonum.org/v1/gonum/blas"
-	"gonum.org/v1/gonum/blas/blas64"
 	"gonum.org/v1/gonum/mat"
 )
 
@@ -30,63 +29,23 @@ type GramResult struct {
 //	Continuous: A'·Wo + Wo·A + C'·C = 0
 //	Discrete:   A'·Wo·A - Wo + C'·C = 0
 func Gram(sys *System, typ GramType) (*GramResult, error) {
-	n, m, p := sys.Dims()
+	policy := newEnergyAnalysisPolicy(sys)
+	if err := policy.requireStandard("Gram"); err != nil {
+		return nil, err
+	}
+	n := policy.n
 	if n == 0 {
 		return &GramResult{X: &mat.Dense{}}, nil
 	}
 
-	stable, err := sys.IsStable()
+	if err := policy.requireStable(ErrUnstableGramian); err != nil {
+		return nil, err
+	}
+	Aarg, Q, err := policy.gramianInputs(typ)
 	if err != nil {
 		return nil, err
 	}
-	if !stable {
-		return nil, ErrUnstableGramian
-	}
-
-	aRaw := sys.A.RawMatrix()
-	aData := make([]float64, n*n)
-	copyStrided(aData, n, aRaw.Data, aRaw.Stride, n, n)
-
-	var q []float64
-	var solveA []float64
-
-	switch typ {
-	case GramControllability:
-		q = make([]float64, n*n)
-		bRaw := sys.B.RawMatrix()
-		bGen := blas64.General{Rows: n, Cols: m, Stride: bRaw.Stride, Data: bRaw.Data}
-		qGen := blas64.General{Rows: n, Cols: n, Stride: n, Data: q}
-		blas64.Gemm(blas.NoTrans, blas.Trans, 1, bGen, bGen, 0, qGen)
-		symmetrize(q, n, n)
-		solveA = aData
-
-	case GramObservability:
-		q = make([]float64, n*n)
-		cRaw := sys.C.RawMatrix()
-		cGen := blas64.General{Rows: p, Cols: n, Stride: cRaw.Stride, Data: cRaw.Data}
-		qGen := blas64.General{Rows: n, Cols: n, Stride: n, Data: q}
-		blas64.Gemm(blas.Trans, blas.NoTrans, 1, cGen, cGen, 0, qGen)
-		symmetrize(q, n, n)
-		solveA = make([]float64, n*n)
-		for i := range n {
-			for j := range n {
-				solveA[i*n+j] = aData[j*n+i]
-			}
-		}
-
-	default:
-		return nil, ErrDimensionMismatch
-	}
-
-	Q := mat.NewDense(n, n, q)
-	Aarg := mat.NewDense(n, n, solveA)
-
-	var X *mat.Dense
-	if sys.IsContinuous() {
-		X, err = Lyap(Aarg, Q, nil)
-	} else {
-		X, err = DLyap(Aarg, Q, nil)
-	}
+	X, err := policy.solveLyapunov(Aarg, Q)
 	if err != nil {
 		return nil, err
 	}

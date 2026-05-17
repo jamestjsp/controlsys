@@ -1,6 +1,7 @@
 package controlsys
 
 import (
+	"errors"
 	"math"
 	"math/cmplx"
 	"testing"
@@ -237,7 +238,7 @@ func TestRootLocus_NotSISO(t *testing.T) {
 	}
 
 	_, err = RootLocus(sys, nil)
-	if err != ErrNotSISO {
+	if !errors.Is(err, ErrNotSISO) {
 		t.Errorf("expected ErrNotSISO, got %v", err)
 	}
 }
