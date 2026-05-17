@@ -1,6 +1,7 @@
 # Controlsys
 
-Go library for linear state-space control systems.
+For domain terminology, modeling assumptions, and project language, read
+`CONTEXT.md` before making design, documentation, or behavior changes.
 
 ## Build & Test
 
