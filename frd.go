@@ -247,22 +247,7 @@ func (f *FRD) Bode() *BodeResult {
 			}
 		}
 	}
-
-	for i := 0; i < p; i++ {
-		for j := 0; j < m; j++ {
-			for k := 1; k < nw; k++ {
-				cur := k*pm + i*m + j
-				prev := (k-1)*pm + i*m + j
-				diff := phase[cur] - phase[prev]
-				if diff > 180 {
-					phase[cur] -= 360
-				}
-				if diff < -180 {
-					phase[cur] += 360
-				}
-			}
-		}
-	}
+	unwrapBodePhase(phase, p, m, nw)
 
 	omega := make([]float64, nw)
 	copy(omega, f.Omega)

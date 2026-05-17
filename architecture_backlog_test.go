@@ -1,0 +1,238 @@
+package controlsys
+
+import (
+	"math"
+	"math/cmplx"
+	"testing"
+
+	"gonum.org/v1/gonum/mat"
+)
+
+func architectureTestSystem(t *testing.T, dt float64) *System {
+	t.Helper()
+	sys, err := NewFromSlices(2, 2, 2,
+		[]float64{0, 1, -2, -3},
+		[]float64{1, 0, 0, 1},
+		[]float64{1, 0, 1, 1},
+		[]float64{0.1, 0.2, -0.1, 0.3},
+		dt,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return sys
+}
+
+func TestEquivalentDelayFormsAgreeThroughPublicOperations(t *testing.T) {
+	base := architectureTestSystem(t, 0)
+
+	split := base.Copy()
+	if err := split.SetInputDelay([]float64{0.2, 0.4}); err != nil {
+		t.Fatal(err)
+	}
+	if err := split.SetOutputDelay([]float64{0.1, 0.1}); err != nil {
+		t.Fatal(err)
+	}
+	if err := split.SetDelay(mat.NewDense(2, 2, []float64{
+		0.0, 0.1,
+		0.2, 0.0,
+	})); err != nil {
+		t.Fatal(err)
+	}
+
+	total := split.TotalDelay()
+	collapsed := base.Copy()
+	if err := collapsed.SetDelay(total); err != nil {
+		t.Fatal(err)
+	}
+
+	assertDenseApprox(t, split.TotalDelay(), collapsed.TotalDelay(), 0)
+
+	omega := []float64{0.2, 1.7, 6.0}
+	assertFreqResponseApprox(t, split, collapsed, omega, 1e-10)
+
+	right, err := NewGain(mat.NewDense(2, 2, []float64{1, 0, 0, 1}), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seriesSplit, err := Series(split, right)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seriesCollapsed, err := Series(collapsed, right)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertFreqResponseApprox(t, seriesSplit, seriesCollapsed, omega, 1e-10)
+}
+
+func TestFrequencyResponseEntryPointsAgreeForDelayedDiscreteMIMO(t *testing.T) {
+	sys := architectureTestSystem(t, 0.1)
+	if err := sys.SetInputDelay([]float64{1, 0}); err != nil {
+		t.Fatal(err)
+	}
+	if err := sys.SetOutputDelay([]float64{0, 2}); err != nil {
+		t.Fatal(err)
+	}
+	if err := sys.SetDelay(mat.NewDense(2, 2, []float64{0, 1, 2, 0})); err != nil {
+		t.Fatal(err)
+	}
+
+	omega := []float64{0.2, 1.1, 4.0}
+	resp, err := sys.FreqResponse(omega)
+	if err != nil {
+		t.Fatal(err)
+	}
+	frd, err := sys.FRD(omega)
+	if err != nil {
+		t.Fatal(err)
+	}
+	frdResp := frd.FreqResponse()
+
+	for k, w := range omega {
+		z := cmplx.Exp(complex(0, w*sys.Dt))
+		eval, err := sys.EvalFr(z)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i := 0; i < resp.P; i++ {
+			for j := 0; j < resp.M; j++ {
+				assertComplexApprox(t, eval[i][j], resp.At(k, i, j), 1e-10)
+				assertComplexApprox(t, frd.At(k, i, j), resp.At(k, i, j), 1e-10)
+				assertComplexApprox(t, frdResp.At(k, i, j), resp.At(k, i, j), 1e-10)
+			}
+		}
+	}
+}
+
+func TestTransferFunctionPreservesRowRealizationBehavior(t *testing.T) {
+	sys, err := NewFromSlices(3, 2, 2,
+		[]float64{
+			0, 1, 0,
+			0, 0, 1,
+			-6, -11, -6,
+		},
+		[]float64{
+			0, 1,
+			1, 0,
+			1, 1,
+		},
+		[]float64{
+			1, 0, 1,
+			0, 1, 1,
+		},
+		[]float64{
+			0.2, -0.1,
+			0.3, 0.4,
+		},
+		0,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := sys.SetDelay(mat.NewDense(2, 2, []float64{0.1, 0.2, 0.3, 0.4})); err != nil {
+		t.Fatal(err)
+	}
+	sys.InputName = []string{"u1", "u2"}
+	sys.OutputName = []string{"y1", "y2"}
+
+	res, err := sys.TransferFunction(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.MinimalOrder <= 0 {
+		t.Fatalf("MinimalOrder = %d, want positive", res.MinimalOrder)
+	}
+	if len(res.RowDegrees) != 2 {
+		t.Fatalf("len(RowDegrees) = %d, want 2", len(res.RowDegrees))
+	}
+	for i, degree := range res.RowDegrees {
+		if degree <= 0 {
+			t.Fatalf("RowDegrees[%d] = %d, want positive", i, degree)
+		}
+	}
+	if !stringSlicesEqual(res.TF.InputName, sys.InputName) {
+		t.Fatalf("InputName = %v, want %v", res.TF.InputName, sys.InputName)
+	}
+	if !stringSlicesEqual(res.TF.OutputName, sys.OutputName) {
+		t.Fatalf("OutputName = %v, want %v", res.TF.OutputName, sys.OutputName)
+	}
+	for i := 0; i < 2; i++ {
+		for j := 0; j < 2; j++ {
+			if res.TF.Delay[i][j] != sys.Delay.At(i, j) {
+				t.Fatalf("Delay[%d][%d] = %v, want %v", i, j, res.TF.Delay[i][j], sys.Delay.At(i, j))
+			}
+		}
+	}
+
+	omega := []float64{0.3, 1.4, 5.0}
+	resp, err := sys.FreqResponse(omega)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for k, w := range omega {
+		tfEval := res.TF.Eval(complex(0, w))
+		for i := 0; i < 2; i++ {
+			for j := 0; j < 2; j++ {
+				assertComplexApprox(t, tfEval[i][j], resp.At(k, i, j), 1e-8)
+			}
+		}
+	}
+}
+
+func assertFreqResponseApprox(t *testing.T, a, b *System, omega []float64, tol float64) {
+	t.Helper()
+	ra, err := a.FreqResponse(omega)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rb, err := b.FreqResponse(omega)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ra.NFreq != rb.NFreq || ra.P != rb.P || ra.M != rb.M {
+		t.Fatalf("response dims = (%d,%d,%d), want (%d,%d,%d)", ra.NFreq, ra.P, ra.M, rb.NFreq, rb.P, rb.M)
+	}
+	for k := 0; k < ra.NFreq; k++ {
+		for i := 0; i < ra.P; i++ {
+			for j := 0; j < ra.M; j++ {
+				assertComplexApprox(t, ra.At(k, i, j), rb.At(k, i, j), tol)
+			}
+		}
+	}
+}
+
+func assertDenseApprox(t *testing.T, got, want *mat.Dense, tol float64) {
+	t.Helper()
+	gr, gc := got.Dims()
+	wr, wc := want.Dims()
+	if gr != wr || gc != wc {
+		t.Fatalf("dims = %dx%d, want %dx%d", gr, gc, wr, wc)
+	}
+	for i := 0; i < gr; i++ {
+		for j := 0; j < gc; j++ {
+			if math.Abs(got.At(i, j)-want.At(i, j)) > tol {
+				t.Fatalf("(%d,%d) = %v, want %v", i, j, got.At(i, j), want.At(i, j))
+			}
+		}
+	}
+}
+
+func assertComplexApprox(t *testing.T, got, want complex128, tol float64) {
+	t.Helper()
+	if cmplx.Abs(got-want) > tol {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+}
+
+func stringSlicesEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}

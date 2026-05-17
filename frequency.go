@@ -5,8 +5,8 @@ import (
 	"math"
 	"math/cmplx"
 
-	"gonum.org/v1/gonum/blas/blas64"
 	"gonum.org/v1/gonum/lapack"
+	"gonum.org/v1/gonum/mat"
 )
 
 type FreqResponseMatrix struct {
@@ -38,68 +38,56 @@ func (b *BodeResult) PhaseAt(freq, output, input int) float64 {
 	return b.phase[freq*b.p*b.m+output*b.m+input]
 }
 
-func (sys *System) FreqResponse(omega []float64) (*FreqResponseMatrix, error) {
-	if len(omega) == 0 {
-		return nil, nil
-	}
-
-	n, m, p := sys.Dims()
-
-	if sys.HasInternalDelay() {
-		resp, err := freqResponseLFT(sys, omega, p, m)
-		if err != nil {
-			return nil, err
-		}
-		applyIODelayPhase(sys, omega, resp.Data, p, m, true)
-		resp.InputName = copyStringSlice(sys.InputName)
-		resp.OutputName = copyStringSlice(sys.OutputName)
-		return resp, nil
-	}
-
+func bodeResultFromResponse(omega []float64, data []complex128, p, m int, inputName, outputName []string) *BodeResult {
 	nw := len(omega)
 	pm := p * m
-	data := make([]complex128, nw*pm)
-	if nw == 1 {
-		var s complex128
-		if sys.IsContinuous() {
-			s = complex(0, omega[0])
-		} else {
-			s = cmplx.Exp(complex(0, omega[0]*sys.Dt))
+	magDB := make([]float64, nw*pm)
+	phase := make([]float64, nw*pm)
+
+	for k := range omega {
+		for i := 0; i < p; i++ {
+			for j := 0; j < m; j++ {
+				off := (k*p+i)*m + j
+				h := data[off]
+				magDB[off] = 20 * math.Log10(cmplx.Abs(h))
+				phase[off] = cmplx.Phase(h) * 180 / math.Pi
+			}
 		}
-		ws := newSSEvalWorkspace(n, p, m)
-		if err := evalFrSSInto(ws, sys, s, n, p, m); err != nil {
-			return nil, err
-		}
-		copy(data, ws.g[:pm])
-		applyIODelayAtS(sys, s, data, p, m, true)
-		return &FreqResponseMatrix{
-			Data: data, NFreq: nw, P: p, M: m,
-			InputName:  copyStringSlice(sys.InputName),
-			OutputName: copyStringSlice(sys.OutputName),
-		}, nil
 	}
 
-	res, err := sys.TransferFunction(nil)
-	if err != nil {
-		return nil, err
+	unwrapBodePhase(phase, p, m, nw)
+
+	return &BodeResult{
+		Omega:      omega,
+		magDB:      magDB,
+		phase:      phase,
+		p:          p,
+		m:          m,
+		InputName:  inputName,
+		OutputName: outputName,
 	}
-	for k, w := range omega {
-		var s complex128
-		if sys.IsContinuous() {
-			s = complex(0, w)
-		} else {
-			s = cmplx.Exp(complex(0, w*sys.Dt))
+}
+
+func unwrapBodePhase(phase []float64, p, m, nw int) {
+	for i := 0; i < p; i++ {
+		for j := 0; j < m; j++ {
+			for k := 1; k < nw; k++ {
+				cur := (k*p+i)*m + j
+				prev := ((k-1)*p+i)*m + j
+				diff := phase[cur] - phase[prev]
+				if diff > 180 {
+					phase[cur] -= 360
+				}
+				if diff < -180 {
+					phase[cur] += 360
+				}
+			}
 		}
-		res.TF.evalInto(s, data[k*pm:(k+1)*pm])
 	}
+}
 
-	applyIODelayPhase(sys, omega, data, p, m, false)
-
-	return &FreqResponseMatrix{
-		Data: data, NFreq: nw, P: p, M: m,
-		InputName:  copyStringSlice(sys.InputName),
-		OutputName: copyStringSlice(sys.OutputName),
-	}, nil
+func (sys *System) FreqResponse(omega []float64) (*FreqResponseMatrix, error) {
+	return newFrequencyEvaluator(sys).response(omega)
 }
 
 func (sys *System) Bode(omega []float64, nPoints int) (*BodeResult, error) {
@@ -116,65 +104,108 @@ func (sys *System) Bode(omega []float64, nPoints int) (*BodeResult, error) {
 		return nil, err
 	}
 
-	p, m := resp.P, resp.M
-	nw := len(omega)
-	pm := p * m
-	magDB := make([]float64, nw*pm)
-	phase := make([]float64, nw*pm)
-
-	for k := range omega {
-		for i := 0; i < p; i++ {
-			for j := 0; j < m; j++ {
-				off := (k*p+i)*m + j
-				h := resp.Data[off]
-				magDB[off] = 20 * math.Log10(cmplx.Abs(h))
-				phase[off] = cmplx.Phase(h) * 180 / math.Pi
-			}
-		}
-	}
-
-	for i := 0; i < p; i++ {
-		for j := 0; j < m; j++ {
-			for k := 1; k < nw; k++ {
-				cur := (k*p+i)*m + j
-				prev := ((k-1)*p+i)*m + j
-				diff := phase[cur] - phase[prev]
-				if diff > 180 {
-					phase[cur] -= 360
-				}
-				if diff < -180 {
-					phase[cur] += 360
-				}
-			}
-		}
-	}
-
-	return &BodeResult{
-		Omega: omega, magDB: magDB, phase: phase, p: p, m: m,
-		InputName:  copyStringSlice(sys.InputName),
-		OutputName: copyStringSlice(sys.OutputName),
-	}, nil
+	return bodeResultFromResponse(omega, resp.Data, resp.P, resp.M,
+		copyStringSlice(sys.InputName),
+		copyStringSlice(sys.OutputName),
+	), nil
 }
 
 func (sys *System) EvalFr(s complex128) ([][]complex128, error) {
-	n, m, p := sys.Dims()
-	pm := p * m
+	return newFrequencyEvaluator(sys).eval(s)
+}
 
-	if sys.HasInternalDelay() {
-		g, err := evalFrLFT(sys, s, p, m)
+type frequencyEvaluator struct {
+	sys *System
+	n   int
+	m   int
+	p   int
+}
+
+func newFrequencyEvaluator(sys *System) frequencyEvaluator {
+	n, m, p := sys.Dims()
+	return frequencyEvaluator{sys: sys, n: n, m: m, p: p}
+}
+
+func (e frequencyEvaluator) response(omega []float64) (*FreqResponseMatrix, error) {
+	if len(omega) == 0 {
+		return nil, nil
+	}
+	if e.sys.HasInternalDelay() {
+		resp, err := freqResponseLFT(e.sys, omega, e.p, e.m)
 		if err != nil {
 			return nil, err
 		}
-		applyIODelayAtS(sys, s, g, p, m, true)
-		return complexFlatToGrid(g, p, m), nil
+		applyIODelayPhase(e.sys, omega, resp.Data, e.p, e.m, true)
+		resp.InputName = copyStringSlice(e.sys.InputName)
+		resp.OutputName = copyStringSlice(e.sys.OutputName)
+		return resp, nil
 	}
 
-	ws := newSSEvalWorkspace(n, p, m)
-	if err := evalFrSSInto(ws, sys, s, n, p, m); err != nil {
+	nw := len(omega)
+	pm := e.p * e.m
+	data := make([]complex128, nw*pm)
+	if nw == 1 {
+		s := e.sAt(omega[0])
+		if err := e.evalStateSpaceInto(s, data); err != nil {
+			return nil, err
+		}
+		applyIODelayAtS(e.sys, s, data, e.p, e.m, true)
+		return e.matrix(data, nw), nil
+	}
+
+	res, err := e.sys.TransferFunction(nil)
+	if err != nil {
 		return nil, err
 	}
-	applyIODelayAtS(sys, s, ws.g[:pm], p, m, true)
-	return complexFlatToGrid(ws.g[:pm], p, m), nil
+	for k, w := range omega {
+		res.TF.evalInto(e.sAt(w), data[k*pm:(k+1)*pm])
+	}
+	applyIODelayPhase(e.sys, omega, data, e.p, e.m, false)
+	return e.matrix(data, nw), nil
+}
+
+func (e frequencyEvaluator) eval(s complex128) ([][]complex128, error) {
+	pm := e.p * e.m
+
+	if e.sys.HasInternalDelay() {
+		g, err := evalFrLFT(e.sys, s, e.p, e.m)
+		if err != nil {
+			return nil, err
+		}
+		applyIODelayAtS(e.sys, s, g, e.p, e.m, true)
+		return complexFlatToGrid(g, e.p, e.m), nil
+	}
+
+	data := make([]complex128, pm)
+	if err := e.evalStateSpaceInto(s, data); err != nil {
+		return nil, err
+	}
+	applyIODelayAtS(e.sys, s, data, e.p, e.m, true)
+	return complexFlatToGrid(data, e.p, e.m), nil
+}
+
+func (e frequencyEvaluator) sAt(w float64) complex128 {
+	if e.sys.IsContinuous() {
+		return complex(0, w)
+	}
+	return cmplx.Exp(complex(0, w*e.sys.Dt))
+}
+
+func (e frequencyEvaluator) evalStateSpaceInto(s complex128, dst []complex128) error {
+	ws := newSSEvalWorkspace(e.n, e.p, e.m)
+	if err := evalFrSSInto(ws, e.sys, s, e.n, e.p, e.m); err != nil {
+		return err
+	}
+	copy(dst, ws.g[:e.p*e.m])
+	return nil
+}
+
+func (e frequencyEvaluator) matrix(data []complex128, nw int) *FreqResponseMatrix {
+	return &FreqResponseMatrix{
+		Data: data, NFreq: nw, P: e.p, M: e.m,
+		InputName:  copyStringSlice(e.sys.InputName),
+		OutputName: copyStringSlice(e.sys.OutputName),
+	}
 }
 
 func autoBodeFreqs(sys *System, nPoints int) ([]float64, error) {
@@ -252,8 +283,8 @@ func ioDelayTotal(sys *System, i, j int) float64 {
 }
 
 func applyIODelayPhase(sys *System, omega []float64, data []complex128, p, m int, includeDelayMatrix bool) {
-	hasIODelay := sys.InputDelay != nil || sys.OutputDelay != nil || (includeDelayMatrix && sys.Delay != nil)
-	if !hasIODelay {
+	delay := effectiveIODelayMatrix(sys, p, m, includeDelayMatrix)
+	if delay == nil {
 		return
 	}
 
@@ -265,33 +296,23 @@ func applyIODelayPhase(sys *System, omega []float64, data []complex128, p, m int
 		} else {
 			s = cmplx.Exp(complex(0, w*sys.Dt))
 		}
-		applyIODelayAtS(sys, s, data[k*pm:(k+1)*pm], p, m, includeDelayMatrix)
+		applyIODelayMatrixAtS(sys, s, data[k*pm:(k+1)*pm], p, m, delay)
 	}
 }
 
 func applyIODelayAtS(sys *System, s complex128, data []complex128, p, m int, includeDelayMatrix bool) {
-	hasIODelay := sys.InputDelay != nil || sys.OutputDelay != nil || (includeDelayMatrix && sys.Delay != nil)
-	if !hasIODelay {
+	delay := effectiveIODelayMatrix(sys, p, m, includeDelayMatrix)
+	if delay == nil {
 		return
 	}
+	applyIODelayMatrixAtS(sys, s, data, p, m, delay)
+}
 
-	var dRaw blas64.General
-	if includeDelayMatrix && sys.Delay != nil {
-		dRaw = sys.Delay.RawMatrix()
-	}
-
+func applyIODelayMatrixAtS(sys *System, s complex128, data []complex128, p, m int, delay *mat.Dense) {
+	dRaw := delay.RawMatrix()
 	for i := 0; i < p; i++ {
 		for j := 0; j < m; j++ {
-			var tau float64
-			if sys.InputDelay != nil {
-				tau += sys.InputDelay[j]
-			}
-			if sys.OutputDelay != nil {
-				tau += sys.OutputDelay[i]
-			}
-			if includeDelayMatrix && sys.Delay != nil {
-				tau += dRaw.Data[i*dRaw.Stride+j]
-			}
+			tau := dRaw.Data[i*dRaw.Stride+j]
 			if tau == 0 {
 				continue
 			}

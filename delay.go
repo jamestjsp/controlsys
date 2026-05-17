@@ -135,21 +135,27 @@ func validateSliceDelay(delay []float64, expected int, dt float64) error {
 
 func (sys *System) TotalDelay() *mat.Dense {
 	_, m, p := sys.Dims()
-	if sys.Delay == nil && sys.InputDelay == nil && sys.OutputDelay == nil {
+	return effectiveIODelayMatrix(sys, p, m, true)
+}
+
+func effectiveIODelayMatrix(sys *System, p, m int, includeDelayMatrix bool) *mat.Dense {
+	if !hasExternalDelay(sys, includeDelayMatrix) || p == 0 || m == 0 {
 		return nil
 	}
-	if p == 0 || m == 0 {
-		return nil
-	}
+	data := effectiveIODelayData(sys, p, m, includeDelayMatrix)
+	return mat.NewDense(p, m, data)
+}
+
+func effectiveIODelayData(sys *System, p, m int, includeDelayMatrix bool) []float64 {
 	data := make([]float64, p*m)
-	if sys.Delay != nil {
+	if includeDelayMatrix && sys.Delay != nil {
 		raw := sys.Delay.RawMatrix()
 		for i := 0; i < p; i++ {
 			copy(data[i*m:i*m+m], raw.Data[i*raw.Stride:i*raw.Stride+m])
 		}
 	}
-	for j := 0; j < m; j++ {
-		if sys.InputDelay != nil {
+	if sys.InputDelay != nil {
+		for j := 0; j < m; j++ {
 			for i := 0; i < p; i++ {
 				data[i*m+j] += sys.InputDelay[j]
 			}
@@ -162,7 +168,11 @@ func (sys *System) TotalDelay() *mat.Dense {
 			}
 		}
 	}
-	return mat.NewDense(p, m, data)
+	return data
+}
+
+func hasExternalDelay(sys *System, includeDelayMatrix bool) bool {
+	return sys.InputDelay != nil || sys.OutputDelay != nil || (includeDelayMatrix && sys.Delay != nil)
 }
 
 func (sys *System) HasDelay() bool {
