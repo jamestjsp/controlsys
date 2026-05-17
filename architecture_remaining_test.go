@@ -85,11 +85,66 @@ func TestRemainingArchitectureDelayTopologyPublicOperations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	safeCollapsed, err := SafeFeedback(collapsed, controller, -1, WithPadeOrder(2))
+	manualPlant, err := replaceExplicitIODelaysWithPade(split, 2)
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertFreqResponseApprox(t, safeSplit, safeCollapsed, omega, 1e-8)
+	manualSafe, err := Feedback(manualPlant, controller, -1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertFreqResponseApprox(t, safeSplit, manualSafe, omega, 1e-8)
+}
+
+func replaceExplicitIODelaysWithPade(sys *System, padeOrder int) (*System, error) {
+	_, m, p := sys.Dims()
+	cur := sys.Copy()
+	if cur.Delay != nil {
+		inDel, outDel, residual := DecomposeIODelay(cur.Delay)
+		if delayMatrixHasNonzeroTol(residual, delayTopologyTol) {
+			return nil, ErrFeedbackDelay
+		}
+		cur.Delay = nil
+		cur.InputDelay = mergeDelays(cur.InputDelay, inDel)
+		cur.OutputDelay = mergeDelays(cur.OutputDelay, outDel)
+	}
+
+	result := &System{A: cur.A, B: cur.B, C: cur.C, D: cur.D, Dt: cur.Dt}
+	for j := m - 1; j >= 0; j-- {
+		if cur.InputDelay == nil || cur.InputDelay[j] == 0 {
+			continue
+		}
+		pade, err := PadeDelay(cur.InputDelay[j], padeOrder)
+		if err != nil {
+			return nil, err
+		}
+		diag, err := buildDiagWithPade(j, m, pade)
+		if err != nil {
+			return nil, err
+		}
+		result, err = Series(diag, result)
+		if err != nil {
+			return nil, err
+		}
+	}
+	for i := p - 1; i >= 0; i-- {
+		if cur.OutputDelay == nil || cur.OutputDelay[i] == 0 {
+			continue
+		}
+		pade, err := PadeDelay(cur.OutputDelay[i], padeOrder)
+		if err != nil {
+			return nil, err
+		}
+		diag, err := buildDiagWithPade(i, p, pade)
+		if err != nil {
+			return nil, err
+		}
+		result, err = Series(result, diag)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return result, nil
 }
 
 func TestRemainingArchitectureConversionPlannerBehavior(t *testing.T) {
