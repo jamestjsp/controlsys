@@ -26,7 +26,7 @@ func newDescriptorPolicy(sys *System) descriptorPolicy {
 }
 
 func (p descriptorPolicy) isDescriptor() bool {
-	return p.E != nil
+	return p.E != nil && !isIdentityDescriptor(p.E)
 }
 
 func (p descriptorPolicy) validate(n int) error {
@@ -41,7 +41,7 @@ func (p descriptorPolicy) validate(n int) error {
 }
 
 func (p descriptorPolicy) poles(A *mat.Dense, n int) ([]complex128, error) {
-	if p.E != nil {
+	if p.E != nil && !isIdentityDescriptor(p.E) {
 		return generalizedPoles(A, p.E, n)
 	}
 	var eig mat.Eigen
@@ -53,17 +53,40 @@ func (p descriptorPolicy) poles(A *mat.Dense, n int) ([]complex128, error) {
 }
 
 func (p descriptorPolicy) requireStandard(context string) error {
-	if p.E == nil {
+	if p.E == nil || isIdentityDescriptor(p.E) {
 		return nil
 	}
 	return fmt.Errorf("%s: %w", context, ErrDescriptorUnsupported)
 }
 
 func (p descriptorPolicy) requireRiccatiStandard(context string) error {
-	if p.E == nil {
+	if p.E == nil || isIdentityDescriptor(p.E) {
 		return nil
 	}
 	return fmt.Errorf("%s: %w", context, ErrDescriptorRiccati)
+}
+
+func isIdentityDescriptor(E *mat.Dense) bool {
+	if E == nil {
+		return true
+	}
+	r, c := E.Dims()
+	if r != c {
+		return false
+	}
+	raw := E.RawMatrix()
+	for i := 0; i < r; i++ {
+		for j := 0; j < c; j++ {
+			want := 0.0
+			if i == j {
+				want = 1
+			}
+			if raw.Data[i*raw.Stride+j] != want {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // generalizedPoles computes the finite eigenvalues of the pencil (A, E)

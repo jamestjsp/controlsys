@@ -175,3 +175,57 @@ func TestDescriptorSystem_UnsupportedOperationsRejectExplicitly(t *testing.T) {
 		})
 	}
 }
+
+func TestDescriptorSystem_IdentityDescriptorUsesStandardOperations(t *testing.T) {
+	sys, err := New(
+		mat.NewDense(2, 2, []float64{-1, 2, 0.5, -3}),
+		mat.NewDense(2, 1, []float64{1, 0}),
+		mat.NewDense(1, 2, []float64{1, 0}),
+		mat.NewDense(1, 1, []float64{1}),
+		0,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sys.E = mat.NewDense(2, 2, []float64{1, 0, 0, 1})
+
+	if sys.IsDescriptor() {
+		t.Fatal("identity E should be treated as standard form")
+	}
+
+	ops := []struct {
+		name string
+		run  func() error
+	}{
+		{name: "TransferFunction", run: func() error {
+			_, err := sys.TransferFunction(nil)
+			return err
+		}},
+		{name: "FreqResponse", run: func() error {
+			_, err := sys.FreqResponse([]float64{1})
+			return err
+		}},
+		{name: "EvalFr", run: func() error {
+			_, err := sys.EvalFr(1i)
+			return err
+		}},
+		{name: "Simulate", run: func() error {
+			discrete := sys.Copy()
+			discrete.Dt = 0.1
+			_, err := discrete.Simulate(mat.NewDense(1, 3, nil), nil, nil)
+			return err
+		}},
+		{name: "Inv", run: func() error {
+			_, err := Inv(sys)
+			return err
+		}},
+	}
+
+	for _, op := range ops {
+		t.Run(op.name, func(t *testing.T) {
+			if err := op.run(); err != nil {
+				t.Fatalf("got %v, want nil", err)
+			}
+		})
+	}
+}
