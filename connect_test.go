@@ -1204,6 +1204,53 @@ func TestSafeFeedback_DiscreteWithThiranOrder(t *testing.T) {
 	}
 }
 
+func TestSafeFeedback_DiscreteFractionalDelayRequiresThiranOrder(t *testing.T) {
+	plant, _ := New(
+		mat.NewDense(1, 1, []float64{0.7}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{0}),
+		0.1,
+	)
+	plant.InputDelay = []float64{3.5}
+	controller, _ := NewGain(mat.NewDense(1, 1, []float64{0.2}), 0.1)
+
+	if _, err := SafeFeedback(plant, controller, -1); !errors.Is(err, ErrFractionalDelay) {
+		t.Fatalf("SafeFeedback fractional delay error = %v, want ErrFractionalDelay", err)
+	}
+
+	cl, err := SafeFeedback(plant, controller, -1, WithThiranOrder(3))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cl.HasDelay() {
+		t.Fatal("Thiran safe feedback should absorb external delays")
+	}
+	n, m, p := cl.Dims()
+	if n != 4 || m != 1 || p != 1 {
+		t.Fatalf("closed-loop dims n=%d m=%d p=%d, want 4,1,1", n, m, p)
+	}
+}
+
+func TestSafeFeedback_DiscreteThiranRejectsResidualIODelay(t *testing.T) {
+	plant, _ := New(
+		mat.NewDense(2, 2, []float64{0.7, 0.2, -0.1, 0.6}),
+		mat.NewDense(2, 2, []float64{1, 0, 0, 1}),
+		mat.NewDense(2, 2, []float64{1, 0.1, -0.2, 1}),
+		mat.NewDense(2, 2, nil),
+		0.1,
+	)
+	plant.Delay = mat.NewDense(2, 2, []float64{
+		1.5, 4.0,
+		2.0, 1.5,
+	})
+	controller, _ := NewGain(mat.NewDense(2, 2, []float64{0.1, 0, 0, 0.2}), 0.1)
+
+	if _, err := SafeFeedback(plant, controller, -1, WithThiranOrder(2)); !errors.Is(err, ErrFeedbackDelay) {
+		t.Fatalf("SafeFeedback residual IODelay error = %v, want ErrFeedbackDelay", err)
+	}
+}
+
 func TestSafeFeedback_ContinuousMIMO(t *testing.T) {
 	plant, _ := New(
 		mat.NewDense(2, 2, []float64{-1, 0.5, 0, -2}),

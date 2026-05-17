@@ -134,7 +134,7 @@ func validateSliceDelay(delay []float64, expected int, dt float64) error {
 }
 
 func (sys *System) TotalDelay() *mat.Dense {
-	return newDelayTopology(sys).total(true)
+	return newDelayTopology(sys).totalExternal(true)
 }
 
 func effectiveIODelayMatrix(sys *System, p, m int, includeDelayMatrix bool) *mat.Dense {
