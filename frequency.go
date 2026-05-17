@@ -208,10 +208,7 @@ func (e frequencyEvaluator) eval(s complex128) ([][]complex128, error) {
 }
 
 func (e frequencyEvaluator) sAt(w float64) complex128 {
-	if e.sys.IsContinuous() {
-		return complex(0, w)
-	}
-	return cmplx.Exp(complex(0, w*e.sys.Dt))
+	return newTimeDomain(e.sys.Dt).frequencyVariable(w)
 }
 
 func (e frequencyEvaluator) evalStateSpaceInto(s complex128, dst []complex128) error {
@@ -239,12 +236,7 @@ func autoBodeFreqs(sys *System, nPoints int) ([]float64, error) {
 	var natFreqs []float64
 	for _, p := range poles {
 		var wn float64
-		if sys.IsContinuous() {
-			wn = cmplx.Abs(p)
-		} else {
-			lp := cmplx.Log(p)
-			wn = cmplx.Abs(lp) / sys.Dt
-		}
+		wn = newTimeDomain(sys.Dt).naturalFrequency(p)
 		if wn > 0 {
 			natFreqs = append(natFreqs, wn)
 		}
@@ -310,11 +302,7 @@ func applyIODelayPhase(sys *System, omega []float64, data []complex128, p, m int
 	pm := p * m
 	for k, w := range omega {
 		var s complex128
-		if sys.IsContinuous() {
-			s = complex(0, w)
-		} else {
-			s = cmplx.Exp(complex(0, w*sys.Dt))
-		}
+		s = newTimeDomain(sys.Dt).frequencyVariable(w)
 		applyIODelayMatrixAtS(sys, s, data[k*pm:(k+1)*pm], p, m, delay)
 	}
 }
@@ -406,11 +394,7 @@ func freqResponseLFT(sys *System, omega []float64, p, m int) (*FreqResponseMatri
 
 	for k, w := range omega {
 		var s complex128
-		if sys.IsContinuous() {
-			s = complex(0, w)
-		} else {
-			s = cmplx.Exp(complex(0, w*sys.Dt))
-		}
+		s = newTimeDomain(sys.Dt).frequencyVariable(w)
 		if err := evalFrLFTInto(ws, sys, s, n, N, p, m); err != nil {
 			return nil, err
 		}

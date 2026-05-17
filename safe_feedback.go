@@ -91,38 +91,12 @@ func replaceContinuousDelays(sys *System, padeOrder int) (*System, error) {
 
 	if cur.Delay != nil {
 		inDel, outDel, residual := DecomposeIODelay(cur.Delay)
-		if cur.InputDelay == nil {
-			cur.InputDelay = make([]float64, m)
-		}
-		for j := 0; j < m; j++ {
-			cur.InputDelay[j] += inDel[j]
-		}
-		if cur.OutputDelay == nil {
-			cur.OutputDelay = make([]float64, p)
-		}
-		for i := 0; i < p; i++ {
-			cur.OutputDelay[i] += outDel[i]
-		}
-
-		hasResidual := false
-		if residual != nil {
-			raw := residual.RawMatrix()
-			for i := 0; i < raw.Rows; i++ {
-				for j := 0; j < raw.Cols; j++ {
-					if raw.Data[i*raw.Stride+j] != 0 {
-						hasResidual = true
-						break
-					}
-				}
-				if hasResidual {
-					break
-				}
-			}
-		}
-		if hasResidual {
+		if delayMatrixHasNonzeroTol(residual, delayTopologyTol) {
 			return nil, fmt.Errorf("SafeFeedback: non-decomposable IODelay residual: %w", ErrFeedbackDelay)
 		}
 		cur.Delay = nil
+		cur.InputDelay = mergeDelays(cur.InputDelay, inDel)
+		cur.OutputDelay = mergeDelays(cur.OutputDelay, outDel)
 	}
 
 	result := &System{A: cur.A, B: cur.B, C: cur.C, D: cur.D, Dt: cur.Dt}

@@ -134,8 +134,7 @@ func validateSliceDelay(delay []float64, expected int, dt float64) error {
 }
 
 func (sys *System) TotalDelay() *mat.Dense {
-	_, m, p := sys.Dims()
-	return effectiveIODelayMatrix(sys, p, m, true)
+	return newDelayTopology(sys).total(true)
 }
 
 func effectiveIODelayMatrix(sys *System, p, m int, includeDelayMatrix bool) *mat.Dense {
@@ -179,27 +178,9 @@ func (sys *System) HasDelay() bool {
 	if sys.HasInternalDelay() {
 		return true
 	}
-	if sys.Delay != nil {
-		raw := sys.Delay.RawMatrix()
-		for i := 0; i < raw.Rows; i++ {
-			for j := 0; j < raw.Cols; j++ {
-				if raw.Data[i*raw.Stride+j] != 0 {
-					return true
-				}
-			}
-		}
-	}
-	for _, v := range sys.InputDelay {
-		if v != 0 {
-			return true
-		}
-	}
-	for _, v := range sys.OutputDelay {
-		if v != 0 {
-			return true
-		}
-	}
-	return false
+	return delayMatrixHasNonzero(sys.Delay) ||
+		delaySliceHasNonzero(sys.InputDelay) ||
+		delaySliceHasNonzero(sys.OutputDelay)
 }
 
 func (sys *System) HasInternalDelay() bool {
@@ -1854,36 +1835,11 @@ func validateDelay(delay *mat.Dense, p, m int, dt float64) error {
 }
 
 func convertDelayToDiscrete(delay *mat.Dense, dt float64) (*mat.Dense, error) {
-	r, c := delay.Dims()
-	out := mat.NewDense(r, c, nil)
-	inRaw := delay.RawMatrix()
-	outRaw := out.RawMatrix()
-	for i := 0; i < r; i++ {
-		for j := 0; j < c; j++ {
-			tau := inRaw.Data[i*inRaw.Stride+j]
-			samples := tau / dt
-			rounded := math.Round(samples)
-			if math.Abs(samples-rounded) > 1e-9 {
-				return nil, fmt.Errorf("delay[%d][%d]=%g not integer multiple of dt=%g: %w",
-					i, j, tau, dt, ErrFractionalDelay)
-			}
-			outRaw.Data[i*outRaw.Stride+j] = rounded
-		}
-	}
-	return out, nil
+	return newTimeDomain(dt).convertDelayMatrixToDiscrete(delay)
 }
 
 func convertDelayToContinuous(delay *mat.Dense, dt float64) *mat.Dense {
-	r, c := delay.Dims()
-	out := mat.NewDense(r, c, nil)
-	inRaw := delay.RawMatrix()
-	outRaw := out.RawMatrix()
-	for i := 0; i < r; i++ {
-		for j := 0; j < c; j++ {
-			outRaw.Data[i*outRaw.Stride+j] = inRaw.Data[i*inRaw.Stride+j] * dt
-		}
-	}
-	return out
+	return newTimeDomain(dt).convertDelayMatrixToContinuous(delay)
 }
 
 func denseToSlice2D(m *mat.Dense) [][]float64 {

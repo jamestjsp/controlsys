@@ -58,8 +58,7 @@ func partitionGeneralizedPlant(P *System, nmeas, ncont int) (*generalizedPlantPa
 }
 
 func (gp *generalizedPlantPartition) applyControllerNames(K *System) {
-	K.InputName = copyStringSlice(gp.measurementNames)
-	K.OutputName = copyStringSlice(gp.controlNames)
+	controllerMetadata(gp.measurementNames, gp.controlNames).applyIO(K)
 }
 
 func (gp *generalizedPlantPartition) validateControllerChannels() error {
