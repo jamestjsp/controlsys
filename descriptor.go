@@ -14,6 +14,58 @@ func copyDescriptorE(E *mat.Dense) *mat.Dense {
 	return mat.DenseCopyOf(E)
 }
 
+type descriptorPolicy struct {
+	E *mat.Dense
+}
+
+func newDescriptorPolicy(sys *System) descriptorPolicy {
+	if sys == nil {
+		return descriptorPolicy{}
+	}
+	return descriptorPolicy{E: sys.E}
+}
+
+func (p descriptorPolicy) isDescriptor() bool {
+	return p.E != nil
+}
+
+func (p descriptorPolicy) validate(n int) error {
+	if p.E == nil {
+		return nil
+	}
+	er, ec := p.E.Dims()
+	if er != n || ec != n {
+		return fmt.Errorf("E %dx%d != %dx%d: %w", er, ec, n, n, ErrDimensionMismatch)
+	}
+	return nil
+}
+
+func (p descriptorPolicy) poles(A *mat.Dense, n int) ([]complex128, error) {
+	if p.E != nil {
+		return generalizedPoles(A, p.E, n)
+	}
+	var eig mat.Eigen
+	ok := eig.Factorize(A, mat.EigenNone)
+	if !ok {
+		return nil, fmt.Errorf("controlsys: eigenvalue decomposition failed to converge")
+	}
+	return eig.Values(nil), nil
+}
+
+func (p descriptorPolicy) requireStandard(context string) error {
+	if p.E == nil {
+		return nil
+	}
+	return fmt.Errorf("%s: %w", context, ErrDescriptorUnsupported)
+}
+
+func (p descriptorPolicy) requireRiccatiStandard(context string) error {
+	if p.E == nil {
+		return nil
+	}
+	return fmt.Errorf("%s: %w", context, ErrDescriptorRiccati)
+}
+
 // generalizedPoles computes the finite eigenvalues of the pencil (A, E)
 // via the QZ algorithm (DGGES). Infinite eigenvalues (beta=0) are excluded.
 func generalizedPoles(A, E *mat.Dense, n int) ([]complex128, error) {

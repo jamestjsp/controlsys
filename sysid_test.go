@@ -1,6 +1,7 @@
 package controlsys
 
 import (
+	"errors"
 	"math"
 	"math/cmplx"
 	"sort"
@@ -240,6 +241,7 @@ func TestERA_Validation(t *testing.T) {
 		{"order negative", good, -1, 1.0},
 		{"dt zero", good, 1, 0},
 		{"dt negative", good, 1, -1},
+		{"nil markov entry", []*mat.Dense{m1, nil, m3, m4, m5}, 1, 1.0},
 		{"order too large", good, 10, 1.0},
 		{"inconsistent dims", []*mat.Dense{
 			mat.NewDense(2, 1, nil),
@@ -257,6 +259,17 @@ func TestERA_Validation(t *testing.T) {
 				t.Error("expected error")
 			}
 		})
+	}
+}
+
+func TestERA_RejectsNilMarkovEntryWithInsufficientData(t *testing.T) {
+	_, err := ERA([]*mat.Dense{
+		mat.NewDense(1, 1, nil),
+		nil,
+		mat.NewDense(1, 1, nil),
+	}, 1, 1)
+	if !errors.Is(err, ErrInsufficientData) {
+		t.Fatalf("got %v, want ErrInsufficientData", err)
 	}
 }
 

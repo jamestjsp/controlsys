@@ -20,29 +20,9 @@ type ERAResult struct {
 // Y(k). The order parameter specifies the desired state dimension
 // and dt is the sample time.
 func ERA(markov []*mat.Dense, order int, dt float64) (*ERAResult, error) {
-	if len(markov) == 0 {
-		return nil, fmt.Errorf("ERA: empty markov sequence: %w", ErrInsufficientData)
-	}
-	if order <= 0 {
-		return nil, fmt.Errorf("ERA: order must be positive: %w", ErrInvalidOrder)
-	}
-	if dt <= 0 {
-		return nil, fmt.Errorf("ERA: %w", ErrInvalidSampleTime)
-	}
-
-	p, m := markov[0].Dims()
-	for i := 1; i < len(markov); i++ {
-		ri, ci := markov[i].Dims()
-		if ri != p || ci != m {
-			return nil, fmt.Errorf("ERA: markov[%d] is %d×%d, expected %d×%d: %w",
-				i, ri, ci, p, m, ErrDimensionMismatch)
-		}
-	}
-
-	minLen := 2*order + 1
-	if len(markov) < minLen {
-		return nil, fmt.Errorf("ERA: need >= %d markov params for order %d, got %d: %w",
-			minLen, order, len(markov), ErrInsufficientData)
+	p, m, err := validateMarkovSequence(markov, order, dt)
+	if err != nil {
+		return nil, err
 	}
 
 	r := len(markov) / 2

@@ -36,7 +36,7 @@ type System struct {
 	Notes      string
 }
 
-func (sys *System) IsDescriptor() bool { return sys.E != nil }
+func (sys *System) IsDescriptor() bool { return newDescriptorPolicy(sys).isDescriptor() }
 
 func (sys *System) internalDelayCount() int {
 	if sys.LFT == nil {
@@ -74,11 +74,8 @@ func (sys *System) Validate() error {
 	if err != nil {
 		return err
 	}
-	if sys.E != nil {
-		er, ec := sys.E.Dims()
-		if er != n || ec != n {
-			return fmt.Errorf("E %dx%d != %dx%d: %w", er, ec, n, n, ErrDimensionMismatch)
-		}
+	if err := newDescriptorPolicy(sys).validate(n); err != nil {
+		return err
 	}
 	if err := validateDelay(sys.Delay, p, m, sys.Dt); err != nil {
 		return err
@@ -122,15 +119,7 @@ func (sys *System) Poles() ([]complex128, error) {
 	if n == 0 {
 		return nil, nil
 	}
-	if sys.E != nil {
-		return generalizedPoles(sys.A, sys.E, n)
-	}
-	var eig mat.Eigen
-	ok := eig.Factorize(sys.A, mat.EigenNone)
-	if !ok {
-		return nil, fmt.Errorf("controlsys: eigenvalue decomposition failed to converge")
-	}
-	return eig.Values(nil), nil
+	return newDescriptorPolicy(sys).poles(sys.A, n)
 }
 
 func (sys *System) IsStable() (bool, error) {

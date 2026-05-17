@@ -64,8 +64,8 @@ func NewEKF(model *EKFModel, x0 *mat.VecDense, P0 *mat.Dense) (*EKF, error) {
 	p := rr
 
 	hProbe := model.H(x0)
-	if hProbe.Len() != p {
-		return nil, fmt.Errorf("NewEKF: H(x0) returned length %d, but R is %dx%d: %w", hProbe.Len(), p, p, ErrDimensionMismatch)
+	if err := validateVecResult("NewEKF: H(x0)", hProbe, p); err != nil {
+		return nil, err
 	}
 
 	xCopy := mat.VecDenseCopyOf(x0)
@@ -94,11 +94,13 @@ func NewEKF(model *EKFModel, x0 *mat.VecDense, P0 *mat.Dense) (*EKF, error) {
 // Predict performs the EKF prediction step using control input u.
 func (e *EKF) Predict(u *mat.VecDense) error {
 	xPred := e.model.F(e.X, u)
-	A := e.model.FJac(e.X, u)
+	if err := validateVecResult("EKF.Predict: F", xPred, e.n); err != nil {
+		return err
+	}
 
-	ar, ac := A.Dims()
-	if ar != e.n || ac != e.n {
-		return fmt.Errorf("EKF.Predict: FJac returned %dx%d, want %dx%d: %w", ar, ac, e.n, e.n, ErrDimensionMismatch)
+	A := e.model.FJac(e.X, u)
+	if err := validateDenseResult("EKF.Predict: FJac", A, e.n, e.n); err != nil {
+		return err
 	}
 
 	// P = A * P * A' + Q
@@ -117,11 +119,13 @@ func (e *EKF) Update(z *mat.VecDense) error {
 	}
 
 	yPred := e.model.H(e.X)
-	C := e.model.HJac(e.X)
+	if err := validateVecResult("EKF.Update: H", yPred, e.p); err != nil {
+		return err
+	}
 
-	cr, cc := C.Dims()
-	if cr != e.p || cc != e.n {
-		return fmt.Errorf("EKF.Update: HJac returned %dx%d, want %dx%d: %w", cr, cc, e.p, e.n, ErrDimensionMismatch)
+	C := e.model.HJac(e.X)
+	if err := validateDenseResult("EKF.Update: HJac", C, e.p, e.n); err != nil {
+		return err
 	}
 
 	// S = C * P * C' + R  (p×p)

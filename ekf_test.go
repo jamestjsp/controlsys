@@ -1,6 +1,7 @@
 package controlsys
 
 import (
+	"errors"
 	"math"
 	"math/rand/v2"
 	"testing"
@@ -307,6 +308,58 @@ func TestEKF_Validation(t *testing.T) {
 		_, err := NewEKF(m, nil, P0)
 		if err == nil {
 			t.Fatal("expected error for nil x0")
+		}
+	})
+}
+
+func TestEKF_RejectsWrongFunctionOutputDimensions(t *testing.T) {
+	x0 := mat.NewVecDense(2, nil)
+	P0 := mat.NewDense(2, 2, nil)
+	Q := mat.NewDense(2, 2, nil)
+	R := mat.NewDense(1, 1, nil)
+	u := mat.NewVecDense(1, nil)
+	z := mat.NewVecDense(1, nil)
+
+	t.Run("predict state", func(t *testing.T) {
+		model := &EKFModel{
+			F:    func(x, u *mat.VecDense) *mat.VecDense { return mat.NewVecDense(1, nil) },
+			H:    func(x *mat.VecDense) *mat.VecDense { return mat.NewVecDense(1, nil) },
+			FJac: func(x, u *mat.VecDense) *mat.Dense { return mat.NewDense(2, 2, nil) },
+			HJac: func(x *mat.VecDense) *mat.Dense { return mat.NewDense(1, 2, nil) },
+			Q:    Q,
+			R:    R,
+		}
+		ekf, err := NewEKF(model, x0, P0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := ekf.Predict(u); !errors.Is(err, ErrDimensionMismatch) {
+			t.Fatalf("got %v, want ErrDimensionMismatch", err)
+		}
+	})
+
+	t.Run("update measurement", func(t *testing.T) {
+		badMeasurement := false
+		model := &EKFModel{
+			F: func(x, u *mat.VecDense) *mat.VecDense { return mat.NewVecDense(2, nil) },
+			H: func(x *mat.VecDense) *mat.VecDense {
+				if badMeasurement {
+					return mat.NewVecDense(2, nil)
+				}
+				return mat.NewVecDense(1, nil)
+			},
+			FJac: func(x, u *mat.VecDense) *mat.Dense { return mat.NewDense(2, 2, nil) },
+			HJac: func(x *mat.VecDense) *mat.Dense { return mat.NewDense(1, 2, nil) },
+			Q:    Q,
+			R:    R,
+		}
+		ekf, err := NewEKF(model, x0, P0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		badMeasurement = true
+		if err := ekf.Update(z); !errors.Is(err, ErrDimensionMismatch) {
+			t.Fatalf("got %v, want ErrDimensionMismatch", err)
 		}
 	})
 }

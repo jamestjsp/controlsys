@@ -39,21 +39,9 @@ func (r *FreqRespEstResult) FRD() (*FRD, error) {
 }
 
 func FreqRespEst(input, output *mat.Dense, dt float64, opts *FreqRespEstOpts) (*FreqRespEstResult, error) {
-	if dt <= 0 {
-		return nil, ErrInvalidSampleTime
-	}
-	if input == nil || output == nil {
-		return nil, ErrInsufficientData
-	}
-
-	m, nIn := input.Dims()
-	p, nOut := output.Dims()
-	if nIn != nOut {
-		return nil, fmt.Errorf("controlsys: input has %d samples, output has %d: %w", nIn, nOut, ErrDimensionMismatch)
-	}
-	N := nIn
-	if N == 0 {
-		return nil, ErrInsufficientData
+	m, p, N, err := validateSampledIO("FreqRespEst", input, output, dt)
+	if err != nil {
+		return nil, err
 	}
 
 	nfft, winFunc, noverlap, method := resolveOpts(opts, N)

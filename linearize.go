@@ -54,12 +54,24 @@ func Linearize(model *NonlinearModel, x0, u0 *mat.VecDense) (*System, error) {
 
 		fp := model.F(xp, u0)
 		fm := model.F(xm, u0)
+		if err := validateVecResult("Linearize: F(x+h,u)", fp, n); err != nil {
+			return nil, err
+		}
+		if err := validateVecResult("Linearize: F(x-h,u)", fm, n); err != nil {
+			return nil, err
+		}
 		for i := 0; i < n; i++ {
 			aData[i*n+j] = (fp.AtVec(i) - fm.AtVec(i)) * inv2h
 		}
 
 		hp := model.H(xp, u0)
 		hm := model.H(xm, u0)
+		if err := validateVecResult("Linearize: H(x+h,u)", hp, p); err != nil {
+			return nil, err
+		}
+		if err := validateVecResult("Linearize: H(x-h,u)", hm, p); err != nil {
+			return nil, err
+		}
 		for i := 0; i < p; i++ {
 			cData[i*n+j] = (hp.AtVec(i) - hm.AtVec(i)) * inv2h
 		}
@@ -79,12 +91,24 @@ func Linearize(model *NonlinearModel, x0, u0 *mat.VecDense) (*System, error) {
 
 		fp := model.F(x0, up)
 		fm := model.F(x0, um)
+		if err := validateVecResult("Linearize: F(x,u+h)", fp, n); err != nil {
+			return nil, err
+		}
+		if err := validateVecResult("Linearize: F(x,u-h)", fm, n); err != nil {
+			return nil, err
+		}
 		for i := 0; i < n; i++ {
 			bData[i*m+j] = (fp.AtVec(i) - fm.AtVec(i)) * inv2h
 		}
 
 		hp := model.H(x0, up)
 		hm := model.H(x0, um)
+		if err := validateVecResult("Linearize: H(x,u+h)", hp, p); err != nil {
+			return nil, err
+		}
+		if err := validateVecResult("Linearize: H(x,u-h)", hm, p); err != nil {
+			return nil, err
+		}
 		for i := 0; i < p; i++ {
 			dData[i*m+j] = (hp.AtVec(i) - hm.AtVec(i)) * inv2h
 		}

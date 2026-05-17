@@ -15,8 +15,8 @@ func partitionGeneralizedPlant(P *System, nmeas, ncont int) (*generalizedPlantPa
 	if !P.IsContinuous() {
 		return nil, ErrWrongDomain
 	}
-	if P.IsDescriptor() {
-		return nil, ErrDescriptorRiccati
+	if err := newDescriptorPolicy(P).requireRiccatiStandard("synthesis"); err != nil {
+		return nil, err
 	}
 
 	n, m, p := P.Dims()

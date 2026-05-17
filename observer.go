@@ -97,8 +97,8 @@ func Kalman(sys *System, Qn, Rn *mat.Dense, opts *RiccatiOpts) (*RiccatiResult, 
 	if n == 0 {
 		return nil, fmt.Errorf("Kalman: system has no states: %w", ErrDimensionMismatch)
 	}
-	if sys.IsDescriptor() {
-		return nil, fmt.Errorf("Kalman: %w", ErrDescriptorRiccati)
+	if err := newDescriptorPolicy(sys).requireRiccatiStandard("Kalman"); err != nil {
+		return nil, err
 	}
 	qr, qc := Qn.Dims()
 	if qr != m || qc != m {

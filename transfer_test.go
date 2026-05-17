@@ -1,6 +1,7 @@
 package controlsys
 
 import (
+	"errors"
 	"math"
 	"math/cmplx"
 	"testing"
@@ -22,6 +23,32 @@ func TestTransferFuncDims(t *testing.T) {
 	p, m := tf.Dims()
 	if p != 2 || m != 2 {
 		t.Fatalf("Dims() = (%d,%d), want (2,2)", p, m)
+	}
+}
+
+func TestTransferFuncStateSpaceRejectsMalformedRawModel(t *testing.T) {
+	tests := []struct {
+		name string
+		tf   *TransferFunc
+	}{
+		{name: "missing numerator rows", tf: &TransferFunc{Den: [][]float64{{1}}}},
+		{name: "missing denominator", tf: &TransferFunc{Num: [][][]float64{{{1}}}, Den: [][]float64{{}}}},
+		{name: "ragged numerator rows", tf: &TransferFunc{
+			Num: [][][]float64{{{1}}, {{1}, {2}}},
+			Den: [][]float64{{1}, {1}},
+		}},
+		{name: "missing channel numerator", tf: &TransferFunc{
+			Num: [][][]float64{{nil}},
+			Den: [][]float64{{1}},
+		}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := tc.tf.StateSpace(nil); !errors.Is(err, ErrDimensionMismatch) {
+				t.Fatalf("got %v, want ErrDimensionMismatch", err)
+			}
+		})
 	}
 }
 
