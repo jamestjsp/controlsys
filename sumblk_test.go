@@ -52,6 +52,15 @@ func TestSumBlk_UnaryMinus(t *testing.T) {
 	checkD(t, sys, [][]float64{{-1}})
 }
 
+func TestSumBlk_SignedRepeatedTerms(t *testing.T) {
+	sys, err := SumBlk("e = r + -y + r")
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkDims(t, sys, 0, 2, 1)
+	checkD(t, sys, [][]float64{{2, -1}})
+}
+
 func TestSumBlk_ThreeTermSum(t *testing.T) {
 	sys, err := SumBlk("e = r - y + d")
 	if err != nil {

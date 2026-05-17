@@ -119,14 +119,29 @@ func NewPID2(Kp, Ki, Kd, Tf, b, c float64, opts ...PIDOption) *PID2 {
 	return p2
 }
 
+type pidRealizationSpec struct {
+	hasI bool
+	hasD bool
+}
+
+func newPIDRealizationSpec(Ki, Kd, Tf float64, context string) (pidRealizationSpec, error) {
+	if Kd != 0 && Tf == 0 {
+		return pidRealizationSpec{}, fmt.Errorf("controlsys: %s without filter (Tf=0) is improper; set Tf > 0", context)
+	}
+	return pidRealizationSpec{
+		hasI: Ki != 0,
+		hasD: Kd != 0,
+	}, nil
+}
+
 // System converts the 2-DOF PID to a 2-input (r,y) 1-output (u) state-space.
 func (p *PID2) System() (*System, error) {
-	if p.Kd != 0 && p.Tf == 0 {
-		return nil, fmt.Errorf("controlsys: 2-DOF PD without filter (Tf=0) is improper; set Tf > 0")
+	spec, err := newPIDRealizationSpec(p.Ki, p.Kd, p.Tf, "2-DOF PID derivative term")
+	if err != nil {
+		return nil, err
 	}
-
-	hasI := p.Ki != 0
-	hasD := p.Kd != 0 && p.Tf != 0
+	hasI := spec.hasI
+	hasD := spec.hasD
 
 	n := 0
 	if hasI {
@@ -215,8 +230,8 @@ func (p *PID2) discrete2DOF(n int, hasI, hasD bool) (*System, error) {
 }
 
 func (p *PID) System() (*System, error) {
-	if p.Kd != 0 && p.Tf == 0 && p.Ki == 0 {
-		return nil, fmt.Errorf("controlsys: PD without filter (Tf=0) is improper; set Tf > 0")
+	if _, err := newPIDRealizationSpec(p.Ki, p.Kd, p.Tf, "PID derivative term"); err != nil {
+		return nil, err
 	}
 
 	if p.Dt > 0 {
@@ -226,8 +241,12 @@ func (p *PID) System() (*System, error) {
 }
 
 func (p *PID) continuousSystem() (*System, error) {
-	hasI := p.Ki != 0
-	hasD := p.Kd != 0 && p.Tf != 0
+	spec, err := newPIDRealizationSpec(p.Ki, p.Kd, p.Tf, "PID derivative term")
+	if err != nil {
+		return nil, err
+	}
+	hasI := spec.hasI
+	hasD := spec.hasD
 
 	switch {
 	case !hasI && !hasD:
@@ -265,8 +284,12 @@ func (p *PID) continuousSystem() (*System, error) {
 }
 
 func (p *PID) discreteSystem() (*System, error) {
-	hasI := p.Ki != 0
-	hasD := p.Kd != 0 && p.Tf != 0
+	spec, err := newPIDRealizationSpec(p.Ki, p.Kd, p.Tf, "PID derivative term")
+	if err != nil {
+		return nil, err
+	}
+	hasI := spec.hasI
+	hasD := spec.hasD
 	dt := p.Dt
 
 	switch {

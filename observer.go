@@ -3,8 +3,6 @@ package controlsys
 import (
 	"fmt"
 
-	"gonum.org/v1/gonum/blas"
-	"gonum.org/v1/gonum/blas/blas64"
 	"gonum.org/v1/gonum/mat"
 )
 
@@ -27,35 +25,18 @@ func Lqe(A, G, C, Qn, Rn *mat.Dense, opts *RiccatiOpts) (*RiccatiResult, error) 
 	if cn != n {
 		return nil, ErrDimensionMismatch
 	}
-	qr, qc := Qn.Dims()
-	if qr != g || qc != g {
-		return nil, ErrDimensionMismatch
+	if err := validateCovarianceRole("Lqe", covarianceProcessNoise, Qn, g); err != nil {
+		return nil, err
 	}
-	rr, rc := Rn.Dims()
-	if rr != p || rc != p {
-		return nil, ErrDimensionMismatch
+	if err := validateCovarianceRole("Lqe", covarianceMeasurementNoise, Rn, p); err != nil {
+		return nil, err
 	}
 
 	if n == 0 {
 		return &RiccatiResult{X: &mat.Dense{}, K: &mat.Dense{}, Eig: nil}, nil
 	}
 
-	gRaw := G.RawMatrix()
-	qnRaw := Qn.RawMatrix()
-
-	// GQnGt = G * Qn * G' via BLAS: tmp = G*Qn, then GQnGt = tmp*G'
-	gqnData := make([]float64, n*g)
-	blas64.Gemm(blas.NoTrans, blas.NoTrans,
-		1, blas64.General{Rows: n, Cols: g, Data: gRaw.Data, Stride: gRaw.Stride},
-		blas64.General{Rows: g, Cols: g, Data: qnRaw.Data, Stride: qnRaw.Stride},
-		0, blas64.General{Rows: n, Cols: g, Data: gqnData, Stride: g})
-
-	gqngtData := make([]float64, n*n)
-	blas64.Gemm(blas.NoTrans, blas.Trans,
-		1, blas64.General{Rows: n, Cols: g, Data: gqnData, Stride: g},
-		blas64.General{Rows: n, Cols: g, Data: gRaw.Data, Stride: gRaw.Stride},
-		0, blas64.General{Rows: n, Cols: n, Data: gqngtData, Stride: n})
-	GQnGt := mat.NewDense(n, n, gqngtData)
+	GQnGt := inputNoiseIntensity(G, Qn, n, g)
 
 	// Transpose A and C into flat arrays for Care(A', C', ...)
 	atData := make([]float64, n*n)
@@ -97,16 +78,14 @@ func Kalman(sys *System, Qn, Rn *mat.Dense, opts *RiccatiOpts) (*RiccatiResult, 
 	if n == 0 {
 		return nil, fmt.Errorf("Kalman: system has no states: %w", ErrDimensionMismatch)
 	}
-	if err := newDescriptorPolicy(sys).requireRiccatiStandard("Kalman"); err != nil {
+	if err := requireStandardEstimatorSystem(sys, "Kalman"); err != nil {
 		return nil, err
 	}
-	qr, qc := Qn.Dims()
-	if qr != m || qc != m {
-		return nil, ErrDimensionMismatch
+	if err := validateCovarianceRole("Kalman", covarianceProcessNoise, Qn, m); err != nil {
+		return nil, err
 	}
-	rr, rc := Rn.Dims()
-	if rr != p || rc != p {
-		return nil, ErrDimensionMismatch
+	if err := validateCovarianceRole("Kalman", covarianceMeasurementNoise, Rn, p); err != nil {
+		return nil, err
 	}
 
 	if sys.IsContinuous() {
@@ -140,20 +119,17 @@ func Kalmd(sys *System, Qn, Rn *mat.Dense, dt float64, opts *RiccatiOpts) (*Ricc
 	if n == 0 {
 		return nil, fmt.Errorf("Kalmd: system has no states: %w", ErrDimensionMismatch)
 	}
-	qr, qc := Qn.Dims()
-	if qr != m || qc != m {
-		return nil, ErrDimensionMismatch
+	if err := requireStandardEstimatorSystem(sys, "Kalmd"); err != nil {
+		return nil, err
 	}
-	rr, rc := Rn.Dims()
-	if rr != p || rc != p {
-		return nil, ErrDimensionMismatch
+	if err := validateCovarianceRole("Kalmd", covarianceProcessNoise, Qn, m); err != nil {
+		return nil, err
+	}
+	if err := validateCovarianceRole("Kalmd", covarianceMeasurementNoise, Rn, p); err != nil {
+		return nil, err
 	}
 
-	// GQnGt = B * Qn * B'
-	BQn := mat.NewDense(n, m, nil)
-	BQn.Mul(sys.B, Qn)
-	GQnGt := mat.NewDense(n, n, nil)
-	GQnGt.Mul(BQn, sys.B.T())
+	GQnGt := inputNoiseIntensity(sys.B, Qn, n, m)
 
 	// Van Loan augmented matrix: F = [[-A, GQnGt], [0, A']] * dt
 	nn := 2 * n
@@ -343,21 +319,7 @@ func transposeGain(K *mat.Dense) *mat.Dense {
 }
 
 func dualRiccatiSetup(A, B, C, Qn *mat.Dense, n, m, p int) (GQnGt, At, Ct *mat.Dense) {
-	bRaw := B.RawMatrix()
-	qnRaw := Qn.RawMatrix()
-
-	gqnData := make([]float64, n*m)
-	blas64.Gemm(blas.NoTrans, blas.NoTrans,
-		1, blas64.General{Rows: n, Cols: m, Data: bRaw.Data, Stride: bRaw.Stride},
-		blas64.General{Rows: m, Cols: m, Data: qnRaw.Data, Stride: qnRaw.Stride},
-		0, blas64.General{Rows: n, Cols: m, Data: gqnData, Stride: m})
-
-	gqngtData := make([]float64, n*n)
-	blas64.Gemm(blas.NoTrans, blas.Trans,
-		1, blas64.General{Rows: n, Cols: m, Data: gqnData, Stride: m},
-		blas64.General{Rows: n, Cols: m, Data: bRaw.Data, Stride: bRaw.Stride},
-		0, blas64.General{Rows: n, Cols: n, Data: gqngtData, Stride: n})
-	GQnGt = mat.NewDense(n, n, gqngtData)
+	GQnGt = inputNoiseIntensity(B, Qn, n, m)
 
 	aRaw := A.RawMatrix()
 	atData := make([]float64, n*n)

@@ -49,13 +49,11 @@ func NewEKF(model *EKFModel, x0 *mat.VecDense, P0 *mat.Dense) (*EKF, error) {
 		return nil, fmt.Errorf("NewEKF: zero-length state: %w", ErrDimensionMismatch)
 	}
 
-	pr, pc := P0.Dims()
-	if pr != n || pc != n {
-		return nil, fmt.Errorf("NewEKF: P0 is %dx%d, want %dx%d: %w", pr, pc, n, n, ErrDimensionMismatch)
+	if err := validateCovarianceRole("NewEKF", covarianceStateEstimate, P0, n); err != nil {
+		return nil, err
 	}
-	qr, qc := model.Q.Dims()
-	if qr != n || qc != n {
-		return nil, fmt.Errorf("NewEKF: Q is %dx%d, want %dx%d: %w", qr, qc, n, n, ErrDimensionMismatch)
+	if err := validateCovarianceRole("NewEKF", covarianceProcessNoise, model.Q, n); err != nil {
+		return nil, err
 	}
 	rr, rc := model.R.Dims()
 	if rr != rc {

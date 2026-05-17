@@ -29,7 +29,11 @@ func Norm(sys *System, normType float64) (float64, error) {
 //
 // For continuous systems with D ≠ 0, the H2 norm is infinite.
 func H2Norm(sys *System) (float64, error) {
-	n, m, p := sys.Dims()
+	policy := newEnergyAnalysisPolicy(sys)
+	if err := policy.requireStandard("H2Norm"); err != nil {
+		return 0, err
+	}
+	n, m, p := policy.n, policy.m, policy.p
 
 	if n == 0 {
 		if sys.IsContinuous() {
@@ -38,42 +42,19 @@ func H2Norm(sys *System) (float64, error) {
 		return frobNormD(sys.D, p, m), nil
 	}
 
-	stable, err := sys.IsStable()
-	if err != nil {
+	if err := policy.requireStable(ErrUnstable); err != nil {
 		return 0, err
-	}
-	if !stable {
-		return 0, ErrUnstable
 	}
 
 	if sys.IsContinuous() && !allZeroDense(sys.D) {
 		return math.Inf(1), nil
 	}
 
-	ctc := make([]float64, n*n)
-	cRaw := sys.C.RawMatrix()
-	blas64.Gemm(blas.Trans, blas.NoTrans, 1,
-		blas64.General{Rows: p, Cols: n, Stride: cRaw.Stride, Data: cRaw.Data},
-		blas64.General{Rows: p, Cols: n, Stride: cRaw.Stride, Data: cRaw.Data},
-		0, blas64.General{Rows: n, Cols: n, Stride: n, Data: ctc})
-	symmetrize(ctc, n, n)
-
-	aRaw := sys.A.RawMatrix()
-	at := make([]float64, n*n)
-	for i := range n {
-		for j := range n {
-			at[i*n+j] = aRaw.Data[j*aRaw.Stride+i]
-		}
+	At, Q, err := policy.gramianInputs(GramObservability)
+	if err != nil {
+		return 0, err
 	}
-	At := mat.NewDense(n, n, at)
-	Q := mat.NewDense(n, n, ctc)
-
-	var X *mat.Dense
-	if sys.IsContinuous() {
-		X, err = Lyap(At, Q, nil)
-	} else {
-		X, err = DLyap(At, Q, nil)
-	}
+	X, err := policy.solveLyapunov(At, Q)
 	if err != nil {
 		return 0, err
 	}
@@ -111,64 +92,32 @@ func H2Norm(sys *System) (float64, error) {
 
 // HSV computes the Hankel singular values of a stable LTI system in descending order.
 func HSV(sys *System) ([]float64, error) {
-	n, m, p := sys.Dims()
+	policy := newEnergyAnalysisPolicy(sys)
+	if err := policy.requireStandard("HSV"); err != nil {
+		return nil, err
+	}
+	n := policy.n
 	if n == 0 {
 		return nil, nil
 	}
 
-	stable, err := sys.IsStable()
+	if err := policy.requireStable(ErrUnstable); err != nil {
+		return nil, err
+	}
+
+	A, Qc, err := policy.gramianInputs(GramControllability)
 	if err != nil {
 		return nil, err
 	}
-	if !stable {
-		return nil, ErrUnstable
+	Wc, err := policy.solveLyapunov(A, Qc)
+	if err != nil {
+		return nil, err
 	}
-
-	aRaw := sys.A.RawMatrix()
-	bRaw := sys.B.RawMatrix()
-	cRaw := sys.C.RawMatrix()
-
-	bbt := make([]float64, n*n)
-	blas64.Gemm(blas.NoTrans, blas.Trans, 1,
-		blas64.General{Rows: n, Cols: m, Stride: bRaw.Stride, Data: bRaw.Data},
-		blas64.General{Rows: n, Cols: m, Stride: bRaw.Stride, Data: bRaw.Data},
-		0, blas64.General{Rows: n, Cols: n, Stride: n, Data: bbt})
-	symmetrize(bbt, n, n)
-
-	ctc := make([]float64, n*n)
-	blas64.Gemm(blas.Trans, blas.NoTrans, 1,
-		blas64.General{Rows: p, Cols: n, Stride: cRaw.Stride, Data: cRaw.Data},
-		blas64.General{Rows: p, Cols: n, Stride: cRaw.Stride, Data: cRaw.Data},
-		0, blas64.General{Rows: n, Cols: n, Stride: n, Data: ctc})
-	symmetrize(ctc, n, n)
-
-	aData := make([]float64, n*n)
-	at := aData[:0:0]
-	at = make([]float64, n*n)
-	copyStrided(aData, n, aRaw.Data, aRaw.Stride, n, n)
-	for i := range n {
-		for j := range n {
-			at[i*n+j] = aRaw.Data[j*aRaw.Stride+i]
-		}
+	At, Qo, err := policy.gramianInputs(GramObservability)
+	if err != nil {
+		return nil, err
 	}
-
-	A := mat.NewDense(n, n, aData)
-	At := mat.NewDense(n, n, at)
-
-	var Wc, Wo *mat.Dense
-	if sys.IsContinuous() {
-		Wc, err = Lyap(A, mat.NewDense(n, n, bbt), nil)
-		if err != nil {
-			return nil, err
-		}
-		Wo, err = Lyap(At, mat.NewDense(n, n, ctc), nil)
-	} else {
-		Wc, err = DLyap(A, mat.NewDense(n, n, bbt), nil)
-		if err != nil {
-			return nil, err
-		}
-		Wo, err = DLyap(At, mat.NewDense(n, n, ctc), nil)
-	}
+	Wo, err := policy.solveLyapunov(At, Qo)
 	if err != nil {
 		return nil, err
 	}
@@ -248,19 +197,19 @@ func eigenvalueHSV(Wc, Wo *mat.Dense, n int) []float64 {
 // HinfNorm computes the H∞ norm (peak gain) of a stable LTI system
 // and the frequency at which it occurs.
 func HinfNorm(sys *System) (norm float64, omega float64, err error) {
-	n, m, p := sys.Dims()
+	policy := newEnergyAnalysisPolicy(sys)
+	if err := policy.requireStandard("HinfNorm"); err != nil {
+		return 0, 0, err
+	}
+	n, m, p := policy.n, policy.m, policy.p
 
 	if n == 0 {
 		sv := maxSVDense(sys.D, p, m)
 		return sv, 0, nil
 	}
 
-	stable, err := sys.IsStable()
-	if err != nil {
+	if err := policy.requireStable(ErrUnstable); err != nil {
 		return 0, 0, err
-	}
-	if !stable {
-		return 0, 0, ErrUnstable
 	}
 
 	if sys.IsDiscrete() {
@@ -346,13 +295,13 @@ func newHamiltonianWS(sys *System, n, m, p int) *hamiltonianWS {
 		n: n, m: m, p: p, nn: nn,
 		dIsZero: allZeroDense(sys.D),
 		aData:   aRaw.Data, aStr: aRaw.Stride,
-		bData:   bRaw.Data, bStr: bRaw.Stride,
-		cData:   cRaw.Data, cStr: cRaw.Stride,
-		dData:   dRaw.Data, dStr: dRaw.Stride,
-		h:       make([]float64, nn*nn),
-		wr:      make([]float64, nn),
-		wi:      make([]float64, nn),
-		vs:      make([]float64, nn*nn),
+		bData: bRaw.Data, bStr: bRaw.Stride,
+		cData: cRaw.Data, cStr: cRaw.Stride,
+		dData: dRaw.Data, dStr: dRaw.Stride,
+		h:  make([]float64, nn*nn),
+		wr: make([]float64, nn),
+		wi: make([]float64, nn),
+		vs: make([]float64, nn*nn),
 	}
 
 	ws.bbt = make([]float64, n*n)

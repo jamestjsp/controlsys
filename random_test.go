@@ -2,6 +2,7 @@ package controlsys
 
 import (
 	"math/cmplx"
+	"math/rand"
 	"testing"
 )
 
@@ -117,6 +118,23 @@ func TestDrss_InvalidDt(t *testing.T) {
 	_, err = Drss(4, 1, 1, -1)
 	if err == nil {
 		t.Error("expected error for dt<0")
+	}
+}
+
+func TestRandomSS_DeterministicAdapter(t *testing.T) {
+	rng1 := rand.New(rand.NewSource(42))
+	rng2 := rand.New(rand.NewSource(42))
+
+	sys1, err := randomSSWithSource(randomStableModelSpec{states: 3, outputs: 1, inputs: 1, dt: 0, continuous: true}, rng1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sys2, err := randomSSWithSource(randomStableModelSpec{states: 3, outputs: 1, inputs: 1, dt: 0, continuous: true}, rng2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !matEqual(sys1.A, sys2.A, 0) || !matEqual(sys1.B, sys2.B, 0) || !matEqual(sys1.C, sys2.C, 0) {
+		t.Fatal("same seed produced different systems")
 	}
 }
 

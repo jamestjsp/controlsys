@@ -7,9 +7,13 @@ import (
 )
 
 func SS2SS(sys *System, T *mat.Dense) (*System, error) {
-	n, _, _ := sys.Dims()
+	policy := newRealizationTransformPolicy(sys)
+	if err := policy.requireStandard("SS2SS"); err != nil {
+		return nil, err
+	}
+	n := policy.n
 	if n == 0 {
-		return sys.Copy(), nil
+		return policy.zeroOrderCopy(), nil
 	}
 
 	tr, tc := T.Dims()
@@ -47,12 +51,16 @@ func SS2SS(sys *System, T *mat.Dense) (*System, error) {
 }
 
 func Xperm(sys *System, perm []int) (*System, error) {
-	n, _, _ := sys.Dims()
+	policy := newRealizationTransformPolicy(sys)
+	if err := policy.requireStandard("Xperm"); err != nil {
+		return nil, err
+	}
+	n := policy.n
 	if len(perm) != n {
 		return nil, fmt.Errorf("Xperm: perm length %d != state dim %d: %w", len(perm), n, ErrDimensionMismatch)
 	}
 	if n == 0 {
-		return sys.Copy(), nil
+		return policy.zeroOrderCopy(), nil
 	}
 
 	seen := make([]bool, n)

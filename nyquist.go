@@ -1,7 +1,6 @@
 package controlsys
 
 import (
-	"fmt"
 	"math"
 	"math/cmplx"
 	"sort"
@@ -17,9 +16,8 @@ type NyquistResult struct {
 }
 
 func (sys *System) Nyquist(omega []float64, nPoints int) (*NyquistResult, error) {
-	_, m, p := sys.Dims()
-	if p != 1 || m != 1 {
-		return nil, fmt.Errorf("controlsys: Nyquist supports SISO systems only: %w", ErrDimensionMismatch)
+	if _, err := newSISOLoopModel(sys, "Nyquist"); err != nil {
+		return nil, err
 	}
 
 	poles, err := sys.Poles()

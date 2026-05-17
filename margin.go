@@ -190,9 +190,8 @@ func evalSISOFreqResponse(sys *System, w float64) (complex128, error) {
 }
 
 func AllMargin(sys *System) (*AllMarginResult, error) {
-	_, m, p := sys.Dims()
-	if p != 1 || m != 1 {
-		return nil, fmt.Errorf("controlsys: AllMargin supports SISO only: %w", ErrDimensionMismatch)
+	if _, err := newSISOLoopModel(sys, "AllMargin"); err != nil {
+		return nil, err
 	}
 
 	omega, err := marginFreqs(sys, 1000)
@@ -402,9 +401,8 @@ func Bandwidth(sys *System, dbDrop float64) (float64, error) {
 }
 
 func DiskMargin(sys *System) (*DiskMarginResult, error) {
-	_, m, p := sys.Dims()
-	if p != 1 || m != 1 {
-		return nil, fmt.Errorf("controlsys: DiskMargin supports SISO only: %w", ErrDimensionMismatch)
+	if _, err := newSISOLoopModel(sys, "DiskMargin"); err != nil {
+		return nil, err
 	}
 
 	eye, err := NewGain(mat.NewDense(1, 1, []float64{1}), sys.Dt)
