@@ -94,51 +94,15 @@ type RiccatiResult struct {
 //
 // A is n×n, B is n×m, Q is n×n symmetric, R is m×m symmetric positive definite.
 func Care(A, B, Q, R *mat.Dense, opts *RiccatiOpts) (*RiccatiResult, error) {
-	na, nac := A.Dims()
-	if na != nac {
-		return nil, ErrDimensionMismatch
+	problem, err := newRiccatiProblem(A, B, Q, R, opts)
+	if err != nil {
+		return nil, err
 	}
-	nb, m := B.Dims()
-	if nb != na {
-		return nil, ErrDimensionMismatch
-	}
-	qr, qc := Q.Dims()
-	if qr != na || qc != na {
-		return nil, ErrDimensionMismatch
-	}
-	rr, rc := R.Dims()
-	if rr != m || rc != m {
-		return nil, ErrDimensionMismatch
-	}
-	n := na
+	n, m := problem.n, problem.m
 	if n == 0 {
 		return &RiccatiResult{X: &mat.Dense{}, K: &mat.Dense{}, Eig: nil}, nil
 	}
-	if !isSymmetric(Q, eps()*denseNorm(Q)) {
-		return nil, ErrNotSymmetric
-	}
-	if !isSymmetric(R, eps()*denseNorm(R)) {
-		return nil, ErrNotSymmetric
-	}
-	if !isPSD(Q) {
-		return nil, ErrNotPSD
-	}
-
-	var S *mat.Dense
-	if opts != nil && opts.S != nil {
-		sr, sc := opts.S.Dims()
-		if sr != n || sc != m {
-			return nil, ErrDimensionMismatch
-		}
-		S = opts.S
-	}
-
-	var ws *RiccatiWorkspace
-	if opts != nil && opts.Workspace != nil {
-		ws = opts.Workspace
-	} else {
-		ws = NewRiccatiWorkspace(n, m)
-	}
+	S, ws := problem.S, problem.ws
 
 	// Cholesky factor R
 	rChol := ws.rChol[:m*m]
@@ -305,51 +269,15 @@ func Care(A, B, Q, R *mat.Dense, opts *RiccatiOpts) (*RiccatiResult, error) {
 //
 // A is n×n, B is n×m, Q is n×n symmetric, R is m×m symmetric positive definite.
 func Dare(A, B, Q, R *mat.Dense, opts *RiccatiOpts) (*RiccatiResult, error) {
-	na, nac := A.Dims()
-	if na != nac {
-		return nil, ErrDimensionMismatch
+	problem, err := newRiccatiProblem(A, B, Q, R, opts)
+	if err != nil {
+		return nil, err
 	}
-	nb, m := B.Dims()
-	if nb != na {
-		return nil, ErrDimensionMismatch
-	}
-	qr, qc := Q.Dims()
-	if qr != na || qc != na {
-		return nil, ErrDimensionMismatch
-	}
-	rr, rc := R.Dims()
-	if rr != m || rc != m {
-		return nil, ErrDimensionMismatch
-	}
-	n := na
+	n, m := problem.n, problem.m
 	if n == 0 {
 		return &RiccatiResult{X: &mat.Dense{}, K: &mat.Dense{}, Eig: nil}, nil
 	}
-	if !isSymmetric(Q, eps()*denseNorm(Q)) {
-		return nil, ErrNotSymmetric
-	}
-	if !isSymmetric(R, eps()*denseNorm(R)) {
-		return nil, ErrNotSymmetric
-	}
-	if !isPSD(Q) {
-		return nil, ErrNotPSD
-	}
-
-	var S *mat.Dense
-	if opts != nil && opts.S != nil {
-		sr, sc := opts.S.Dims()
-		if sr != n || sc != m {
-			return nil, ErrDimensionMismatch
-		}
-		S = opts.S
-	}
-
-	var ws *RiccatiWorkspace
-	if opts != nil && opts.Workspace != nil {
-		ws = opts.Workspace
-	} else {
-		ws = NewRiccatiWorkspace(n, m)
-	}
+	S, ws := problem.S, problem.ws
 
 	// Cholesky factor R
 	rChol := ws.rChol[:m*m]
