@@ -51,21 +51,22 @@ type eigBlock struct {
 
 func canonModal(sys *System) (*CanonResult, error) {
 	policy := newRealizationTransformPolicy(sys)
-	n, m, p := policy.n, policy.m, policy.p
+	n := policy.n
 	if n == 0 {
 		return &CanonResult{Sys: policy.zeroOrderCopy(), T: &mat.Dense{}}, nil
 	}
 
-	res, err := canonModalEig(sys, n, m, p)
+	res, err := canonModalEig(sys, policy)
 	if err == nil {
 		return res, nil
 	}
-	return canonModalSchur(sys, n, m, p)
+	return canonModalSchur(sys, policy)
 }
 
 // canonModalEig attempts the eigendecomposition-based modal form.
 // Returns error if eigenvector matrix is too ill-conditioned.
-func canonModalEig(sys *System, n, m, p int) (*CanonResult, error) {
+func canonModalEig(sys *System, policy realizationTransformPolicy) (*CanonResult, error) {
+	n, m, p := policy.n, policy.m, policy.p
 	var eig mat.Eigen
 	ok := eig.Factorize(sys.A, mat.EigenRight)
 	if !ok {
@@ -164,13 +165,10 @@ func canonModalEig(sys *System, n, m, p int) (*CanonResult, error) {
 	Cnew := mat.NewDense(p, n, nil)
 	Cnew.Mul(sys.C, T)
 
-	Dnew := denseCopy(sys.D)
-
-	newSys, err := newNoCopy(Anew, Bnew, Cnew, Dnew, sys.Dt)
+	newSys, err := policy.resultWithOriginalFeedthrough(Anew, Bnew, Cnew)
 	if err != nil {
 		return nil, err
 	}
-	propagateIONames(newSys, sys)
 
 	return &CanonResult{Sys: newSys, T: T}, nil
 }
@@ -179,7 +177,8 @@ func canonModalEig(sys *System, n, m, p int) (*CanonResult, error) {
 // Numerically stable even for near-repeated eigenvalues.
 // A_modal is quasi-upper-triangular: 1×1 blocks for real eigenvalues,
 // 2×2 blocks for complex pairs, ordered by eigenvalue magnitude.
-func canonModalSchur(sys *System, n, m, p int) (*CanonResult, error) {
+func canonModalSchur(sys *System, policy realizationTransformPolicy) (*CanonResult, error) {
+	n, m, p := policy.n, policy.m, policy.p
 	aRaw := sys.A.RawMatrix()
 
 	t := make([]float64, n*n)
@@ -226,13 +225,10 @@ func canonModalSchur(sys *System, n, m, p int) (*CanonResult, error) {
 	Anew := mat.NewDense(n, n, t)
 	Bnew := mat.NewDense(n, m, bNew)
 	Cnew := mat.NewDense(p, n, cNew)
-	Dnew := denseCopy(sys.D)
-
-	newSys, err := newNoCopy(Anew, Bnew, Cnew, Dnew, sys.Dt)
+	newSys, err := policy.resultWithOriginalFeedthrough(Anew, Bnew, Cnew)
 	if err != nil {
 		return nil, err
 	}
-	propagateIONames(newSys, sys)
 
 	T := mat.NewDense(n, n, z)
 	return &CanonResult{Sys: newSys, T: T}, nil
@@ -346,13 +342,10 @@ func canonCompanion(sys *System) (*CanonResult, error) {
 	Cnew := mat.NewDense(1, n, nil)
 	Cnew.Mul(sys.C, T)
 
-	Dnew := denseCopy(sys.D)
-
-	newSys, err := newNoCopy(Anew, Bnew, Cnew, Dnew, sys.Dt)
+	newSys, err := policy.resultWithOriginalFeedthrough(Anew, Bnew, Cnew)
 	if err != nil {
 		return nil, err
 	}
-	propagateIONames(newSys, sys)
 
 	return &CanonResult{Sys: newSys, T: T}, nil
 }

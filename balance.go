@@ -226,6 +226,7 @@ func Balreal(sys *System) (*BalrealResult, error) {
 // the largest relative gap in the Hankel singular values.
 // method selects between Truncate (default) and SingularPerturbation (DC-gain matching).
 func Balred(sys *System, order int, method BalredMethod) (*System, []float64, error) {
+	policy := newRealizationTransformPolicy(sys)
 	br, err := Balreal(sys)
 	if err != nil {
 		return nil, nil, err
@@ -252,12 +253,10 @@ func Balred(sys *System, order int, method BalredMethod) (*System, []float64, er
 	C1 := extractSubmatrix(Cb, 0, p, 0, r)
 
 	if method == Truncate {
-		Dr := denseCopy(Db)
-		red, err := newNoCopy(A11, B1, C1, Dr, sys.Dt)
+		red, err := policy.result(A11, B1, C1, denseCopy(Db))
 		if err != nil {
 			return nil, hsv, err
 		}
-		propagateIONames(red, sys)
 		return red, hsv, nil
 	}
 
@@ -265,7 +264,7 @@ func Balred(sys *System, order int, method BalredMethod) (*System, []float64, er
 	if err != nil {
 		return nil, hsvOut, err
 	}
-	propagateIONames(red, sys)
+	propagateIONames(red, policy.sys)
 	return red, hsvOut, nil
 }
 
