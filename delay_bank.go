@@ -1,17 +1,28 @@
 package controlsys
 
 import (
+	"fmt"
 	"math"
 
 	"gonum.org/v1/gonum/mat"
 )
 
+type delayBankKind int
+
+const (
+	delayBankSample delayBankKind = iota
+	delayBankPade
+)
+
 type delayBankSpec struct {
 	sampleDelay             []float64
+	continuousDelay         []float64
 	channels                int
 	dt                      float64
 	thiranOrder             int
+	padeOrder               int
 	requiresFractionalModel bool
+	kind                    delayBankKind
 }
 
 func buildContinuousDelayBank(contDelay []float64, channels int, dt float64, thiranOrder int) (*System, error) {
@@ -34,6 +45,16 @@ func buildDiscreteSampleDelayBank(sampleDelay []float64, channels int, dt float6
 		channels:    channels,
 		dt:          dt,
 		thiranOrder: thiranOrder,
+		kind:        delayBankSample,
+	})
+}
+
+func buildContinuousPadeDelayBank(contDelay []float64, order int) (*System, error) {
+	return buildDelayBank(delayBankSpec{
+		continuousDelay: contDelay,
+		channels:        len(contDelay),
+		padeOrder:       order,
+		kind:            delayBankPade,
 	})
 }
 
@@ -44,7 +65,7 @@ func buildDelayBank(spec delayBankSpec) (*System, error) {
 
 	var bank *System
 	for i := 0; i < spec.channels; i++ {
-		ch, err := buildDelayChannel(spec.sampleDelay[i], spec.dt, spec.thiranOrder)
+		ch, err := buildDelayChannel(spec, i)
 		if err != nil {
 			return nil, err
 		}
@@ -72,7 +93,14 @@ func hasFractionalSampleDelay(sampleDelay []float64) bool {
 	return false
 }
 
-func buildDelayChannel(samples, dt float64, thiranOrder int) (*System, error) {
+func buildDelayChannel(spec delayBankSpec, channel int) (*System, error) {
+	if spec.kind == delayBankPade {
+		return buildPadeDelayChannel(spec.continuousDelay[channel], spec.padeOrder)
+	}
+	return buildSampleDelayChannel(spec.sampleDelay[channel], spec.dt, spec.thiranOrder)
+}
+
+func buildSampleDelayChannel(samples, dt float64, thiranOrder int) (*System, error) {
 	if samples == 0 {
 		return NewGain(mat.NewDense(1, 1, []float64{1}), dt)
 	}
@@ -80,6 +108,17 @@ func buildDelayChannel(samples, dt float64, thiranOrder int) (*System, error) {
 		return integerDelaySS(int(math.Round(samples)), dt)
 	}
 	return ThiranDelay(samples*dt, thiranOrder, dt)
+}
+
+func buildPadeDelayChannel(tau float64, order int) (*System, error) {
+	if tau == 0 {
+		return NewGain(mat.NewDense(1, 1, []float64{1}), 0)
+	}
+	pd, err := PadeDelay(tau, order)
+	if err != nil {
+		return nil, fmt.Errorf("buildPadeDelayBank: %w", err)
+	}
+	return pd, nil
 }
 
 func isIntegerSampleDelay(samples float64) bool {

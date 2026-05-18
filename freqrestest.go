@@ -39,7 +39,7 @@ func (r *FreqRespEstResult) CoherenceAt(freq, output, input int) float64 {
 	if r.Coherence == nil {
 		return 0
 	}
-	return r.Coherence[newSampledComplexResponse(nil, r.Omega, r.H.P, r.H.M).offset(freq, output, input)]
+	return newSampledScalarResponse(r.Coherence, r.Omega, r.H.P, r.H.M).at(freq, output, input)
 }
 
 func (r *FreqRespEstResult) FRD() (*FRD, error) {

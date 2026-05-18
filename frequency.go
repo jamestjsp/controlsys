@@ -47,11 +47,11 @@ type BodeResult struct {
 }
 
 func (b *BodeResult) MagDBAt(freq, output, input int) float64 {
-	return b.magDB[freq*b.p*b.m+output*b.m+input]
+	return newSampledScalarResponse(b.magDB, b.Omega, b.p, b.m).at(freq, output, input)
 }
 
 func (b *BodeResult) PhaseAt(freq, output, input int) float64 {
-	return b.phase[freq*b.p*b.m+output*b.m+input]
+	return newSampledScalarResponse(b.phase, b.Omega, b.p, b.m).at(freq, output, input)
 }
 
 func bodeResultFromResponse(omega []float64, data []complex128, p, m int, inputName, outputName []string) *BodeResult {
@@ -64,14 +64,15 @@ func bodeResultFromAccessor(omega []float64, p, m int, inputName, outputName []s
 	pm := p * m
 	magDB := make([]float64, nw*pm)
 	phase := make([]float64, nw*pm)
+	mag := newSampledScalarResponse(magDB, omega, p, m)
+	phaseResp := newSampledScalarResponse(phase, omega, p, m)
 
 	for k := range omega {
 		for i := 0; i < p; i++ {
 			for j := 0; j < m; j++ {
-				off := (k*p+i)*m + j
 				h := at(k, i, j)
-				magDB[off] = 20 * math.Log10(cmplx.Abs(h))
-				phase[off] = cmplx.Phase(h) * 180 / math.Pi
+				mag.set(k, i, j, 20*math.Log10(cmplx.Abs(h)))
+				phaseResp.set(k, i, j, cmplx.Phase(h)*180/math.Pi)
 			}
 		}
 	}
@@ -90,11 +91,12 @@ func bodeResultFromAccessor(omega []float64, p, m int, inputName, outputName []s
 }
 
 func unwrapBodePhase(phase []float64, p, m, nw int) {
+	response := newSampledScalarResponse(phase, nil, p, m)
 	for i := 0; i < p; i++ {
 		for j := 0; j < m; j++ {
 			for k := 1; k < nw; k++ {
-				cur := (k*p+i)*m + j
-				prev := ((k-1)*p+i)*m + j
+				cur := response.layout.offset(k, i, j)
+				prev := response.layout.offset(k-1, i, j)
 				diff := phase[cur] - phase[prev]
 				if diff > 180 {
 					phase[cur] -= 360
@@ -631,11 +633,11 @@ type NicholsResult struct {
 }
 
 func (r *NicholsResult) MagDBAt(freq, output, input int) float64 {
-	return r.magDB[freq*r.p*r.m+output*r.m+input]
+	return newSampledScalarResponse(r.magDB, r.Omega, r.p, r.m).at(freq, output, input)
 }
 
 func (r *NicholsResult) PhaseAt(freq, output, input int) float64 {
-	return r.phase[freq*r.p*r.m+output*r.m+input]
+	return newSampledScalarResponse(r.phase, r.Omega, r.p, r.m).at(freq, output, input)
 }
 
 func (sys *System) Nichols(omega []float64, nPoints int) (*NicholsResult, error) {
@@ -650,14 +652,14 @@ func (sys *System) Nichols(omega []float64, nPoints int) (*NicholsResult, error)
 	phase := bode.phase
 	p, m := bode.p, bode.m
 	nw := len(bode.Omega)
-	pm := p * m
+	phaseResp := newSampledScalarResponse(phase, bode.Omega, p, m)
 
 	for i := 0; i < p; i++ {
 		for j := 0; j < m; j++ {
-			base := phase[i*m+j]
+			base := phaseResp.at(0, i, j)
 			shift := math.Ceil(base/360) * 360
 			for k := 0; k < nw; k++ {
-				phase[k*pm+i*m+j] -= shift
+				phaseResp.set(k, i, j, phaseResp.at(k, i, j)-shift)
 			}
 		}
 	}

@@ -56,18 +56,18 @@ func Series(sys1, sys2 *System) (*System, error) {
 		return seriesLFT(sys1, sys2)
 	}
 
-	return seriesSimple(sys1, sys2)
+	return seriesSimple(sys1, sys2, topology.seriesDelayPlan())
 }
 
-func seriesSimple(sys1, sys2 *System) (*System, error) {
+func seriesSimple(sys1, sys2 *System, delayPlan interconnectionDelayPlan) (*System, error) {
 	n1, m1, _ := sys1.Dims()
 	n2, _, p2 := sys2.Dims()
 	n := n1 + n2
 	m := m1
 	p := p2
 
-	ioDelay := seriesDelay(sys1, sys2)
-	inDel, outDel, ioDelay := seriesInputOutputDelay(sys1, sys2, p, m, ioDelay)
+	ioDelay := delayPlan.ioDelay
+	inDel, outDel := delayPlan.inputDelay, delayPlan.outputDelay
 
 	buildSeries := func(A, B, C, D *mat.Dense) (*System, error) {
 		sys, err := buildSystem(A, B, C, D, sys1.Dt, ioDelay)
@@ -227,22 +227,22 @@ func Parallel(sys1, sys2 *System) (*System, error) {
 		return parallelLFT(sys1, sys2)
 	}
 
-	return parallelSimple(sys1, sys2)
+	return parallelSimple(sys1, sys2, topology.parallelDelayPlan())
 }
 
 func totalDelayMatrix(sys *System) *mat.Dense {
 	return newDelayTopology(sys).totalExternal(true)
 }
 
-func parallelSimple(sys1, sys2 *System) (*System, error) {
+func parallelSimple(sys1, sys2 *System, delayPlan interconnectionDelayPlan) (*System, error) {
 	n1, m1, p1 := sys1.Dims()
 	n2, _, _ := sys2.Dims()
 	n := n1 + n2
 	m := m1
 	p := p1
 
-	ioDelay := parallelDelay(sys1, sys2)
-	inDel, outDel, ioDelay := parallelInputOutputDelay(sys1, sys2, m, p, ioDelay)
+	ioDelay := delayPlan.ioDelay
+	inDel, outDel := delayPlan.inputDelay, delayPlan.outputDelay
 
 	buildParallel := func(A, B, C, D *mat.Dense) (*System, error) {
 		sys, err := buildSystem(A, B, C, D, sys1.Dt, ioDelay)
