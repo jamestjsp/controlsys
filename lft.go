@@ -187,60 +187,8 @@ func solveLFTLoop(D22M, DDelta *mat.Dense, w int) (*mat.Dense, error) {
 func lftWithDelay(M, Delta *System, nu, ny int) (*System, error) {
 	_, mM, pM := M.Dims()
 
-	savedInputDelay := make([]float64, nu)
-	if M.InputDelay != nil {
-		copy(savedInputDelay, M.InputDelay[:nu])
-	}
-	savedOutputDelay := make([]float64, ny)
-	if M.OutputDelay != nil {
-		copy(savedOutputDelay, M.OutputDelay[:ny])
-	}
-	hasExtInput := false
-	for _, v := range savedInputDelay {
-		if v != 0 {
-			hasExtInput = true
-			break
-		}
-	}
-	hasExtOutput := false
-	for _, v := range savedOutputDelay {
-		if v != 0 {
-			hasExtOutput = true
-			break
-		}
-	}
-
-	mCopy := M.Copy()
-	if mCopy.InputDelay != nil {
-		for i := 0; i < nu; i++ {
-			mCopy.InputDelay[i] = 0
-		}
-		allZero := true
-		for _, v := range mCopy.InputDelay {
-			if v != 0 {
-				allZero = false
-				break
-			}
-		}
-		if allZero {
-			mCopy.InputDelay = nil
-		}
-	}
-	if mCopy.OutputDelay != nil {
-		for i := 0; i < ny; i++ {
-			mCopy.OutputDelay[i] = 0
-		}
-		allZero := true
-		for _, v := range mCopy.OutputDelay {
-			if v != 0 {
-				allZero = false
-				break
-			}
-		}
-		if allZero {
-			mCopy.OutputDelay = nil
-		}
-	}
+	external := newLFTExternalDelayState(M, nu, ny)
+	mCopy := external.strippedMain()
 
 	mLFT, err := mCopy.PullDelaysToLFT()
 	if err != nil {
@@ -356,18 +304,7 @@ func lftWithDelay(M, Delta *System, nu, ny int) (*System, error) {
 		if err != nil {
 			return nil, err
 		}
-		if hasExtInput {
-			sys.InputDelay = savedInputDelay
-		}
-		if hasExtOutput {
-			sys.OutputDelay = savedOutputDelay
-		}
-		if M.InputName != nil {
-			sys.InputName = copyStringSlice(M.InputName[:nu])
-		}
-		if M.OutputName != nil {
-			sys.OutputName = copyStringSlice(M.OutputName[:ny])
-		}
+		external.apply(sys)
 		return sys, nil
 	}
 
@@ -388,7 +325,9 @@ func lftWithDelay(M, Delta *System, nu, ny int) (*System, error) {
 		D12iD = extractBlock(dH.D, 0, w, z, ND)
 		D21iD = extractBlock(dH.D, z, 0, ND, w)
 		GD12iD = mulDense(G, D12iD)
-		FD12iMw = mulDense(F, D12iMw)
+		if NM > 0 {
+			FD12iMw = mulDense(F, D12iMw)
+		}
 		FD22pD12iD = mulDense(F, mulDense(D22p, D12iD))
 	}
 
@@ -513,17 +452,68 @@ func lftWithDelay(M, Delta *System, nu, ny int) (*System, error) {
 	if err != nil {
 		return nil, err
 	}
-	if hasExtInput {
-		result.InputDelay = savedInputDelay
+	external.apply(result)
+	return result, nil
+}
+
+type lftExternalDelayState struct {
+	main        *System
+	nu, ny      int
+	inputDelay  []float64
+	outputDelay []float64
+	hasInput    bool
+	hasOutput   bool
+	inputName   []string
+	outputName  []string
+}
+
+func newLFTExternalDelayState(M *System, nu, ny int) lftExternalDelayState {
+	state := lftExternalDelayState{main: M, nu: nu, ny: ny}
+	state.inputDelay = make([]float64, nu)
+	if M.InputDelay != nil {
+		copy(state.inputDelay, M.InputDelay[:nu])
 	}
-	if hasExtOutput {
-		result.OutputDelay = savedOutputDelay
+	state.outputDelay = make([]float64, ny)
+	if M.OutputDelay != nil {
+		copy(state.outputDelay, M.OutputDelay[:ny])
 	}
+	state.hasInput = delaySliceHasNonzero(state.inputDelay)
+	state.hasOutput = delaySliceHasNonzero(state.outputDelay)
 	if M.InputName != nil {
-		result.InputName = copyStringSlice(M.InputName[:nu])
+		state.inputName = copyStringSlice(M.InputName[:nu])
 	}
 	if M.OutputName != nil {
-		result.OutputName = copyStringSlice(M.OutputName[:ny])
+		state.outputName = copyStringSlice(M.OutputName[:ny])
 	}
-	return result, nil
+	return state
+}
+
+func (s lftExternalDelayState) strippedMain() *System {
+	mCopy := s.main.Copy()
+	zeroDelayPrefix(mCopy.InputDelay, s.nu)
+	if mCopy.InputDelay != nil && !delaySliceHasNonzero(mCopy.InputDelay) {
+		mCopy.InputDelay = nil
+	}
+	zeroDelayPrefix(mCopy.OutputDelay, s.ny)
+	if mCopy.OutputDelay != nil && !delaySliceHasNonzero(mCopy.OutputDelay) {
+		mCopy.OutputDelay = nil
+	}
+	return mCopy
+}
+
+func (s lftExternalDelayState) apply(sys *System) {
+	if s.hasInput {
+		sys.InputDelay = copyFloatSlice(s.inputDelay)
+	}
+	if s.hasOutput {
+		sys.OutputDelay = copyFloatSlice(s.outputDelay)
+	}
+	sys.InputName = copyStringSlice(s.inputName)
+	sys.OutputName = copyStringSlice(s.outputName)
+}
+
+func zeroDelayPrefix(delay []float64, n int) {
+	for i := 0; i < n && i < len(delay); i++ {
+		delay[i] = 0
+	}
 }

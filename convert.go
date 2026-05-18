@@ -412,57 +412,7 @@ func absorbFractionalDelays(disc *System, contInputDelay, contOutputDelay []floa
 }
 
 func buildDelayBank(contDelay []float64, n int, dt float64, thiranOrder int) (*System, error) {
-	hasFractional := false
-	for _, tau := range contDelay {
-		if tau == 0 {
-			continue
-		}
-		samples := tau / dt
-		if math.Abs(samples-math.Round(samples)) >= 1e-9 {
-			hasFractional = true
-			break
-		}
-	}
-	if !hasFractional {
-		return nil, nil
-	}
-
-	var bank *System
-	for i := 0; i < n; i++ {
-		tau := contDelay[i]
-		var ch *System
-		var err error
-
-		if tau == 0 {
-			ch, err = NewGain(mat.NewDense(1, 1, []float64{1}), dt)
-			if err != nil {
-				return nil, err
-			}
-		} else {
-			samples := tau / dt
-			if math.Abs(samples-math.Round(samples)) < 1e-9 {
-				ch, err = integerDelaySS(int(math.Round(samples)), dt)
-				if err != nil {
-					return nil, err
-				}
-			} else {
-				ch, err = ThiranDelay(tau, thiranOrder, dt)
-				if err != nil {
-					return nil, err
-				}
-			}
-		}
-
-		if bank == nil {
-			bank = ch
-		} else {
-			bank, err = Append(bank, ch)
-			if err != nil {
-				return nil, err
-			}
-		}
-	}
-	return bank, nil
+	return buildFractionalThiranDelayBank(contDelay, n, dt, thiranOrder)
 }
 
 func (sys *System) DiscretizeZOH(dt float64) (*System, error) {

@@ -19,7 +19,15 @@ type FreqResponseMatrix struct {
 }
 
 func (f *FreqResponseMatrix) At(freq, output, input int) complex128 {
-	return f.Data[freq*f.P*f.M+output*f.M+input]
+	return f.Data[f.index(freq, output, input)]
+}
+
+func (f *FreqResponseMatrix) index(freq, output, input int) int {
+	return freq*f.P*f.M + output*f.M + input
+}
+
+func freqResponseIndex(freq, output, input, p, m int) int {
+	return freq*p*m + output*m + input
 }
 
 func newFreqResponseMatrix(data []complex128, omega []float64, p, m int, inputName, outputName []string) *FreqResponseMatrix {
@@ -57,7 +65,7 @@ func (b *BodeResult) PhaseAt(freq, output, input int) float64 {
 
 func bodeResultFromResponse(omega []float64, data []complex128, p, m int, inputName, outputName []string) *BodeResult {
 	return bodeResultFromAccessor(omega, p, m, inputName, outputName, func(k, i, j int) complex128 {
-		return data[(k*p+i)*m+j]
+		return data[freqResponseIndex(k, i, j, p, m)]
 	})
 }
 
@@ -70,7 +78,7 @@ func bodeResultFromAccessor(omega []float64, p, m int, inputName, outputName []s
 	for k := range omega {
 		for i := 0; i < p; i++ {
 			for j := 0; j < m; j++ {
-				off := (k*p+i)*m + j
+				off := freqResponseIndex(k, i, j, p, m)
 				h := at(k, i, j)
 				magDB[off] = 20 * math.Log10(cmplx.Abs(h))
 				phase[off] = cmplx.Phase(h) * 180 / math.Pi
@@ -95,8 +103,8 @@ func unwrapBodePhase(phase []float64, p, m, nw int) {
 	for i := 0; i < p; i++ {
 		for j := 0; j < m; j++ {
 			for k := 1; k < nw; k++ {
-				cur := (k*p+i)*m + j
-				prev := ((k-1)*p+i)*m + j
+				cur := freqResponseIndex(k, i, j, p, m)
+				prev := freqResponseIndex(k-1, i, j, p, m)
 				diff := phase[cur] - phase[prev]
 				if diff > 180 {
 					phase[cur] -= 360

@@ -1062,40 +1062,6 @@ func absorbOutputDelay(sys *System) (*System, error) {
 	return augSys, nil
 }
 
-func buildPadeBank(delays []float64, order int) (*System, error) {
-	var bank *System
-	for _, tau := range delays {
-		if tau == 0 {
-			g, err := NewGain(mat.NewDense(1, 1, []float64{1}), 0)
-			if err != nil {
-				return nil, err
-			}
-			if bank == nil {
-				bank = g
-			} else {
-				bank, err = Append(bank, g)
-				if err != nil {
-					return nil, err
-				}
-			}
-			continue
-		}
-		pd, err := PadeDelay(tau, order)
-		if err != nil {
-			return nil, fmt.Errorf("buildPadeBank: %w", err)
-		}
-		if bank == nil {
-			bank = pd
-		} else {
-			bank, err = Append(bank, pd)
-			if err != nil {
-				return nil, err
-			}
-		}
-	}
-	return bank, nil
-}
-
 func absorbInputDelayContinuous(sys *System, order int) (*System, error) {
 	hasInput := false
 	if sys.InputDelay != nil {
