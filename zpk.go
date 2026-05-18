@@ -103,27 +103,7 @@ func (z *ZPK) Eval(s complex128) [][]complex128 {
 }
 
 func zpkEvalChannel(s complex128, zeros, poles []complex128, gain float64) complex128 {
-	if gain == 0 {
-		return 0
-	}
-	nz := len(zeros)
-	np := len(poles)
-	h := complex(gain, 0)
-
-	shared := nz
-	if np < shared {
-		shared = np
-	}
-	for k := 0; k < shared; k++ {
-		h *= (s - zeros[k]) / (s - poles[k])
-	}
-	for k := shared; k < nz; k++ {
-		h *= s - zeros[k]
-	}
-	for k := shared; k < np; k++ {
-		h /= s - poles[k]
-	}
-	return h
+	return newRationalChannel(zeros, poles, gain).eval(s)
 }
 
 func (z *ZPK) FreqResponse(omega []float64) (*FreqResponseMatrix, error) {
@@ -167,17 +147,8 @@ func (z *ZPK) TransferFunction() (*TransferFunc, error) {
 		tf.Den[i] = []float64(polyFromComplexRoots(sortConjugatePairs(commonPoles)))
 		tf.Num[i] = make([][]float64, m)
 		for j := 0; j < m; j++ {
-			if z.Gain[i][j] == 0 {
-				tf.Num[i][j] = []float64{0}
-				continue
-			}
-			missing := poleSetDifference(commonPoles, z.Poles[i][j])
-			zeroPoly := polyFromComplexRoots(sortConjugatePairs(z.Zeros[i][j]))
-			if len(missing) > 0 {
-				missingPoly := polyFromComplexRoots(sortConjugatePairs(missing))
-				zeroPoly = zeroPoly.Mul(missingPoly)
-			}
-			tf.Num[i][j] = []float64(zeroPoly.Scale(z.Gain[i][j]))
+			ch := newRationalChannel(z.Zeros[i][j], z.Poles[i][j], z.Gain[i][j])
+			tf.Num[i][j] = ch.numeratorForCommonPoles(commonPoles)
 		}
 	}
 	tf.InputName = copyStringSlice(z.InputName)
@@ -198,29 +169,17 @@ func (tf *TransferFunc) ZPK() (*ZPK, error) {
 	}
 
 	for i := 0; i < p; i++ {
-		rowPoles, err := Poly(tf.Den[i]).Roots()
-		if err != nil {
-			return nil, err
-		}
-
 		z.Zeros[i] = make([][]complex128, m)
 		z.Poles[i] = make([][]complex128, m)
 		z.Gain[i] = make([]float64, m)
 		for j := 0; j < m; j++ {
-			z.Poles[i][j] = copyComplex(rowPoles)
-
-			num := trimLeadingFloatZeros(tf.Num[i][j])
-			if len(num) == 1 && num[0] == 0 {
-				z.Gain[i][j] = 0
-				continue
-			}
-
-			zeros, err := Poly(num).Roots()
+			ch, err := rationalChannelFromPolynomials(tf.Num[i][j], tf.Den[i])
 			if err != nil {
 				return nil, err
 			}
-			z.Zeros[i][j] = zeros
-			z.Gain[i][j] = channelPolynomialGain(num, tf.Den[i])
+			z.Zeros[i][j] = ch.zeros
+			z.Poles[i][j] = copyComplex(ch.poles)
+			z.Gain[i][j] = ch.gain
 		}
 	}
 	z.InputName = copyStringSlice(tf.InputName)

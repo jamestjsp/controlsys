@@ -55,12 +55,7 @@ func lftExtract(M *System, nu, ny int) (*System, error) {
 		if err != nil {
 			return nil, err
 		}
-		if M.InputName != nil {
-			result.InputName = copyStringSlice(M.InputName[:nu])
-		}
-		if M.OutputName != nil {
-			result.OutputName = copyStringSlice(M.OutputName[:ny])
-		}
+		lftVisibleMetadata(M, nu, ny).applyIOOwned(result)
 		return result, nil
 	}
 
@@ -70,12 +65,7 @@ func lftExtract(M *System, nu, ny int) (*System, error) {
 	if err != nil {
 		return nil, err
 	}
-	if M.InputName != nil {
-		result.InputName = copyStringSlice(M.InputName[:nu])
-	}
-	if M.OutputName != nil {
-		result.OutputName = copyStringSlice(M.OutputName[:ny])
-	}
+	lftVisibleMetadata(M, nu, ny).applyIOOwned(result)
 	return result, nil
 }
 
@@ -121,12 +111,7 @@ func lftSimple(M, Delta *System, nu, ny int) (*System, error) {
 		if err != nil {
 			return nil, err
 		}
-		if M.InputName != nil {
-			result.InputName = copyStringSlice(M.InputName[:nu])
-		}
-		if M.OutputName != nil {
-			result.OutputName = copyStringSlice(M.OutputName[:ny])
-		}
+		lftVisibleMetadata(M, nu, ny).applyIOOwned(result)
 		return result, nil
 	}
 
@@ -171,12 +156,7 @@ func lftSimple(M, Delta *System, nu, ny int) (*System, error) {
 	if err != nil {
 		return nil, err
 	}
-	if M.InputName != nil {
-		result.InputName = copyStringSlice(M.InputName[:nu])
-	}
-	if M.OutputName != nil {
-		result.OutputName = copyStringSlice(M.OutputName[:ny])
-	}
+	lftVisibleMetadata(M, nu, ny).applyIOOwned(result)
 	return result, nil
 }
 
@@ -314,12 +294,7 @@ func lftWithDelay(M, Delta *System, nu, ny int) (*System, error) {
 		if savedOutputDelay.hasNonzero {
 			sys.OutputDelay = savedOutputDelay.values
 		}
-		if M.InputName != nil {
-			sys.InputName = copyStringSlice(M.InputName[:nu])
-		}
-		if M.OutputName != nil {
-			sys.OutputName = copyStringSlice(M.OutputName[:ny])
-		}
+		lftVisibleMetadata(M, nu, ny).applyIOOwned(sys)
 		return sys, nil
 	}
 
@@ -473,11 +448,6 @@ func lftWithDelay(M, Delta *System, nu, ny int) (*System, error) {
 	if savedOutputDelay.hasNonzero {
 		result.OutputDelay = savedOutputDelay.values
 	}
-	if M.InputName != nil {
-		result.InputName = copyStringSlice(M.InputName[:nu])
-	}
-	if M.OutputName != nil {
-		result.OutputName = copyStringSlice(M.OutputName[:ny])
-	}
+	lftVisibleMetadata(M, nu, ny).applyIOOwned(result)
 	return result, nil
 }

@@ -251,9 +251,7 @@ func parallelSimple(sys1, sys2 *System, delayPlan interconnectionDelayPlan) (*Sy
 		}
 		sys.InputDelay = inDel
 		sys.OutputDelay = outDel
-		sys.InputName = copyStringSlice(sys1.InputName)
-		sys.OutputName = copyStringSlice(sys1.OutputName)
-		sys.StateName = concatStringSlices([][]string{sys1.StateName, sys2.StateName}, []int{n1, n2})
+		parallelMetadata(sys1, sys2, n1, n2).applyAllOwned(sys)
 		return sys, nil
 	}
 

@@ -30,26 +30,9 @@ func (sys *System) Discretize(dt float64) (*System, error) {
 		return nil, err
 	}
 	out.Dt = dt
-	if sys.Delay != nil {
-		d, err := convertDelayToDiscrete(sys.Delay, dt)
-		if err != nil {
-			return nil, err
-		}
-		out.Delay = d
-	}
-	if sys.InputDelay != nil {
-		id, err := convertSliceDelayToDiscrete(sys.InputDelay, dt, 0)
-		if err != nil {
-			return nil, err
-		}
-		out.InputDelay = id
-	}
-	if sys.OutputDelay != nil {
-		od, err := convertSliceDelayToDiscrete(sys.OutputDelay, dt, 0)
-		if err != nil {
-			return nil, err
-		}
-		out.OutputDelay = od
+	policy := newDelayConversionPolicy(dt, 0, 0)
+	if out, err = policy.applyDiscreteDelayFields(out, sys); err != nil {
+		return nil, err
 	}
 	propagateNames(out, sys)
 	return out, nil
@@ -68,35 +51,8 @@ func (sys *System) Undiscretize() (*System, error) {
 		return nil, err
 	}
 	out.Dt = 0
-	if sys.Delay != nil {
-		out.Delay = convertDelayToContinuous(sys.Delay, sys.Dt)
-	}
-	if sys.InputDelay != nil {
-		out.InputDelay = make([]float64, len(sys.InputDelay))
-		for i, d := range sys.InputDelay {
-			out.InputDelay[i] = d * sys.Dt
-		}
-	}
-	if sys.OutputDelay != nil {
-		out.OutputDelay = make([]float64, len(sys.OutputDelay))
-		for i, d := range sys.OutputDelay {
-			out.OutputDelay[i] = d * sys.Dt
-		}
-	}
-	if sys.LFT != nil {
-		tau := make([]float64, len(sys.LFT.Tau))
-		for i, d := range sys.LFT.Tau {
-			tau[i] = d * sys.Dt
-		}
-		out.LFT = &LFTDelay{
-			Tau: tau,
-			B2:  mat.DenseCopyOf(sys.LFT.B2),
-			C2:  mat.DenseCopyOf(sys.LFT.C2),
-			D12: mat.DenseCopyOf(sys.LFT.D12),
-			D21: mat.DenseCopyOf(sys.LFT.D21),
-			D22: mat.DenseCopyOf(sys.LFT.D22),
-		}
-	}
+	policy := newDelayConversionPolicy(sys.Dt, 0, 0)
+	policy.applyContinuousDelayFields(out, sys)
 	propagateNames(out, sys)
 	return out, nil
 }
@@ -377,6 +333,17 @@ func convertSliceDelayToDiscrete(delay []float64, dt float64, thiranOrder int) (
 	return out, nil
 }
 
+func convertSliceDelayToContinuous(delay []float64, dt float64) []float64 {
+	if delay == nil {
+		return nil
+	}
+	out := make([]float64, len(delay))
+	for i, d := range delay {
+		out[i] = d * dt
+	}
+	return out
+}
+
 func absorbFractionalDelays(disc *System, contInputDelay, contOutputDelay []float64, dt float64, thiranOrder int) (*System, error) {
 	_, m, p := disc.Dims()
 
@@ -483,26 +450,10 @@ func (sys *System) DiscretizeZOH(dt float64) (*System, error) {
 	Bd := mat.NewDense(n, m, bdData)
 
 	out := &System{A: Ad, B: Bd, C: C, D: D, Dt: dt}
-	if sys.Delay != nil {
-		d, err := convertDelayToDiscrete(sys.Delay, dt)
-		if err != nil {
-			return nil, err
-		}
-		out.Delay = d
-	}
-	if sys.InputDelay != nil {
-		id, err := convertSliceDelayToDiscrete(sys.InputDelay, dt, 0)
-		if err != nil {
-			return nil, err
-		}
-		out.InputDelay = id
-	}
-	if sys.OutputDelay != nil {
-		od, err := convertSliceDelayToDiscrete(sys.OutputDelay, dt, 0)
-		if err != nil {
-			return nil, err
-		}
-		out.OutputDelay = od
+	policy := newDelayConversionPolicy(dt, 0, 0)
+	out, err := policy.applyDiscreteDelayFields(out, sys)
+	if err != nil {
+		return nil, err
 	}
 	propagateNames(out, sys)
 	return out, nil
@@ -521,21 +472,14 @@ func discretizeWithInternalDelay(sys *System, dt float64, opts C2DOptions) (*Sys
 	n, _, _ := sys.Dims()
 	N := sys.internalDelayCount()
 
-	discTau := make([]float64, N)
-	for j, tau := range sys.LFT.Tau {
-		samples := tau / dt
-		rounded := math.Round(samples)
-		if math.Abs(samples-rounded) < 1e-9 {
-			discTau[j] = rounded
-		} else {
-			return nil, fmt.Errorf("InternalDelay[%d]=%g not integer multiple of dt=%g: %w",
-				j, tau, dt, ErrFractionalDelay)
-		}
+	policy := newDelayConversionPolicy(dt, 0, 0)
+	discTau, err := policy.convertInternalTauToDiscrete(sys.LFT.Tau)
+	if err != nil {
+		return nil, err
 	}
 
 	var disc *System
 	var Bd2 *mat.Dense
-	var err error
 
 	switch method {
 	case "zoh":
@@ -568,26 +512,8 @@ func discretizeWithInternalDelay(sys *System, dt float64, opts C2DOptions) (*Sys
 		D22: mat.DenseCopyOf(sys.LFT.D22),
 	}
 
-	if sys.Delay != nil {
-		d, convErr := convertDelayToDiscrete(sys.Delay, dt)
-		if convErr != nil {
-			return nil, convErr
-		}
-		disc.Delay = d
-	}
-	if sys.InputDelay != nil {
-		id, convErr := convertSliceDelayToDiscrete(sys.InputDelay, dt, 0)
-		if convErr != nil {
-			return nil, convErr
-		}
-		disc.InputDelay = id
-	}
-	if sys.OutputDelay != nil {
-		od, convErr := convertSliceDelayToDiscrete(sys.OutputDelay, dt, 0)
-		if convErr != nil {
-			return nil, convErr
-		}
-		disc.OutputDelay = od
+	if disc, err = policy.applyDiscreteDelayFields(disc, sys); err != nil {
+		return nil, err
 	}
 
 	propagateNames(disc, sys)
@@ -791,26 +717,10 @@ func (sys *System) DiscretizeImpulse(dt float64) (*System, error) {
 	Bd.Scale(dt, Bd)
 
 	out := &System{A: Ad, B: Bd, C: C, D: D, Dt: dt}
-	if sys.Delay != nil {
-		d, err := convertDelayToDiscrete(sys.Delay, dt)
-		if err != nil {
-			return nil, err
-		}
-		out.Delay = d
-	}
-	if sys.InputDelay != nil {
-		id, err := convertSliceDelayToDiscrete(sys.InputDelay, dt, 0)
-		if err != nil {
-			return nil, err
-		}
-		out.InputDelay = id
-	}
-	if sys.OutputDelay != nil {
-		od, err := convertSliceDelayToDiscrete(sys.OutputDelay, dt, 0)
-		if err != nil {
-			return nil, err
-		}
-		out.OutputDelay = od
+	policy := newDelayConversionPolicy(dt, 0, 0)
+	out, err := policy.applyDiscreteDelayFields(out, sys)
+	if err != nil {
+		return nil, err
 	}
 	propagateNames(out, sys)
 	return out, nil
@@ -941,6 +851,11 @@ func fohPureGain(sys *System, m, p int, dt float64) (*System, error) {
 		D:  mat.NewDense(p, m, dData),
 		Dt: dt,
 	}
+	policy := newDelayConversionPolicy(dt, 0, 0)
+	var err error
+	if out, err = policy.applyDiscreteDelayFields(out, sys); err != nil {
+		return nil, err
+	}
 	propagateNames(out, sys)
 	fohAugmentStateNames(out, sys, 0, m)
 	return out, nil
@@ -991,26 +906,10 @@ func buildFOHSystem(sys *System, n, m, p int, dt float64, adData, g0Data, g1Data
 		Dt: dt,
 	}
 
-	if sys.Delay != nil {
-		d, err := convertDelayToDiscrete(sys.Delay, dt)
-		if err != nil {
-			return nil, err
-		}
-		out.Delay = d
-	}
-	if sys.InputDelay != nil {
-		id, err := convertSliceDelayToDiscrete(sys.InputDelay, dt, 0)
-		if err != nil {
-			return nil, err
-		}
-		out.InputDelay = id
-	}
-	if sys.OutputDelay != nil {
-		od, err := convertSliceDelayToDiscrete(sys.OutputDelay, dt, 0)
-		if err != nil {
-			return nil, err
-		}
-		out.OutputDelay = od
+	policy := newDelayConversionPolicy(dt, 0, 0)
+	var err error
+	if out, err = policy.applyDiscreteDelayFields(out, sys); err != nil {
+		return nil, err
 	}
 	propagateNames(out, sys)
 	fohAugmentStateNames(out, sys, n, m)
@@ -1178,26 +1077,9 @@ func (sys *System) DiscretizeMatched(dt float64) (*System, error) {
 	}
 	result := ssResult.Sys
 
-	if sys.Delay != nil {
-		d, err := convertDelayToDiscrete(sys.Delay, dt)
-		if err != nil {
-			return nil, err
-		}
-		result.Delay = d
-	}
-	if sys.InputDelay != nil {
-		id, err := convertSliceDelayToDiscrete(sys.InputDelay, dt, 0)
-		if err != nil {
-			return nil, err
-		}
-		result.InputDelay = id
-	}
-	if sys.OutputDelay != nil {
-		od, err := convertSliceDelayToDiscrete(sys.OutputDelay, dt, 0)
-		if err != nil {
-			return nil, err
-		}
-		result.OutputDelay = od
+	policy := newDelayConversionPolicy(dt, 0, 0)
+	if result, err = policy.applyDiscreteDelayFields(result, sys); err != nil {
+		return nil, err
 	}
 	propagateNames(result, sys)
 	return result, nil
@@ -1214,7 +1096,7 @@ func matchedGain(sys *System, discZeros, discPoles []complex128, dt float64) (fl
 	denAt0 := den.Eval(0)
 	if cmplx.Abs(denAt0) > 1e-10 {
 		contDC := num.Eval(0) / denAt0
-		discDC := zpkEvalChannel(complex(1, 0), discZeros, discPoles, 1.0)
+		discDC := newRationalChannel(discZeros, discPoles, 1.0).eval(complex(1, 0))
 		if cmplx.Abs(discDC) < 1e-14 {
 			return matchedGainFallback(num, den, discZeros, discPoles, dt)
 		}
@@ -1229,13 +1111,13 @@ func matchedGainFallback(num, den Poly, discZeros, discPoles []complex128, dt fl
 	zMatch := complex(0, 1)
 
 	contVal := num.Eval(sMatch) / den.Eval(sMatch)
-	discVal := zpkEvalChannel(zMatch, discZeros, discPoles, 1.0)
+	discVal := newRationalChannel(discZeros, discPoles, 1.0).eval(zMatch)
 
 	if cmplx.Abs(discVal) < 1e-14 {
 		sMatch = complex(0, math.Pi/(4*dt))
 		zMatch = cmplx.Exp(complex(0, math.Pi/4))
 		contVal = num.Eval(sMatch) / den.Eval(sMatch)
-		discVal = zpkEvalChannel(zMatch, discZeros, discPoles, 1.0)
+		discVal = newRationalChannel(discZeros, discPoles, 1.0).eval(zMatch)
 	}
 	if cmplx.Abs(discVal) < 1e-14 {
 		return 0, fmt.Errorf("DiscretizeMatched: cannot determine gain: %w", ErrSingularTransform)
@@ -1323,21 +1205,8 @@ func (sys *System) d2cZOH() (*System, error) {
 }
 
 func d2cPropagateDelays(out, sys *System, dt float64) {
-	if sys.Delay != nil {
-		out.Delay = convertDelayToContinuous(sys.Delay, dt)
-	}
-	if sys.InputDelay != nil {
-		out.InputDelay = make([]float64, len(sys.InputDelay))
-		for i, d := range sys.InputDelay {
-			out.InputDelay[i] = d * dt
-		}
-	}
-	if sys.OutputDelay != nil {
-		out.OutputDelay = make([]float64, len(sys.OutputDelay))
-		for i, d := range sys.OutputDelay {
-			out.OutputDelay[i] = d * dt
-		}
-	}
+	policy := newDelayConversionPolicy(dt, 0, 0)
+	policy.applyContinuousDelayFields(out, sys)
 }
 
 func (sys *System) D2D(newDt float64, opts C2DOptions) (*System, error) {
