@@ -695,18 +695,18 @@ func TestEvalFr_IODelay_Continuous(t *testing.T) {
 		t.Fatal(err)
 	}
 	sys.InputDelay = []float64{2.0}
-	
+
 	w := 5.0
 	s := complex(0, w)
 	val, err := sys.EvalFr(s)
 	if err != nil {
 		t.Fatal(err)
 	}
-	
+
 	// Transfer function is 1/(s+1) * e^{-2s}
 	tf := 1.0 / (s + 1)
-	expected := tf * cmplx.Exp(-s * complex(2.0, 0))
-	
+	expected := tf * cmplx.Exp(-s*complex(2.0, 0))
+
 	if cmplx.Abs(val[0][0]-expected) > 1e-10 {
 		t.Errorf("EvalFr with I/O delay mismatch. got: %v, want: %v", val[0][0], expected)
 	}
@@ -724,14 +724,14 @@ func TestEvalFr_IODelay_Discrete(t *testing.T) {
 		t.Fatal(err)
 	}
 	sys.OutputDelay = []float64{3.0}
-	
+
 	w := 2.0
 	s := cmplx.Exp(complex(0, w*sys.Dt))
 	val, err := sys.EvalFr(s)
 	if err != nil {
 		t.Fatal(err)
 	}
-	
+
 	// Transfer function is 1/(z-0.5) / z^3
 	tf := 1.0 / (s - 0.5)
 	expected := tf / (s * s * s)
@@ -1071,6 +1071,69 @@ func TestSigma_NonSquare(t *testing.T) {
 		if r.At(0, i) < 0 {
 			t.Errorf("negative sv[%d] = %v", i, r.At(0, i))
 		}
+	}
+}
+
+func TestSigmaMatchesFRDForCoupledMIMOResponse(t *testing.T) {
+	sys, err := NewFromSlices(3, 2, 2,
+		[]float64{
+			0, 1, 0,
+			-2, -3, 1,
+			0.5, -0.25, -1.5,
+		},
+		[]float64{
+			1, 0,
+			0, 1,
+			1, -1,
+		},
+		[]float64{
+			1, 0.5, -0.25,
+			0.2, 1, 0.75,
+		},
+		[]float64{
+			0.1, -0.2,
+			0.05, 0.3,
+		},
+		0,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	omega := []float64{0.2, 1.3, 4.0}
+	fromSystem, err := sys.Sigma(omega, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	frd, err := sys.FRD(omega)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fromFRD, err := frd.Sigma()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if fromSystem.NSV() != fromFRD.NSV() {
+		t.Fatalf("NSV System=%d FRD=%d", fromSystem.NSV(), fromFRD.NSV())
+	}
+	for k := range omega {
+		for sv := 0; sv < fromSystem.NSV(); sv++ {
+			got := fromSystem.At(k, sv)
+			want := fromFRD.At(k, sv)
+			if math.Abs(got-want) > 1e-10*math.Max(1, math.Abs(want)) {
+				t.Fatalf("omega[%d] sv[%d]: System.Sigma=%g FRD.Sigma=%g", k, sv, got, want)
+			}
+		}
+	}
+}
+
+func TestSigmaClampsGramEigenvalueRelativeToScale(t *testing.T) {
+	if got := nonnegativeGramEigenvalue(-1e3, 1e16); got != 0 {
+		t.Fatalf("relative tiny negative eigenvalue = %g, want 0", got)
+	}
+	if got := nonnegativeGramEigenvalue(-1e3, 1); got != -1e3 {
+		t.Fatalf("large negative eigenvalue = %g, want preserved negative", got)
 	}
 }
 

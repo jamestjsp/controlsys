@@ -14,6 +14,15 @@ type TimeResponse struct {
 	OutputName []string
 }
 
+type timeResponsePlan struct {
+	original      *System
+	sim           *System
+	t             []float64
+	dt            float64
+	steps         int
+	wasContinuous bool
+}
+
 type DampInfo struct {
 	Pole complex128
 	Wn   float64
@@ -84,23 +93,37 @@ func autoTimeParams(sys *System) (dt, tFinal float64, err error) {
 }
 
 func prepareDiscrete(sys *System, tFinal, dt float64) (dsys *System, actualDt float64, steps int, wasContinuous bool, err error) {
+	plan, err := prepareAutoTimeResponse(sys, tFinal, dt)
+	if err != nil {
+		return nil, 0, 0, false, err
+	}
+	return plan.sim, plan.dt, plan.steps, plan.wasContinuous, nil
+}
+
+func prepareAutoTimeResponse(sys *System, tFinal, dt float64) (timeResponsePlan, error) {
 	if sys.IsDiscrete() {
-		actualDt = sys.Dt
+		actualDt := sys.Dt
 		if tFinal <= 0 {
+			var err error
 			_, tFinal, err = autoTimeParams(sys)
 			if err != nil {
-				return nil, 0, 0, false, err
+				return timeResponsePlan{}, err
 			}
 		}
-		steps = int(tFinal/actualDt) + 1
-		return sys, actualDt, steps, false, nil
+		steps := int(tFinal/actualDt) + 1
+		return timeResponsePlan{
+			original: sys,
+			sim:      sys,
+			t:        makeTimeVector(steps, actualDt),
+			dt:       actualDt,
+			steps:    steps,
+		}, nil
 	}
 
-	wasContinuous = true
 	if tFinal <= 0 || dt <= 0 {
 		autoDt, autoTf, err2 := autoTimeParams(sys)
 		if err2 != nil {
-			return nil, 0, 0, true, err2
+			return timeResponsePlan{}, err2
 		}
 		if tFinal <= 0 {
 			tFinal = autoTf
@@ -110,13 +133,20 @@ func prepareDiscrete(sys *System, tFinal, dt float64) (dsys *System, actualDt fl
 		}
 	}
 
-	dsys, err = sys.DiscretizeZOH(dt)
+	dsys, err := sys.DiscretizeZOH(dt)
 	if err != nil {
-		return nil, 0, 0, true, fmt.Errorf("auto-discretize: %w", err)
+		return timeResponsePlan{}, fmt.Errorf("auto-discretize: %w", err)
 	}
-	actualDt = dt
-	steps = int(tFinal/dt) + 1
-	return dsys, actualDt, steps, true, nil
+	actualDt := dt
+	steps := int(tFinal/dt) + 1
+	return timeResponsePlan{
+		original:      sys,
+		sim:           dsys,
+		t:             makeTimeVector(steps, actualDt),
+		dt:            actualDt,
+		steps:         steps,
+		wasContinuous: true,
+	}, nil
 }
 
 func makeTimeVector(steps int, dt float64) []float64 {
@@ -125,6 +155,76 @@ func makeTimeVector(steps int, dt float64) []float64 {
 		t[k] = float64(k) * dt
 	}
 	return t
+}
+
+func (p timeResponsePlan) response(Y *mat.Dense) *TimeResponse {
+	return &TimeResponse{T: p.t, Y: Y, OutputName: copyStringSlice(p.original.OutputName)}
+}
+
+func prepareLsimResponse(sys *System, u *mat.Dense, t []float64) (timeResponsePlan, *mat.Dense, error) {
+	if len(t) < 2 {
+		return timeResponsePlan{}, nil, fmt.Errorf("Lsim: need at least 2 time points: %w", ErrDimensionMismatch)
+	}
+
+	_, m, _ := sys.Dims()
+	ur, uc := u.Dims()
+	if ur != len(t) || uc != m {
+		return timeResponsePlan{}, nil, fmt.Errorf("Lsim: u must be %d×%d, got %d×%d: %w", len(t), m, ur, uc, ErrDimensionMismatch)
+	}
+
+	dt, err := validateUniformTimeGrid("Lsim", t)
+	if err != nil {
+		return timeResponsePlan{}, nil, err
+	}
+
+	var dsys *System
+	if sys.IsContinuous() {
+		dsys, err = sys.DiscretizeZOH(dt)
+		if err != nil {
+			return timeResponsePlan{}, nil, fmt.Errorf("Lsim: %w", err)
+		}
+	} else {
+		if math.Abs(sys.Dt-dt)/sys.Dt > 1e-6 {
+			return timeResponsePlan{}, nil, fmt.Errorf("Lsim: time grid spacing %g does not match system Dt %g: %w", dt, sys.Dt, ErrDimensionMismatch)
+		}
+		dsys = sys
+	}
+
+	plan := timeResponsePlan{
+		original:      sys,
+		sim:           dsys,
+		t:             t,
+		dt:            dt,
+		steps:         len(t),
+		wasContinuous: sys.IsContinuous(),
+	}
+	return plan, transposeSamplesToChannels(u, len(t), m), nil
+}
+
+func validateUniformTimeGrid(context string, t []float64) (float64, error) {
+	dt := t[1] - t[0]
+	if dt <= 0 {
+		return 0, fmt.Errorf("%s: time step must be positive, got %g: %w", context, dt, ErrDimensionMismatch)
+	}
+	for k := 2; k < len(t); k++ {
+		dk := t[k] - t[k-1]
+		if math.Abs(dk-dt)/dt > 1e-6 {
+			return 0, fmt.Errorf("%s: non-uniform time grid at index %d (dt=%g, expected %g); uniform grid required: %w", context, k, dk, dt, ErrDimensionMismatch)
+		}
+	}
+	return dt, nil
+}
+
+func transposeSamplesToChannels(u *mat.Dense, steps, inputs int) *mat.Dense {
+	uSim := mat.NewDense(inputs, steps, nil)
+	uRaw := u.RawMatrix()
+	uSimRaw := uSim.RawMatrix()
+	for i := 0; i < steps; i++ {
+		for j := 0; j < inputs; j++ {
+			uSimRaw.Data[j*uSimRaw.Stride+i] = uRaw.Data[i*uRaw.Stride+j]
+		}
+	}
+	return uSim
 }
 
 func (sys *System) DCGain() (*mat.Dense, error) {
@@ -210,68 +310,68 @@ func Damp(sys *System) ([]DampInfo, error) {
 }
 
 func Step(sys *System, tFinal float64) (*TimeResponse, error) {
-	dsys, dt, steps, _, err := prepareDiscrete(sys, tFinal, 0)
+	plan, err := prepareAutoTimeResponse(sys, tFinal, 0)
 	if err != nil {
 		return nil, err
 	}
 
-	_, m, p := dsys.Dims()
+	_, m, p := plan.sim.Dims()
 	rows := p * m
-	Y := mat.NewDense(rows, steps, nil)
+	Y := mat.NewDense(rows, plan.steps, nil)
 
 	for j := 0; j < m; j++ {
-		u := mat.NewDense(m, steps, nil)
-		for k := 0; k < steps; k++ {
+		u := mat.NewDense(m, plan.steps, nil)
+		for k := 0; k < plan.steps; k++ {
 			u.Set(j, k, 1)
 		}
-		resp, err := dsys.Simulate(u, nil, nil)
+		resp, err := plan.sim.Simulate(u, nil, nil)
 		if err != nil {
 			return nil, fmt.Errorf("Step: input %d: %w", j, err)
 		}
 		if resp.Y != nil {
 			for i := 0; i < p; i++ {
-				for k := 0; k < steps; k++ {
+				for k := 0; k < plan.steps; k++ {
 					Y.Set(j*p+i, k, resp.Y.At(i, k))
 				}
 			}
 		}
 	}
 
-	return &TimeResponse{T: makeTimeVector(steps, dt), Y: Y, OutputName: copyStringSlice(sys.OutputName)}, nil
+	return plan.response(Y), nil
 }
 
 func Impulse(sys *System, tFinal float64) (*TimeResponse, error) {
-	dsys, dt, steps, wasContinuous, err := prepareDiscrete(sys, tFinal, 0)
+	plan, err := prepareAutoTimeResponse(sys, tFinal, 0)
 	if err != nil {
 		return nil, err
 	}
 
-	_, m, p := dsys.Dims()
+	_, m, p := plan.sim.Dims()
 	rows := p * m
-	Y := mat.NewDense(rows, steps, nil)
+	Y := mat.NewDense(rows, plan.steps, nil)
 
 	amp := 1.0
-	if wasContinuous {
-		amp = 1.0 / dt
+	if plan.wasContinuous {
+		amp = 1.0 / plan.dt
 	}
 
 	for j := 0; j < m; j++ {
-		u := mat.NewDense(m, steps, nil)
+		u := mat.NewDense(m, plan.steps, nil)
 		u.Set(j, 0, amp)
-		resp, err := dsys.Simulate(u, nil, nil)
+		resp, err := plan.sim.Simulate(u, nil, nil)
 		if err != nil {
 			return nil, fmt.Errorf("Impulse: input %d: %w", j, err)
 		}
 		if resp.Y != nil {
 			for i := 0; i < p; i++ {
-				for k := 0; k < steps; k++ {
+				for k := 0; k < plan.steps; k++ {
 					Y.Set(j*p+i, k, resp.Y.At(i, k))
 				}
 			}
 		}
 	}
 
-	return &TimeResponse{T: makeTimeVector(steps, dt), Y: Y, OutputName: copyStringSlice(sys.OutputName)}, nil
+	return plan.response(Y), nil
 }
 
 func Initial(sys *System, x0 *mat.VecDense, tFinal float64) (*TimeResponse, error) {
@@ -279,72 +379,30 @@ func Initial(sys *System, x0 *mat.VecDense, tFinal float64) (*TimeResponse, erro
 		return nil, fmt.Errorf("Initial: x0 must not be nil: %w", ErrDimensionMismatch)
 	}
 
-	dsys, dt, steps, _, err := prepareDiscrete(sys, tFinal, 0)
+	plan, err := prepareAutoTimeResponse(sys, tFinal, 0)
 	if err != nil {
 		return nil, err
 	}
 
-	_, m, _ := dsys.Dims()
-	u := mat.NewDense(m, steps, nil)
-	resp, err := dsys.Simulate(u, x0, nil)
+	_, m, _ := plan.sim.Dims()
+	u := mat.NewDense(m, plan.steps, nil)
+	resp, err := plan.sim.Simulate(u, x0, nil)
 	if err != nil {
 		return nil, fmt.Errorf("Initial: %w", err)
 	}
 
-	return &TimeResponse{T: makeTimeVector(steps, dt), Y: resp.Y, OutputName: copyStringSlice(sys.OutputName)}, nil
+	return plan.response(resp.Y), nil
 }
 
 func Lsim(sys *System, u *mat.Dense, t []float64, x0 *mat.VecDense) (*TimeResponse, error) {
-	if len(t) < 2 {
-		return nil, fmt.Errorf("Lsim: need at least 2 time points: %w", ErrDimensionMismatch)
+	plan, uSim, err := prepareLsimResponse(sys, u, t)
+	if err != nil {
+		return nil, err
 	}
-
-	_, m, _ := sys.Dims()
-	ur, uc := u.Dims()
-	if ur != len(t) || uc != m {
-		return nil, fmt.Errorf("Lsim: u must be %d×%d, got %d×%d: %w", len(t), m, ur, uc, ErrDimensionMismatch)
-	}
-
-	steps := len(t)
-	dt := t[1] - t[0]
-	if dt <= 0 {
-		return nil, fmt.Errorf("Lsim: time step must be positive, got %g: %w", dt, ErrDimensionMismatch)
-	}
-	for k := 2; k < steps; k++ {
-		dk := t[k] - t[k-1]
-		if math.Abs(dk-dt)/dt > 1e-6 {
-			return nil, fmt.Errorf("Lsim: non-uniform time grid at index %d (dt=%g, expected %g); uniform grid required: %w", k, dk, dt, ErrDimensionMismatch)
-		}
-	}
-
-	var dsys *System
-	var err error
-	if sys.IsContinuous() {
-		dsys, err = sys.DiscretizeZOH(dt)
-		if err != nil {
-			return nil, fmt.Errorf("Lsim: %w", err)
-		}
-	} else {
-		if math.Abs(sys.Dt-dt)/sys.Dt > 1e-6 {
-			return nil, fmt.Errorf("Lsim: time grid spacing %g does not match system Dt %g: %w", dt, sys.Dt, ErrDimensionMismatch)
-		}
-		dsys = sys
-	}
-
-	// Transpose u from len(t)×m to m×len(t) for Simulate
-	uSim := mat.NewDense(m, steps, nil)
-	uRaw := u.RawMatrix()
-	uSimRaw := uSim.RawMatrix()
-	for i := 0; i < steps; i++ {
-		for j := 0; j < m; j++ {
-			uSimRaw.Data[j*uSimRaw.Stride+i] = uRaw.Data[i*uRaw.Stride+j]
-		}
-	}
-
-	resp, err := dsys.Simulate(uSim, x0, nil)
+	resp, err := plan.sim.Simulate(uSim, x0, nil)
 	if err != nil {
 		return nil, fmt.Errorf("Lsim: %w", err)
 	}
 
-	return &TimeResponse{T: t, Y: resp.Y, OutputName: copyStringSlice(sys.OutputName)}, nil
+	return plan.response(resp.Y), nil
 }

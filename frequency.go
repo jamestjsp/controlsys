@@ -5,7 +5,6 @@ import (
 	"math"
 	"math/cmplx"
 
-	"gonum.org/v1/gonum/lapack"
 	"gonum.org/v1/gonum/mat"
 )
 
@@ -692,27 +691,6 @@ func (r *SigmaResult) NSV() int {
 	return r.nSV
 }
 
-type svdWorkspace struct {
-	rData []float64
-	sv    []float64
-	work  []float64
-	p, m  int
-}
-
-func newSVDWorkspace(p, m int) *svdWorkspace {
-	rows := 2 * p
-	cols := m
-	nSV := min(rows, cols)
-	rData := make([]float64, rows*cols)
-	sv := make([]float64, nSV)
-
-	wq := make([]float64, 1)
-	impl.Dgesvd(lapack.SVDNone, lapack.SVDNone, rows, cols, rData, cols, sv, nil, 1, nil, 1, wq, -1)
-	work := make([]float64, int(wq[0]))
-
-	return &svdWorkspace{rData: rData, sv: sv, work: work, p: p, m: m}
-}
-
 func (sys *System) Sigma(omega []float64, nPoints int) (*SigmaResult, error) {
 	if omega == nil {
 		var err error
@@ -748,24 +726,12 @@ func (sys *System) Sigma(omega []float64, nPoints int) (*SigmaResult, error) {
 		return &SigmaResult{Omega: omega, sv: sv, nSV: 1, InputName: copyStringSlice(sys.InputName), OutputName: copyStringSlice(sys.OutputName)}, nil
 	}
 
-	ws := newSVDWorkspace(p, m)
+	ws := newComplexSVDWorkspace(p, m)
 	allSV := make([]float64, nw*nSV)
-	rData := ws.rData
 
 	for k := range nw {
 		base := k * pm
-		for i := range p {
-			row := i * m
-			rowShift := (p + i) * m
-			for j := range m {
-				h := data[base+row+j]
-				rData[row+j] = real(h)
-				rData[rowShift+j] = imag(h)
-			}
-		}
-		impl.Dgesvd(lapack.SVDNone, lapack.SVDNone, 2*p, m, rData, m,
-			ws.sv, nil, 1, nil, 1, ws.work, len(ws.work))
-		copy(allSV[k*nSV:], ws.sv[:nSV])
+		ws.singularValuesFromFlat(allSV[k*nSV:(k+1)*nSV], data, base, p, m)
 	}
 
 	return &SigmaResult{Omega: omega, sv: allSV, nSV: nSV, InputName: copyStringSlice(sys.InputName), OutputName: copyStringSlice(sys.OutputName)}, nil

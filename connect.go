@@ -1403,30 +1403,12 @@ func Connect(sys *System, Q *mat.Dense, inputs, outputs []int) (*System, error) 
 func connectWithDelay(sys *System, Q *mat.Dense, inputs, outputs []int) (*System, error) {
 	_, m, p := sys.Dims()
 
-	savedInputDelay := make([]float64, len(inputs))
-	if sys.InputDelay != nil {
-		for k, j := range inputs {
-			savedInputDelay[k] = sys.InputDelay[j]
-		}
-	}
-	savedOutputDelay := make([]float64, len(outputs))
-	if sys.OutputDelay != nil {
-		for k, i := range outputs {
-			savedOutputDelay[k] = sys.OutputDelay[i]
-		}
-	}
+	savedInputDelay := selectVisibleDelays(sys.InputDelay, inputs)
+	savedOutputDelay := selectVisibleDelays(sys.OutputDelay, outputs)
 
 	sCopy := sys.Copy()
-	if sCopy.InputDelay != nil {
-		for _, j := range inputs {
-			sCopy.InputDelay[j] = 0
-		}
-	}
-	if sCopy.OutputDelay != nil {
-		for _, i := range outputs {
-			sCopy.OutputDelay[i] = 0
-		}
-	}
+	sCopy.InputDelay = clearDelayIndexes(sCopy.InputDelay, inputs)
+	sCopy.OutputDelay = clearDelayIndexes(sCopy.OutputDelay, outputs)
 
 	sLFT, err := sCopy.PullDelaysToLFT()
 	if err != nil {
@@ -1576,25 +1558,11 @@ func connectWithDelay(sys *System, Q *mat.Dense, inputs, outputs []int) (*System
 		return nil, err
 	}
 
-	hasExtIn := false
-	for _, v := range savedInputDelay {
-		if v != 0 {
-			hasExtIn = true
-			break
-		}
+	if savedInputDelay.hasNonzero {
+		result.InputDelay = savedInputDelay.values
 	}
-	if hasExtIn {
-		result.InputDelay = savedInputDelay
-	}
-	hasExtOut := false
-	for _, v := range savedOutputDelay {
-		if v != 0 {
-			hasExtOut = true
-			break
-		}
-	}
-	if hasExtOut {
-		result.OutputDelay = savedOutputDelay
+	if savedOutputDelay.hasNonzero {
+		result.OutputDelay = savedOutputDelay.values
 	}
 
 	result.InputName = selectStringSlice(sys.InputName, inputs)

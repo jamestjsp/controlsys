@@ -2,7 +2,6 @@ package controlsys
 
 import (
 	"fmt"
-	"math"
 
 	"gonum.org/v1/gonum/mat"
 )
@@ -20,9 +19,9 @@ func WithPadeOrder(n int) SafeFeedbackOption {
 	}
 }
 
-// WithThiranOrder is reserved for future fractional discrete-delay feedback
-// workflows. SafeFeedback currently absorbs exact integer discrete delays and
-// uses Pade approximation for continuous transport delays.
+// WithThiranOrder enables Thiran allpass modeling for fractional discrete
+// delays in SafeFeedback. Exact integer discrete delays remain state-space
+// delays; continuous-time delays use Pade approximation.
 func WithThiranOrder(n int) SafeFeedbackOption {
 	return func(c *safeFeedbackConfig) {
 		c.thiranOrder = n
@@ -171,34 +170,6 @@ func replaceDiscreteExternalDelaysWithThiran(sys *System, thiranOrder int) (*Sys
 	result.OutputDelay = nil
 	result.Delay = nil
 	return result, nil
-}
-
-func buildDiscreteSampleDelayBank(sampleDelay []float64, n int, dt float64, thiranOrder int) (*System, error) {
-	var bank *System
-	for i := 0; i < n; i++ {
-		tau := sampleDelay[i] * dt
-		var ch *System
-		var err error
-		if tau == 0 {
-			ch, err = NewGain(mat.NewDense(1, 1, []float64{1}), dt)
-		} else if math.Abs(sampleDelay[i]-math.Round(sampleDelay[i])) < 1e-9 {
-			ch, err = integerDelaySS(int(math.Round(sampleDelay[i])), dt)
-		} else {
-			ch, err = ThiranDelay(tau, thiranOrder, dt)
-		}
-		if err != nil {
-			return nil, err
-		}
-		if bank == nil {
-			bank = ch
-			continue
-		}
-		bank, err = Append(bank, ch)
-		if err != nil {
-			return nil, err
-		}
-	}
-	return bank, nil
 }
 
 func replaceContinuousDelays(sys *System, padeOrder int) (*System, error) {
