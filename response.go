@@ -183,8 +183,12 @@ func (p timeResponsePlanner) lsim(u *mat.Dense, t []float64) (timeResponsePlan, 
 	}
 
 	_, m, _ := p.sys.Dims()
-	ur, uc := u.Dims()
-	if ur != len(t) || uc != m {
+	sig, err := validateLsimInputSignal("Lsim", u, len(t), m)
+	if err != nil {
+		ur, uc := 0, 0
+		if u != nil {
+			ur, uc = u.Dims()
+		}
 		return timeResponsePlan{}, nil, fmt.Errorf("Lsim: u must be %d×%d, got %d×%d: %w", len(t), m, ur, uc, ErrDimensionMismatch)
 	}
 
@@ -214,7 +218,7 @@ func (p timeResponsePlanner) lsim(u *mat.Dense, t []float64) (timeResponsePlan, 
 		steps:         len(t),
 		wasContinuous: p.sys.IsContinuous(),
 	}
-	return plan, transposeSamplesToChannels(u, len(t), m), nil
+	return plan, sig.channelsBySamplesDense(), nil
 }
 
 func validateUniformTimeGrid(context string, t []float64) (float64, error) {
@@ -232,15 +236,7 @@ func validateUniformTimeGrid(context string, t []float64) (float64, error) {
 }
 
 func transposeSamplesToChannels(u *mat.Dense, steps, inputs int) *mat.Dense {
-	uSim := mat.NewDense(inputs, steps, nil)
-	uRaw := u.RawMatrix()
-	uSimRaw := uSim.RawMatrix()
-	for i := 0; i < steps; i++ {
-		for j := 0; j < inputs; j++ {
-			uSimRaw.Data[j*uSimRaw.Stride+i] = uRaw.Data[i*uRaw.Stride+j]
-		}
-	}
-	return uSim
+	return newSampledSignal("Lsim", u, inputs, steps, sampledSamplesByChannels).channelsBySamplesDense()
 }
 
 func (sys *System) DCGain() (*mat.Dense, error) {

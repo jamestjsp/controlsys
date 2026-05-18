@@ -73,25 +73,15 @@ func NewLyapunovWorkspace(n int) *LyapunovWorkspace {
 //
 // A is n×n, Q is n×n symmetric. Returns X (n×n symmetric).
 func Lyap(A, Q *mat.Dense, opts *LyapunovOpts) (*mat.Dense, error) {
-	n, nc := A.Dims()
-	if n != nc {
-		return nil, ErrDimensionMismatch
+	problem, err := newLyapunovProblem(A, Q, opts)
+	if err != nil {
+		return nil, err
 	}
-	qr, qc := Q.Dims()
-	if qr != n || qc != n {
-		return nil, ErrDimensionMismatch
-	}
+	n := problem.n
 	if n == 0 {
 		return &mat.Dense{}, nil
 	}
-	if !isSymmetric(Q, eps()*denseNorm(Q)) {
-		return nil, ErrNotSymmetric
-	}
-
-	var ws *LyapunovWorkspace
-	if opts != nil {
-		ws = opts.Workspace
-	}
+	ws := problem.ws
 
 	nn := n * n
 	aData := reuseSlice(&ws, nn, func(w *LyapunovWorkspace) *[]float64 { return &w.aData })
@@ -162,25 +152,15 @@ func Lyap(A, Q *mat.Dense, opts *LyapunovOpts) (*mat.Dense, error) {
 //
 // A is n×n, Q is n×n symmetric. Returns X (n×n symmetric).
 func DLyap(A, Q *mat.Dense, opts *LyapunovOpts) (*mat.Dense, error) {
-	n, nc := A.Dims()
-	if n != nc {
-		return nil, ErrDimensionMismatch
+	problem, err := newLyapunovProblem(A, Q, opts)
+	if err != nil {
+		return nil, err
 	}
-	qr, qc := Q.Dims()
-	if qr != n || qc != n {
-		return nil, ErrDimensionMismatch
-	}
+	n := problem.n
 	if n == 0 {
 		return &mat.Dense{}, nil
 	}
-	if !isSymmetric(Q, eps()*denseNorm(Q)) {
-		return nil, ErrNotSymmetric
-	}
-
-	var ws *LyapunovWorkspace
-	if opts != nil {
-		ws = opts.Workspace
-	}
+	ws := problem.ws
 
 	nn := n * n
 	aData := reuseSlice(&ws, nn, func(w *LyapunovWorkspace) *[]float64 { return &w.aData })
