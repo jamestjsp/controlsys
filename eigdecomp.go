@@ -16,11 +16,11 @@ func decomposeByEigenvalues(sys *System, isGroup1 func(complex128) bool) (group1
 	if sys.HasDelay() {
 		return nil, nil, fmt.Errorf("controlsys: decomposition does not support delayed systems; use Pade/AbsorbDelay first")
 	}
+	policy := newRealizationTransformPolicy(sys)
 	n, m, p := sys.Dims()
 	if n == 0 {
 		cp := sys.Copy()
-		gain, _ := NewGain(mat.NewDense(p, m, nil), sys.Dt)
-		propagateIONames(gain, sys)
+		gain := policy.zeroOrderZeroFeedthrough()
 		return cp, gain, nil
 	}
 
@@ -72,16 +72,10 @@ func decomposeByEigenvalues(sys *System, isGroup1 func(complex128) bool) (group1
 	n2 := len(idx2)
 
 	if n1 == 0 {
-		gain, _ := NewGain(mat.NewDense(p, m, nil), sys.Dt)
-		propagateIONames(gain, sys)
-		return gain, sys.Copy(), nil
+		return policy.zeroOrderZeroFeedthrough(), sys.Copy(), nil
 	}
 	if n2 == 0 {
-		gain, _ := NewGain(denseCopy(sys.D), sys.Dt)
-		propagateIONames(gain, sys)
-		cp := sys.Copy()
-		cp.D = mat.NewDense(p, m, nil)
-		return cp, gain, nil
+		return policy.copyWithZeroFeedthrough(), policy.zeroOrderOriginalFeedthrough(), nil
 	}
 
 	var vecC mat.CDense
@@ -120,25 +114,21 @@ func decomposeByEigenvalues(sys *System, isGroup1 func(complex128) bool) (group1
 	B2r := realPart(Bt, n1, n, 0, m)
 	C2r := realPart(Ct, 0, p, n1, n)
 
-	D1 := mat.NewDense(p, m, nil)
-	D2 := denseCopy(sys.D)
-
-	sys1, err := newNoCopy(A1r, B1r, C1r, D1, sys.Dt)
+	sys1, err := policy.resultWithZeroFeedthrough(A1r, B1r, C1r)
 	if err != nil {
 		return nil, nil, err
 	}
-	propagateIONames(sys1, sys)
 
-	sys2, err := newNoCopy(A2r, B2r, C2r, D2, sys.Dt)
+	sys2, err := policy.resultWithOriginalFeedthrough(A2r, B2r, C2r)
 	if err != nil {
 		return nil, nil, err
 	}
-	propagateIONames(sys2, sys)
 
 	return sys1, sys2, nil
 }
 
 func decomposeBySchur(sys *System, isGroup1 func(complex128) bool) (group1, group2 *System, err error) {
+	policy := newRealizationTransformPolicy(sys)
 	n, m, p := sys.Dims()
 
 	t := make([]float64, n*n)
@@ -172,16 +162,10 @@ func decomposeBySchur(sys *System, isGroup1 func(complex128) bool) (group1, grou
 	}
 
 	if n1 == 0 {
-		gain, _ := NewGain(mat.NewDense(p, m, nil), sys.Dt)
-		propagateIONames(gain, sys)
-		return gain, sys.Copy(), nil
+		return policy.zeroOrderZeroFeedthrough(), sys.Copy(), nil
 	}
 	if n1 == n {
-		gain, _ := NewGain(denseCopy(sys.D), sys.Dt)
-		propagateIONames(gain, sys)
-		cp := sys.Copy()
-		cp.D = mat.NewDense(p, m, nil)
-		return cp, gain, nil
+		return policy.copyWithZeroFeedthrough(), policy.zeroOrderOriginalFeedthrough(), nil
 	}
 
 	trexcWork := make([]float64, n)
@@ -265,20 +249,15 @@ func decomposeBySchur(sys *System, isGroup1 func(complex128) bool) (group1, grou
 		}
 	}
 
-	D1 := mat.NewDense(p, m, nil)
-	D2 := denseCopy(sys.D)
-
-	sys1, err := newNoCopy(A1, B1, C1, D1, sys.Dt)
+	sys1, err := policy.resultWithZeroFeedthrough(A1, B1, C1)
 	if err != nil {
 		return nil, nil, err
 	}
-	propagateIONames(sys1, sys)
 
-	sys2, err := newNoCopy(A2, B2, C2, D2, sys.Dt)
+	sys2, err := policy.resultWithOriginalFeedthrough(A2, B2, C2)
 	if err != nil {
 		return nil, nil, err
 	}
-	propagateIONames(sys2, sys)
 
 	return sys1, sys2, nil
 }

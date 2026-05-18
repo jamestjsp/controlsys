@@ -120,8 +120,10 @@ func (sys *System) Reduce(opts *ReduceOpts) (*ReduceResult, error) {
 	cr := extractSubmatrix(C, 0, p, 0, nr)
 	dr := denseCopySafe(sys.D, p, m)
 
-	reduced := &System{A: ar, B: br, C: cr, D: dr, Delay: copyDelayOrNil(sys.Delay), Dt: sys.Dt}
-	propagateIONames(reduced, sys)
+	reduced, err := policy.result(ar, br, cr, dr)
+	if err != nil {
+		return nil, err
+	}
 
 	return &ReduceResult{
 		Sys:        reduced,
@@ -148,17 +150,8 @@ func copySys(sys *System, n, m, p int) *System {
 }
 
 func zeroOrderResult(sys *System, m, p int) *ReduceResult {
-	s := &System{
-		A:     &mat.Dense{},
-		B:     &mat.Dense{},
-		C:     &mat.Dense{},
-		D:     denseCopySafe(sys.D, p, m),
-		Delay: copyDelayOrNil(sys.Delay),
-		Dt:    sys.Dt,
-	}
-	propagateIONames(s, sys)
 	return &ReduceResult{
-		Sys:   s,
+		Sys:   newRealizationTransformPolicy(sys).zeroOrderOriginalFeedthrough(),
 		Order: 0,
 	}
 }
