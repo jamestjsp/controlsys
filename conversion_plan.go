@@ -114,22 +114,8 @@ func (p c2dPlan) discretizeMethod() (*System, error) {
 }
 
 func (p c2dPlan) applyExternalDelays(disc *System) (*System, error) {
-	var err error
-	disc.InputDelay, err = convertSliceDelayToDiscrete(p.contInputDelay, p.dt, p.opts.ThiranOrder)
-	if err != nil {
-		return nil, err
-	}
-	disc.OutputDelay, err = convertSliceDelayToDiscrete(p.contOutputDelay, p.dt, p.opts.ThiranOrder)
-	if err != nil {
-		return nil, err
-	}
-	if p.opts.ThiranOrder > 0 {
-		disc, err = absorbFractionalDelays(disc, p.contInputDelay, p.contOutputDelay, p.dt, p.opts.ThiranOrder)
-		if err != nil {
-			return nil, err
-		}
-	}
-	return disc, nil
+	policy := newDelayConversionPolicy(p.dt, p.opts.ThiranOrder, 0)
+	return policy.applyDiscreteExternal(disc, p.contInputDelay, p.contOutputDelay)
 }
 
 type d2cPlan struct {

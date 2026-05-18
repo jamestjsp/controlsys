@@ -42,49 +42,17 @@ func newInterconnectionPlan(sys1, sys2 *System) interconnectionPlan {
 	}
 }
 
-func (plan interconnectionPlan) seriesNeedsLFT() bool {
-	if plan.sys1.HasInternalDelay() || plan.sys2.HasInternalDelay() {
-		return true
-	}
-	if !plan.sys1.HasDelay() && !plan.sys2.HasDelay() {
-		return false
-	}
-	ioCheck := seriesDelay(plan.sys1, plan.sys2)
-	if ioCheck == nil && (plan.sys1.Delay != nil || plan.sys2.Delay != nil) {
-		return true
-	}
-	if plan.sys1.OutputDelay == nil && plan.sys2.InputDelay == nil {
-		return false
-	}
-	for k := 1; k < plan.p1; k++ {
-		if math.Abs(plan.intermediateSeriesDelay(k)-plan.intermediateSeriesDelay(0)) > 1e-12 {
-			return true
-		}
-	}
-	return false
-}
-
-func (plan interconnectionPlan) intermediateSeriesDelay(k int) float64 {
-	var delay float64
-	if plan.sys1.OutputDelay != nil {
-		delay += plan.sys1.OutputDelay[k]
-	}
-	if plan.sys2.InputDelay != nil {
-		delay += plan.sys2.InputDelay[k]
-	}
-	return delay
-}
-
 func Series(sys1, sys2 *System) (*System, error) {
 	if err := domainMatch(sys1, sys2); err != nil {
 		return nil, err
 	}
-	plan := newInterconnectionPlan(sys1, sys2)
+	topology := newInterconnectionTopology(sys1, sys2)
+	plan := topology.plan
 	if plan.p1 != plan.m2 {
 		return nil, fmt.Errorf("series: sys1 outputs %d != sys2 inputs %d: %w", plan.p1, plan.m2, ErrDimensionMismatch)
 	}
 
-	if plan.seriesNeedsLFT() {
+	if topology.seriesRequiresLFT() {
 		return seriesLFT(sys1, sys2)
 	}
 
@@ -249,40 +217,17 @@ func Parallel(sys1, sys2 *System) (*System, error) {
 	if err := domainMatch(sys1, sys2); err != nil {
 		return nil, err
 	}
-	plan := newInterconnectionPlan(sys1, sys2)
+	topology := newInterconnectionTopology(sys1, sys2)
+	plan := topology.plan
 	if plan.m1 != plan.m2 || plan.p1 != plan.p2 {
 		return nil, fmt.Errorf("parallel: dims (%d,%d) vs (%d,%d): %w", plan.p1, plan.m1, plan.p2, plan.m2, ErrDimensionMismatch)
 	}
 
-	if sys1.HasInternalDelay() || sys2.HasInternalDelay() {
-		return parallelLFT(sys1, sys2)
-	}
-
-	if parallelNeedsLFT(sys1, sys2) {
+	if topology.parallelRequiresLFT() {
 		return parallelLFT(sys1, sys2)
 	}
 
 	return parallelSimple(sys1, sys2)
-}
-
-func parallelNeedsLFT(sys1, sys2 *System) bool {
-	if !sys1.HasDelay() && !sys2.HasDelay() {
-		return false
-	}
-	_, m, p := sys1.Dims()
-
-	td1 := totalDelayMatrix(sys1)
-	td2 := totalDelayMatrix(sys2)
-	if td1 == nil && td2 == nil {
-		return false
-	}
-	if td1 == nil {
-		td1 = mat.NewDense(p, m, nil)
-	}
-	if td2 == nil {
-		td2 = mat.NewDense(p, m, nil)
-	}
-	return !mat.Equal(td1, td2)
 }
 
 func totalDelayMatrix(sys *System) *mat.Dense {

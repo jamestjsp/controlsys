@@ -222,16 +222,8 @@ func (f *FRD) EvalFr(freqIdx int) [][]complex128 {
 // FreqResponse returns the FRD data as a FreqResponseMatrix for compatibility.
 func (f *FRD) FreqResponse() *FreqResponseMatrix {
 	p, m := f.Dims()
-	nw := len(f.Omega)
-	pm := p * m
-	data := make([]complex128, nw*pm)
-	for k := 0; k < nw; k++ {
-		for i := 0; i < p; i++ {
-			for j := 0; j < m; j++ {
-				data[k*pm+i*m+j] = f.Response[k][i][j]
-			}
-		}
-	}
+	data := make([]complex128, len(f.Omega)*p*m)
+	copyComplexGridInto(data, f.Response, p, m)
 	return newFreqResponseMatrixOwned(data, f.Omega, p, m, f.InputName, f.OutputName)
 }
 
@@ -241,9 +233,29 @@ func (f *FRD) Bode() *BodeResult {
 	nw := len(f.Omega)
 	omega := make([]float64, nw)
 	copy(omega, f.Omega)
-	return bodeResultFromAccessor(omega, p, m, copyStringSlice(f.InputName), copyStringSlice(f.OutputName), func(k, i, j int) complex128 {
-		return f.Response[k][i][j]
-	})
+	pm := p * m
+	magDB := make([]float64, nw*pm)
+	phase := make([]float64, nw*pm)
+	for k := range omega {
+		for i := 0; i < p; i++ {
+			for j := 0; j < m; j++ {
+				off := (k*p+i)*m + j
+				h := f.Response[k][i][j]
+				magDB[off] = 20 * math.Log10(cmplx.Abs(h))
+				phase[off] = cmplx.Phase(h) * 180 / math.Pi
+			}
+		}
+	}
+	unwrapBodePhase(phase, p, m, nw)
+	return &BodeResult{
+		Omega:      omega,
+		magDB:      magDB,
+		phase:      phase,
+		p:          p,
+		m:          m,
+		InputName:  copyStringSlice(f.InputName),
+		OutputName: copyStringSlice(f.OutputName),
+	}
 }
 
 func (f *FRD) Nyquist() (*NyquistResult, error) {
@@ -296,10 +308,11 @@ func (f *FRD) Sigma() (*SigmaResult, error) {
 		copy(omega, f.Omega)
 		return &SigmaResult{Omega: omega, sv: sv, nSV: nsv}, nil
 	}
-
-	ws := newComplexSVDWorkspace(p, m)
+	response := newSampledComplexGridResponse(f.Response, f.Omega, p, m)
+	var ws *complexSVDWorkspace
+	ws = newComplexSVDWorkspace(p, m)
 	for k := 0; k < nw; k++ {
-		ws.singularValuesFromNested(sv[k*nsv:(k+1)*nsv], f.Response[k], p, m)
+		response.singularValues(sv[k*nsv:(k+1)*nsv], ws, k)
 	}
 	omega := make([]float64, nw)
 	copy(omega, f.Omega)
