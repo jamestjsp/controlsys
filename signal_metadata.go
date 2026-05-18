@@ -7,6 +7,11 @@ type signalMetadata struct {
 	notes  string
 }
 
+type frdMetadata struct {
+	input  []string
+	output []string
+}
+
 func metadataFromSystem(sys *System) signalMetadata {
 	return signalMetadata{
 		input:  sys.InputName,
@@ -64,6 +69,25 @@ func controllerMetadata(measurementNames, controlNames []string) signalMetadata 
 	}
 }
 
+func parallelMetadata(left, right *System, n1, n2 int) signalMetadata {
+	return signalMetadata{
+		input:  copyStringSlice(left.InputName),
+		output: copyStringSlice(left.OutputName),
+		state:  concatStringSlices([][]string{left.StateName, right.StateName}, []int{n1, n2}),
+	}
+}
+
+func lftVisibleMetadata(sys *System, inputs, outputs int) signalMetadata {
+	md := signalMetadata{notes: sys.Notes}
+	if sys.InputName != nil {
+		md.input = copyStringSlice(sys.InputName[:inputs])
+	}
+	if sys.OutputName != nil {
+		md.output = copyStringSlice(sys.OutputName[:outputs])
+	}
+	return md
+}
+
 func fohStateMetadata(src *System, n, m int) []string {
 	if src.StateName == nil && src.InputName == nil {
 		return nil
@@ -78,4 +102,25 @@ func fohStateMetadata(src *System, n, m int) []string {
 		}
 	}
 	return names
+}
+
+func frdSeriesMetadata(left, right *FRD) frdMetadata {
+	return frdMetadata{
+		input:  copyStringSlice(left.InputName),
+		output: copyStringSlice(right.OutputName),
+	}
+}
+
+func frdParallelMetadata(left *FRD) frdMetadata {
+	return frdMetadata{
+		input:  copyStringSlice(left.InputName),
+		output: copyStringSlice(left.OutputName),
+	}
+}
+
+func frdFeedbackMetadata(plant *FRD) frdMetadata {
+	return frdMetadata{
+		input:  copyStringSlice(plant.InputName),
+		output: copyStringSlice(plant.OutputName),
+	}
 }

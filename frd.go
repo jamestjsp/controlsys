@@ -406,6 +406,9 @@ func FRDMargin(f *FRD) (*MarginResult, error) {
 }
 
 func frdGridsMatch(f1, f2 *FRD) error {
+	if f1.Dt != f2.Dt {
+		return fmt.Errorf("frd: sample times %g != %g: %w", f1.Dt, f2.Dt, ErrDomainMismatch)
+	}
 	if len(f1.Omega) != len(f2.Omega) {
 		return fmt.Errorf("frd: frequency grid lengths %d != %d", len(f1.Omega), len(f2.Omega))
 	}
@@ -417,8 +420,40 @@ func frdGridsMatch(f1, f2 *FRD) error {
 	return nil
 }
 
+type frdInterconnection struct {
+	left, right *FRD
+	omega       []float64
+	dt          float64
+	nw          int
+}
+
+func newFRDInterconnection(left, right *FRD) (frdInterconnection, error) {
+	if err := frdGridsMatch(left, right); err != nil {
+		return frdInterconnection{}, err
+	}
+	return frdInterconnection{
+		left:  left,
+		right: right,
+		omega: left.Omega,
+		dt:    left.Dt,
+		nw:    len(left.Omega),
+	}, nil
+}
+
+func (ic frdInterconnection) newResult(p, m int, inputName, outputName []string) (*FRD, []complex128) {
+	resp, data := newFRDResponseStorage(ic.nw, p, m)
+	return &FRD{
+		Response:   resp,
+		Omega:      append([]float64(nil), ic.omega...),
+		Dt:         ic.dt,
+		InputName:  inputName,
+		OutputName: outputName,
+	}, data
+}
+
 func FRDSeries(f1, f2 *FRD) (*FRD, error) {
-	if err := frdGridsMatch(f1, f2); err != nil {
+	ic, err := newFRDInterconnection(f1, f2)
+	if err != nil {
 		return nil, err
 	}
 	p1, m1 := f1.Dims()
@@ -427,16 +462,17 @@ func FRDSeries(f1, f2 *FRD) (*FRD, error) {
 		return nil, fmt.Errorf("frd series: f1 outputs %d != f2 inputs %d", p1, m2)
 	}
 
-	nw := len(f1.Omega)
-	resp, data := newFRDResponseStorage(nw, p2, m1)
-	for w := 0; w < nw; w++ {
+	md := frdSeriesMetadata(f1, f2)
+	result, data := ic.newResult(p2, m1, md.input, md.output)
+	for w := 0; w < ic.nw; w++ {
 		cMulNestedInto(data[w*p2*m1:(w+1)*p2*m1], f2.Response[w], f1.Response[w], p2, p1, m1)
 	}
-	return &FRD{Response: resp, Omega: append([]float64(nil), f1.Omega...), Dt: f1.Dt}, nil
+	return result, nil
 }
 
 func FRDParallel(f1, f2 *FRD) (*FRD, error) {
-	if err := frdGridsMatch(f1, f2); err != nil {
+	ic, err := newFRDInterconnection(f1, f2)
+	if err != nil {
 		return nil, err
 	}
 	p1, m1 := f1.Dims()
@@ -445,16 +481,17 @@ func FRDParallel(f1, f2 *FRD) (*FRD, error) {
 		return nil, fmt.Errorf("frd parallel: dims (%d,%d) != (%d,%d)", p1, m1, p2, m2)
 	}
 
-	nw := len(f1.Omega)
-	resp, data := newFRDResponseStorage(nw, p1, m1)
-	for w := 0; w < nw; w++ {
+	md := frdParallelMetadata(f1)
+	result, data := ic.newResult(p1, m1, md.input, md.output)
+	for w := 0; w < ic.nw; w++ {
 		cAddNestedInto(data[w*p1*m1:(w+1)*p1*m1], f1.Response[w], f2.Response[w], p1, m1)
 	}
-	return &FRD{Response: resp, Omega: append([]float64(nil), f1.Omega...), Dt: f1.Dt}, nil
+	return result, nil
 }
 
 func FRDFeedback(plant, controller *FRD, sign float64) (*FRD, error) {
-	if err := frdGridsMatch(plant, controller); err != nil {
+	ic, err := newFRDInterconnection(plant, controller)
+	if err != nil {
 		return nil, err
 	}
 	pp, pm := plant.Dims()
@@ -466,11 +503,11 @@ func FRDFeedback(plant, controller *FRD, sign float64) (*FRD, error) {
 		return nil, fmt.Errorf("frd feedback: plant inputs %d != controller outputs %d", pm, cp)
 	}
 
-	nw := len(plant.Omega)
-	resp, data := newFRDResponseStorage(nw, pp, pm)
+	md := frdFeedbackMetadata(plant)
+	result, data := ic.newResult(pp, pm, md.input, md.output)
 	ws := newFRDFeedbackWorkspace(pp, pm)
 
-	for w := 0; w < nw; w++ {
+	for w := 0; w < ic.nw; w++ {
 		copyComplexMatrixInto(ws.g, plant.Response[w], pp, pm)
 		copyComplexMatrixInto(ws.k, controller.Response[w], cp, pp)
 		cMulInto(ws.kg, ws.k, ws.g, cp, pp, pm)
@@ -489,7 +526,7 @@ func FRDFeedback(plant, controller *FRD, sign float64) (*FRD, error) {
 		cMulInto(data[w*pp*pm:(w+1)*pp*pm], ws.g, ws.inv, pp, ws.n, pm)
 	}
 
-	return &FRD{Response: resp, Omega: append([]float64(nil), plant.Omega...), Dt: plant.Dt}, nil
+	return result, nil
 }
 
 type frdFeedbackWorkspace struct {

@@ -2,6 +2,70 @@ package controlsys
 
 import "fmt"
 
+type rationalChannel struct {
+	zeros []complex128
+	poles []complex128
+	gain  float64
+}
+
+func newRationalChannel(zeros, poles []complex128, gain float64) rationalChannel {
+	return rationalChannel{zeros: zeros, poles: poles, gain: gain}
+}
+
+func rationalChannelFromPolynomials(num, den []float64) (rationalChannel, error) {
+	num = trimLeadingFloatZeros(num)
+	if len(num) == 1 && num[0] == 0 {
+		return rationalChannel{gain: 0}, nil
+	}
+	zeros, err := Poly(num).Roots()
+	if err != nil {
+		return rationalChannel{}, err
+	}
+	poles, err := Poly(den).Roots()
+	if err != nil {
+		return rationalChannel{}, err
+	}
+	return rationalChannel{
+		zeros: zeros,
+		poles: poles,
+		gain:  channelPolynomialGain(num, den),
+	}, nil
+}
+
+func (ch rationalChannel) eval(s complex128) complex128 {
+	if ch.gain == 0 {
+		return 0
+	}
+	nz := len(ch.zeros)
+	np := len(ch.poles)
+	h := complex(ch.gain, 0)
+
+	shared := min(nz, np)
+	for k := 0; k < shared; k++ {
+		h *= (s - ch.zeros[k]) / (s - ch.poles[k])
+	}
+	for k := shared; k < nz; k++ {
+		h *= s - ch.zeros[k]
+	}
+	for k := shared; k < np; k++ {
+		h /= s - ch.poles[k]
+	}
+	return h
+}
+
+func (ch rationalChannel) numeratorForCommonPoles(commonPoles []complex128) []float64 {
+	if ch.gain == 0 {
+		return []float64{0}
+	}
+	missing := poleSetDifference(commonPoles, ch.poles)
+	poly := polyFromComplexRoots(sortConjugatePairs(ch.zeros))
+	if len(missing) > 0 {
+		missingPoly := polyFromComplexRoots(sortConjugatePairs(missing))
+		poly = poly.Mul(missingPoly)
+	}
+	return []float64(poly.Scale(ch.gain))
+}
+
 func trimLeadingFloatZeros(p []float64) []float64 {
 	i := 0
 	for i < len(p) && p[i] == 0 {

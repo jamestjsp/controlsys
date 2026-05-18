@@ -4,6 +4,7 @@ import (
 	"errors"
 	"math"
 	"math/cmplx"
+	"reflect"
 	"testing"
 
 	"gonum.org/v1/gonum/mat"
@@ -467,6 +468,61 @@ func TestFRDSeries_MIMO(t *testing.T) {
 	}
 }
 
+func TestFRDInterconnectionsPreserveSignalMetadata(t *testing.T) {
+	f1, err := NewFRD([][][]complex128{
+		{{1, 2}, {3, 4}},
+	}, []float64{1}, 0.1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f1.InputName = []string{"u1", "u2"}
+	f1.OutputName = []string{"v1", "v2"}
+	f2, err := NewFRD([][][]complex128{
+		{{5, 6}, {7, 8}},
+	}, []float64{1}, 0.1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f2.InputName = []string{"v1", "v2"}
+	f2.OutputName = []string{"y1", "y2"}
+
+	series, err := FRDSeries(f1, f2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(series.InputName, []string{"u1", "u2"}) {
+		t.Fatalf("series InputName = %v, want [u1 u2]", series.InputName)
+	}
+	if !reflect.DeepEqual(series.OutputName, []string{"y1", "y2"}) {
+		t.Fatalf("series OutputName = %v, want [y1 y2]", series.OutputName)
+	}
+	if series.Dt != 0.1 {
+		t.Fatalf("series Dt = %v, want 0.1", series.Dt)
+	}
+
+	parallel, err := FRDParallel(f1, f1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(parallel.InputName, []string{"u1", "u2"}) {
+		t.Fatalf("parallel InputName = %v, want [u1 u2]", parallel.InputName)
+	}
+	if !reflect.DeepEqual(parallel.OutputName, []string{"v1", "v2"}) {
+		t.Fatalf("parallel OutputName = %v, want [v1 v2]", parallel.OutputName)
+	}
+
+	feedback, err := FRDFeedback(f1, f2, -1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(feedback.InputName, []string{"u1", "u2"}) {
+		t.Fatalf("feedback InputName = %v, want [u1 u2]", feedback.InputName)
+	}
+	if !reflect.DeepEqual(feedback.OutputName, []string{"v1", "v2"}) {
+		t.Fatalf("feedback OutputName = %v, want [v1 v2]", feedback.OutputName)
+	}
+}
+
 func TestFRDParallel_MIMO(t *testing.T) {
 	f1, err := NewFRD([][][]complex128{
 		{{1 + 1i, 2 - 1i}, {3 + 0i, -1 + 2i}},
@@ -543,6 +599,20 @@ func TestFRDFeedback_Singular(t *testing.T) {
 	}
 	if _, err := FRDFeedback(plant, controller, -1); err == nil {
 		t.Fatal("expected singular FRD feedback error")
+	}
+}
+
+func TestFRDInterconnectionRejectsSampleTimeMismatch(t *testing.T) {
+	f1, err := NewFRD([][][]complex128{{{1}}}, []float64{1}, 0.1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f2, err := NewFRD([][][]complex128{{{1}}}, []float64{1}, 0.2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := FRDParallel(f1, f2); !errors.Is(err, ErrDomainMismatch) {
+		t.Fatalf("FRDParallel sample-time mismatch error = %v, want ErrDomainMismatch", err)
 	}
 }
 
