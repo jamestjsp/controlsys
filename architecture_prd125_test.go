@@ -61,6 +61,33 @@ func TestPRD125SampledTimeDomainWorkflowsPreserveOrientation(t *testing.T) {
 	}
 }
 
+func TestPRD125LsimAllowsZeroInputAutonomousSampledSignal(t *testing.T) {
+	sys, err := New(
+		mat.NewDense(2, 2, []float64{
+			0.5, 0.1,
+			0, 0.25,
+		}),
+		nil,
+		mat.NewDense(1, 2, []float64{1, 1}),
+		nil,
+		1.0,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tGrid := []float64{0, 1, 2, 3}
+	u := mat.NewDense(len(tGrid), 1, nil).Slice(0, len(tGrid), 0, 0).(*mat.Dense)
+	x0 := mat.NewVecDense(2, []float64{4, 8})
+	resp, err := Lsim(sys, u, tGrid, x0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	wantY := mat.NewDense(1, 4, []float64{12, 4.8, 2.1, 0.975})
+	assertMatClose(t, "autonomous Lsim output", resp.Y, wantY, 1e-12)
+}
+
 func TestPRD125FreqRespEstUsesStridedSampledSignals(t *testing.T) {
 	dt := 0.05
 	steps := 512

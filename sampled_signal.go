@@ -38,7 +38,7 @@ func validateSampledSignal(context string, data *mat.Dense, channels, samples in
 		return sampledSignal{}, fmt.Errorf("%s: sampled signal is %dx%d, want %dx%d: %w",
 			context, rows, cols, wantRows, wantCols, ErrDimensionMismatch)
 	}
-	if channels == 0 || samples == 0 {
+	if samples == 0 || (channels == 0 && orientation == sampledChannelsBySamples) {
 		return sampledSignal{}, ErrInsufficientData
 	}
 	return newSampledSignal(context, data, channels, samples, orientation), nil
@@ -74,6 +74,9 @@ func validateLsimInputSignal(context string, u *mat.Dense, steps, inputs int) (s
 func (s sampledSignal) channelsBySamplesDense() *mat.Dense {
 	if s.orientation == sampledChannelsBySamples {
 		return s.data
+	}
+	if s.channels == 0 {
+		return mat.NewDense(1, s.samples, nil).Slice(0, 0, 0, s.samples).(*mat.Dense)
 	}
 	uSim := mat.NewDense(s.channels, s.samples, nil)
 	src := s.data.RawMatrix()
