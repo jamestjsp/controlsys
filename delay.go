@@ -1647,9 +1647,9 @@ func (sys *System) GetDelayModel() (H *System, tau []float64) {
 
 		H = &System{
 			A:  denseCopy(sys.A),
-			B:  mat.NewDense(n, m+N, nil),
-			C:  mat.NewDense(p+N, n, nil),
-			D:  mat.NewDense(p+N, m+N, nil),
+			B:  newDense(n, m+N),
+			C:  newDense(p+N, n),
+			D:  newDense(p+N, m+N),
 			Dt: sys.Dt,
 		}
 		setBlock(H.B, 0, 0, sys.B)
@@ -1671,9 +1671,9 @@ func (sys *System) GetDelayModel() (H *System, tau []float64) {
 
 	H = &System{
 		A:  denseCopy(lft.A),
-		B:  mat.NewDense(n, m+N, nil),
-		C:  mat.NewDense(p+N, n, nil),
-		D:  mat.NewDense(p+N, m+N, nil),
+		B:  newDense(n, m+N),
+		C:  newDense(p+N, n),
+		D:  newDense(p+N, m+N),
 		Dt: lft.Dt,
 	}
 	if n > 0 {

@@ -23,6 +23,14 @@ type timeResponsePlan struct {
 	wasContinuous bool
 }
 
+type timeResponsePlanner struct {
+	sys *System
+}
+
+func newTimeResponsePlanner(sys *System) timeResponsePlanner {
+	return timeResponsePlanner{sys: sys}
+}
+
 type DampInfo struct {
 	Pole complex128
 	Wn   float64
@@ -101,19 +109,23 @@ func prepareDiscrete(sys *System, tFinal, dt float64) (dsys *System, actualDt fl
 }
 
 func prepareAutoTimeResponse(sys *System, tFinal, dt float64) (timeResponsePlan, error) {
-	if sys.IsDiscrete() {
-		actualDt := sys.Dt
+	return newTimeResponsePlanner(sys).auto(tFinal, dt)
+}
+
+func (p timeResponsePlanner) auto(tFinal, dt float64) (timeResponsePlan, error) {
+	if p.sys.IsDiscrete() {
+		actualDt := p.sys.Dt
 		if tFinal <= 0 {
 			var err error
-			_, tFinal, err = autoTimeParams(sys)
+			_, tFinal, err = autoTimeParams(p.sys)
 			if err != nil {
 				return timeResponsePlan{}, err
 			}
 		}
 		steps := int(tFinal/actualDt) + 1
 		return timeResponsePlan{
-			original: sys,
-			sim:      sys,
+			original: p.sys,
+			sim:      p.sys,
 			t:        makeTimeVector(steps, actualDt),
 			dt:       actualDt,
 			steps:    steps,
@@ -121,7 +133,7 @@ func prepareAutoTimeResponse(sys *System, tFinal, dt float64) (timeResponsePlan,
 	}
 
 	if tFinal <= 0 || dt <= 0 {
-		autoDt, autoTf, err2 := autoTimeParams(sys)
+		autoDt, autoTf, err2 := autoTimeParams(p.sys)
 		if err2 != nil {
 			return timeResponsePlan{}, err2
 		}
@@ -133,14 +145,14 @@ func prepareAutoTimeResponse(sys *System, tFinal, dt float64) (timeResponsePlan,
 		}
 	}
 
-	dsys, err := sys.DiscretizeZOH(dt)
+	dsys, err := p.sys.DiscretizeZOH(dt)
 	if err != nil {
 		return timeResponsePlan{}, fmt.Errorf("auto-discretize: %w", err)
 	}
 	actualDt := dt
 	steps := int(tFinal/dt) + 1
 	return timeResponsePlan{
-		original:      sys,
+		original:      p.sys,
 		sim:           dsys,
 		t:             makeTimeVector(steps, actualDt),
 		dt:            actualDt,
@@ -162,11 +174,15 @@ func (p timeResponsePlan) response(Y *mat.Dense) *TimeResponse {
 }
 
 func prepareLsimResponse(sys *System, u *mat.Dense, t []float64) (timeResponsePlan, *mat.Dense, error) {
+	return newTimeResponsePlanner(sys).lsim(u, t)
+}
+
+func (p timeResponsePlanner) lsim(u *mat.Dense, t []float64) (timeResponsePlan, *mat.Dense, error) {
 	if len(t) < 2 {
 		return timeResponsePlan{}, nil, fmt.Errorf("Lsim: need at least 2 time points: %w", ErrDimensionMismatch)
 	}
 
-	_, m, _ := sys.Dims()
+	_, m, _ := p.sys.Dims()
 	ur, uc := u.Dims()
 	if ur != len(t) || uc != m {
 		return timeResponsePlan{}, nil, fmt.Errorf("Lsim: u must be %d×%d, got %d×%d: %w", len(t), m, ur, uc, ErrDimensionMismatch)
@@ -178,25 +194,25 @@ func prepareLsimResponse(sys *System, u *mat.Dense, t []float64) (timeResponsePl
 	}
 
 	var dsys *System
-	if sys.IsContinuous() {
-		dsys, err = sys.DiscretizeZOH(dt)
+	if p.sys.IsContinuous() {
+		dsys, err = p.sys.DiscretizeZOH(dt)
 		if err != nil {
 			return timeResponsePlan{}, nil, fmt.Errorf("Lsim: %w", err)
 		}
 	} else {
-		if math.Abs(sys.Dt-dt)/sys.Dt > 1e-6 {
-			return timeResponsePlan{}, nil, fmt.Errorf("Lsim: time grid spacing %g does not match system Dt %g: %w", dt, sys.Dt, ErrDimensionMismatch)
+		if math.Abs(p.sys.Dt-dt)/p.sys.Dt > 1e-6 {
+			return timeResponsePlan{}, nil, fmt.Errorf("Lsim: time grid spacing %g does not match system Dt %g: %w", dt, p.sys.Dt, ErrDimensionMismatch)
 		}
-		dsys = sys
+		dsys = p.sys
 	}
 
 	plan := timeResponsePlan{
-		original:      sys,
+		original:      p.sys,
 		sim:           dsys,
 		t:             t,
 		dt:            dt,
 		steps:         len(t),
-		wasContinuous: sys.IsContinuous(),
+		wasContinuous: p.sys.IsContinuous(),
 	}
 	return plan, transposeSamplesToChannels(u, len(t), m), nil
 }

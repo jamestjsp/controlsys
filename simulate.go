@@ -32,23 +32,31 @@ func (sys *System) Simulate(u *mat.Dense, x0 *mat.VecDense, opts *SimulateOpts) 
 		return nil, err
 	}
 
-	if sys.HasInternalDelay() {
-		hasIODelay := sys.Delay != nil || sys.InputDelay != nil || sys.OutputDelay != nil
+	return simulationDispatcher{sys: sys}.run(u, x0, opts)
+}
+
+type simulationDispatcher struct {
+	sys *System
+}
+
+func (d simulationDispatcher) run(u *mat.Dense, x0 *mat.VecDense, opts *SimulateOpts) (*Response, error) {
+	if d.sys.HasInternalDelay() {
+		hasIODelay := d.sys.Delay != nil || d.sys.InputDelay != nil || d.sys.OutputDelay != nil
 		if hasIODelay {
-			merged, err := sys.PullDelaysToLFT()
+			merged, err := d.sys.PullDelaysToLFT()
 			if err != nil {
 				return nil, err
 			}
 			return merged.simulateWithInternalDelay(u, x0)
 		}
-		return sys.simulateWithInternalDelay(u, x0)
+		return d.sys.simulateWithInternalDelay(u, x0)
 	}
 
-	if sys.HasDelay() {
-		return sys.simulateWithDelay(u, x0)
+	if d.sys.HasDelay() {
+		return d.sys.simulateWithDelay(u, x0)
 	}
 
-	return sys.simulateNoDelay(u, x0, opts)
+	return d.sys.simulateNoDelay(u, x0, opts)
 }
 
 func (sys *System) validateSimulateInputs(u *mat.Dense, x0 *mat.VecDense, opts *SimulateOpts) error {

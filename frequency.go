@@ -18,7 +18,7 @@ type FreqResponseMatrix struct {
 }
 
 func (f *FreqResponseMatrix) At(freq, output, input int) complex128 {
-	return f.Data[freq*f.P*f.M+output*f.M+input]
+	return newSampledComplexResponse(f.Data, f.Omega, f.P, f.M).at(freq, output, input)
 }
 
 func newFreqResponseMatrix(data []complex128, omega []float64, p, m int, inputName, outputName []string) *FreqResponseMatrix {
@@ -55,9 +55,8 @@ func (b *BodeResult) PhaseAt(freq, output, input int) float64 {
 }
 
 func bodeResultFromResponse(omega []float64, data []complex128, p, m int, inputName, outputName []string) *BodeResult {
-	return bodeResultFromAccessor(omega, p, m, inputName, outputName, func(k, i, j int) complex128 {
-		return data[(k*p+i)*m+j]
-	})
+	response := newSampledComplexResponse(data, omega, p, m)
+	return bodeResultFromAccessor(omega, p, m, inputName, outputName, response.at)
 }
 
 func bodeResultFromAccessor(omega []float64, p, m int, inputName, outputName []string, at func(k, i, j int) complex128) *BodeResult {
@@ -714,24 +713,18 @@ func (sys *System) Sigma(omega []float64, nPoints int) (*SigmaResult, error) {
 		return &SigmaResult{Omega: omega, nSV: nSV, InputName: copyStringSlice(sys.InputName), OutputName: copyStringSlice(sys.OutputName)}, nil
 	}
 
-	nw := len(omega)
-	pm := p * m
 	data := resp.Data
 
-	if p == 1 && m == 1 {
-		sv := make([]float64, nw)
-		for k := range nw {
-			sv[k] = cmplx.Abs(data[k])
-		}
-		return &SigmaResult{Omega: omega, sv: sv, nSV: 1, InputName: copyStringSlice(sys.InputName), OutputName: copyStringSlice(sys.OutputName)}, nil
+	nw := len(omega)
+	response := newSampledComplexResponse(data, omega, p, m)
+	allSV := make([]float64, nw*nSV)
+	var ws *complexSVDWorkspace
+	if p != 1 || m != 1 {
+		ws = newComplexSVDWorkspace(p, m)
 	}
 
-	ws := newComplexSVDWorkspace(p, m)
-	allSV := make([]float64, nw*nSV)
-
 	for k := range nw {
-		base := k * pm
-		ws.singularValuesFromFlat(allSV[k*nSV:(k+1)*nSV], data, base, p, m)
+		response.singularValues(allSV[k*nSV:(k+1)*nSV], ws, k)
 	}
 
 	return &SigmaResult{Omega: omega, sv: allSV, nSV: nSV, InputName: copyStringSlice(sys.InputName), OutputName: copyStringSlice(sys.OutputName)}, nil
