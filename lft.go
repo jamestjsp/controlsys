@@ -187,60 +187,12 @@ func solveLFTLoop(D22M, DDelta *mat.Dense, w int) (*mat.Dense, error) {
 func lftWithDelay(M, Delta *System, nu, ny int) (*System, error) {
 	_, mM, pM := M.Dims()
 
-	savedInputDelay := make([]float64, nu)
-	if M.InputDelay != nil {
-		copy(savedInputDelay, M.InputDelay[:nu])
-	}
-	savedOutputDelay := make([]float64, ny)
-	if M.OutputDelay != nil {
-		copy(savedOutputDelay, M.OutputDelay[:ny])
-	}
-	hasExtInput := false
-	for _, v := range savedInputDelay {
-		if v != 0 {
-			hasExtInput = true
-			break
-		}
-	}
-	hasExtOutput := false
-	for _, v := range savedOutputDelay {
-		if v != 0 {
-			hasExtOutput = true
-			break
-		}
-	}
+	savedInputDelay := selectLeadingVisibleDelays(M.InputDelay, nu)
+	savedOutputDelay := selectLeadingVisibleDelays(M.OutputDelay, ny)
 
 	mCopy := M.Copy()
-	if mCopy.InputDelay != nil {
-		for i := 0; i < nu; i++ {
-			mCopy.InputDelay[i] = 0
-		}
-		allZero := true
-		for _, v := range mCopy.InputDelay {
-			if v != 0 {
-				allZero = false
-				break
-			}
-		}
-		if allZero {
-			mCopy.InputDelay = nil
-		}
-	}
-	if mCopy.OutputDelay != nil {
-		for i := 0; i < ny; i++ {
-			mCopy.OutputDelay[i] = 0
-		}
-		allZero := true
-		for _, v := range mCopy.OutputDelay {
-			if v != 0 {
-				allZero = false
-				break
-			}
-		}
-		if allZero {
-			mCopy.OutputDelay = nil
-		}
-	}
+	mCopy.InputDelay = clearLeadingDelays(mCopy.InputDelay, nu)
+	mCopy.OutputDelay = clearLeadingDelays(mCopy.OutputDelay, ny)
 
 	mLFT, err := mCopy.PullDelaysToLFT()
 	if err != nil {
@@ -356,11 +308,11 @@ func lftWithDelay(M, Delta *System, nu, ny int) (*System, error) {
 		if err != nil {
 			return nil, err
 		}
-		if hasExtInput {
-			sys.InputDelay = savedInputDelay
+		if savedInputDelay.hasNonzero {
+			sys.InputDelay = savedInputDelay.values
 		}
-		if hasExtOutput {
-			sys.OutputDelay = savedOutputDelay
+		if savedOutputDelay.hasNonzero {
+			sys.OutputDelay = savedOutputDelay.values
 		}
 		if M.InputName != nil {
 			sys.InputName = copyStringSlice(M.InputName[:nu])
@@ -388,7 +340,9 @@ func lftWithDelay(M, Delta *System, nu, ny int) (*System, error) {
 		D12iD = extractBlock(dH.D, 0, w, z, ND)
 		D21iD = extractBlock(dH.D, z, 0, ND, w)
 		GD12iD = mulDense(G, D12iD)
-		FD12iMw = mulDense(F, D12iMw)
+		if NM > 0 {
+			FD12iMw = mulDense(F, D12iMw)
+		}
 		FD22pD12iD = mulDense(F, mulDense(D22p, D12iD))
 	}
 
@@ -513,11 +467,11 @@ func lftWithDelay(M, Delta *System, nu, ny int) (*System, error) {
 	if err != nil {
 		return nil, err
 	}
-	if hasExtInput {
-		result.InputDelay = savedInputDelay
+	if savedInputDelay.hasNonzero {
+		result.InputDelay = savedInputDelay.values
 	}
-	if hasExtOutput {
-		result.OutputDelay = savedOutputDelay
+	if savedOutputDelay.hasNonzero {
+		result.OutputDelay = savedOutputDelay.values
 	}
 	if M.InputName != nil {
 		result.InputName = copyStringSlice(M.InputName[:nu])

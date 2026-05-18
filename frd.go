@@ -5,8 +5,6 @@ import (
 	"math"
 	"math/cmplx"
 	"sort"
-
-	"gonum.org/v1/gonum/lapack"
 )
 
 // FRD represents a Frequency Response Data model — measured or computed
@@ -299,55 +297,13 @@ func (f *FRD) Sigma() (*SigmaResult, error) {
 		return &SigmaResult{Omega: omega, sv: sv, nSV: nsv}, nil
 	}
 
-	ws := newFRDSVDWorkspace(p, m)
+	ws := newComplexSVDWorkspace(p, m)
 	for k := 0; k < nw; k++ {
-		H := f.Response[k]
-		for i := 0; i < p; i++ {
-			top := i * ws.cols
-			bottom := (p + i) * ws.cols
-			for j := 0; j < m; j++ {
-				h := H[i][j]
-				ws.block[top+j] = real(h)
-				ws.block[top+m+j] = -imag(h)
-				ws.block[bottom+j] = imag(h)
-				ws.block[bottom+m+j] = real(h)
-			}
-		}
-		impl.Dgesvd(lapack.SVDNone, lapack.SVDNone, ws.rows, ws.cols, ws.block, ws.cols,
-			ws.fullSV, nil, 1, nil, 1, ws.work, len(ws.work))
-		for i := 0; i < nsv; i++ {
-			sv[k*nsv+i] = ws.fullSV[2*i]
-		}
+		ws.singularValuesFromNested(sv[k*nsv:(k+1)*nsv], f.Response[k], p, m)
 	}
 	omega := make([]float64, nw)
 	copy(omega, f.Omega)
 	return &SigmaResult{Omega: omega, sv: sv, nSV: nsv}, nil
-}
-
-type frdSVDWorkspace struct {
-	block  []float64
-	fullSV []float64
-	work   []float64
-	rows   int
-	cols   int
-}
-
-func newFRDSVDWorkspace(p, m int) *frdSVDWorkspace {
-	rows := 2 * p
-	cols := 2 * m
-	fullSV := make([]float64, min(rows, cols))
-	block := make([]float64, rows*cols)
-	workQuery := make([]float64, 1)
-	impl.Dgesvd(lapack.SVDNone, lapack.SVDNone, rows, cols, block, cols,
-		fullSV, nil, 1, nil, 1, workQuery, -1)
-	work := make([]float64, int(workQuery[0]))
-	return &frdSVDWorkspace{
-		block:  block,
-		fullSV: fullSV,
-		work:   work,
-		rows:   rows,
-		cols:   cols,
-	}
 }
 
 func FRDMargin(f *FRD) (*MarginResult, error) {
