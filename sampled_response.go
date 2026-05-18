@@ -3,7 +3,16 @@ package controlsys
 import "math/cmplx"
 
 type sampledComplexResponse struct {
-	data  []complex128
+	data   []complex128
+	layout sampledResponseLayout
+}
+
+type sampledScalarResponse struct {
+	data   []float64
+	layout sampledResponseLayout
+}
+
+type sampledResponseLayout struct {
 	omega []float64
 	p, m  int
 }
@@ -15,11 +24,27 @@ type sampledComplexGridResponse struct {
 }
 
 func newSampledComplexResponse(data []complex128, omega []float64, p, m int) sampledComplexResponse {
-	return sampledComplexResponse{data: data, omega: omega, p: p, m: m}
+	return sampledComplexResponse{data: data, layout: newSampledResponseLayout(omega, p, m)}
+}
+
+func newSampledScalarResponse(data []float64, omega []float64, p, m int) sampledScalarResponse {
+	return sampledScalarResponse{data: data, layout: newSampledResponseLayout(omega, p, m)}
+}
+
+func newSampledResponseLayout(omega []float64, p, m int) sampledResponseLayout {
+	return sampledResponseLayout{omega: omega, p: p, m: m}
+}
+
+func (l sampledResponseLayout) offset(freq, output, input int) int {
+	return freq*l.p*l.m + output*l.m + input
+}
+
+func (l sampledResponseLayout) blockOffset(freq int) int {
+	return freq * l.p * l.m
 }
 
 func (r sampledComplexResponse) offset(freq, output, input int) int {
-	return freq*r.p*r.m + output*r.m + input
+	return r.layout.offset(freq, output, input)
 }
 
 func (r sampledComplexResponse) at(freq, output, input int) complex128 {
@@ -27,24 +52,32 @@ func (r sampledComplexResponse) at(freq, output, input int) complex128 {
 }
 
 func (r sampledComplexResponse) blockOffset(freq int) int {
-	return freq * r.p * r.m
+	return r.layout.blockOffset(freq)
 }
 
 func (r sampledComplexResponse) singularValues(dst []float64, ws *complexSVDWorkspace, freq int) {
-	if r.p == 1 && r.m == 1 {
+	if r.layout.p == 1 && r.layout.m == 1 {
 		dst[0] = cmplx.Abs(r.data[freq])
 		return
 	}
-	ws.singularValuesFromFlat(dst, r.data, r.blockOffset(freq), r.p, r.m)
+	ws.singularValuesFromFlat(dst, r.data, r.blockOffset(freq), r.layout.p, r.layout.m)
 }
 
 func (r sampledComplexResponse) copyToGrid(dst [][][]complex128) {
-	for k := range r.omega {
+	for k := range r.layout.omega {
 		base := r.blockOffset(k)
-		for i := 0; i < r.p; i++ {
-			copy(dst[k][i], r.data[base+i*r.m:base+(i+1)*r.m])
+		for i := 0; i < r.layout.p; i++ {
+			copy(dst[k][i], r.data[base+i*r.layout.m:base+(i+1)*r.layout.m])
 		}
 	}
+}
+
+func (r sampledScalarResponse) at(freq, output, input int) float64 {
+	return r.data[r.layout.offset(freq, output, input)]
+}
+
+func (r sampledScalarResponse) set(freq, output, input int, value float64) {
+	r.data[r.layout.offset(freq, output, input)] = value
 }
 
 func newSampledComplexGridResponse(response [][][]complex128, omega []float64, p, m int) sampledComplexGridResponse {

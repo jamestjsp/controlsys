@@ -236,13 +236,14 @@ func (f *FRD) Bode() *BodeResult {
 	pm := p * m
 	magDB := make([]float64, nw*pm)
 	phase := make([]float64, nw*pm)
+	mag := newSampledScalarResponse(magDB, omega, p, m)
+	phaseResp := newSampledScalarResponse(phase, omega, p, m)
 	for k := range omega {
 		for i := 0; i < p; i++ {
 			for j := 0; j < m; j++ {
-				off := (k*p+i)*m + j
 				h := f.Response[k][i][j]
-				magDB[off] = 20 * math.Log10(cmplx.Abs(h))
-				phase[off] = cmplx.Phase(h) * 180 / math.Pi
+				mag.set(k, i, j, 20*math.Log10(cmplx.Abs(h)))
+				phaseResp.set(k, i, j, cmplx.Phase(h)*180/math.Pi)
 			}
 		}
 	}

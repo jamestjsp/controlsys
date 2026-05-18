@@ -285,6 +285,30 @@ func TestSimulateWorkspaceReuse(t *testing.T) {
 	}
 }
 
+func TestSimulateWithExternalDelayUsesOutputBuffer(t *testing.T) {
+	sys, err := New(
+		mat.NewDense(1, 1, []float64{0.5}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{2}),
+		mat.NewDense(1, 1, []float64{0.25}),
+		1,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sys.InputDelay = []float64{1}
+
+	u := mat.NewDense(1, 4, []float64{1, 2, 3, 4})
+	yBuf := mat.NewDense(1, 4, nil)
+	resp, err := sys.Simulate(u, nil, &SimulateOpts{yBuf: yBuf})
+	if err != nil {
+		t.Fatalf("Simulate with external delay: %v", err)
+	}
+	if resp.Y != yBuf {
+		t.Fatalf("Simulate with external delay did not use provided output buffer")
+	}
+}
+
 func TestSimulateNilX0(t *testing.T) {
 	A := mat.NewDense(1, 1, []float64{0.9})
 	B := mat.NewDense(1, 1, []float64{1})

@@ -92,7 +92,6 @@ func (p delayConversionPolicy) replaceContinuousExternal(sys *System, context st
 		return sys.Copy(), nil
 	}
 
-	_, m, outputs := sys.Dims()
 	cur := sys.Copy()
 	if cur.Delay != nil {
 		decomp := decomposedDelayMatrix(cur.Delay)
@@ -105,42 +104,26 @@ func (p delayConversionPolicy) replaceContinuousExternal(sys *System, context st
 	}
 
 	result := &System{A: cur.A, B: cur.B, C: cur.C, D: cur.D, Dt: cur.Dt}
-	if cur.InputDelay != nil {
-		for j := m - 1; j >= 0; j-- {
-			tau := cur.InputDelay[j]
-			if tau == 0 {
-				continue
-			}
-			pade, err := PadeDelay(tau, p.padeOrder)
-			if err != nil {
-				return nil, err
-			}
-			diag, err := buildDiagWithPade(j, m, pade)
-			if err != nil {
-				return nil, err
-			}
-			result, err = Series(diag, result)
+	if delaySliceHasNonzero(cur.InputDelay) {
+		bank, err := buildContinuousPadeDelayBank(cur.InputDelay, p.padeOrder)
+		if err != nil {
+			return nil, err
+		}
+		if bank != nil {
+			result, err = Series(bank, result)
 			if err != nil {
 				return nil, err
 			}
 		}
 	}
 
-	if cur.OutputDelay != nil {
-		for i := outputs - 1; i >= 0; i-- {
-			tau := cur.OutputDelay[i]
-			if tau == 0 {
-				continue
-			}
-			pade, err := PadeDelay(tau, p.padeOrder)
-			if err != nil {
-				return nil, err
-			}
-			diag, err := buildDiagWithPade(i, outputs, pade)
-			if err != nil {
-				return nil, err
-			}
-			result, err = Series(result, diag)
+	if delaySliceHasNonzero(cur.OutputDelay) {
+		bank, err := buildContinuousPadeDelayBank(cur.OutputDelay, p.padeOrder)
+		if err != nil {
+			return nil, err
+		}
+		if bank != nil {
+			result, err = Series(result, bank)
 			if err != nil {
 				return nil, err
 			}

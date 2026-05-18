@@ -47,13 +47,13 @@ func (d simulationDispatcher) run(u *mat.Dense, x0 *mat.VecDense, opts *Simulate
 			if err != nil {
 				return nil, err
 			}
-			return merged.simulateWithInternalDelay(u, x0)
+			return merged.simulateWithInternalDelay(u, x0, opts)
 		}
-		return d.sys.simulateWithInternalDelay(u, x0)
+		return d.sys.simulateWithInternalDelay(u, x0, opts)
 	}
 
 	if d.sys.HasDelay() {
-		return d.sys.simulateWithDelay(u, x0)
+		return d.sys.simulateWithDelay(u, x0, opts)
 	}
 
 	return d.sys.simulateNoDelay(u, x0, opts)
@@ -216,8 +216,8 @@ func (sys *System) simulateNoDelay(u *mat.Dense, x0 *mat.VecDense, opts *Simulat
 	}, nil
 }
 
-func (sys *System) simulateWithDelay(u *mat.Dense, x0 *mat.VecDense) (*Response, error) {
-	problem := newSimulationProblem(sys, u, x0, nil)
+func (sys *System) simulateWithDelay(u *mat.Dense, x0 *mat.VecDense, opts *SimulateOpts) (*Response, error) {
+	problem := newSimulationProblem(sys, u, x0, opts)
 	n, m, p, steps := problem.n, problem.m, problem.p, problem.steps
 
 	totalDelay := sys.TotalDelay()
@@ -231,7 +231,7 @@ func (sys *System) simulateWithDelay(u *mat.Dense, x0 *mat.VecDense) (*Response,
 		return &Response{Y: nil, XFinal: xFinal}, nil
 	}
 
-	Y := mat.NewDense(p, steps, nil)
+	Y := problem.newY()
 
 	if n > 0 && x0 != nil {
 		x := mat.NewVecDense(n, nil)
@@ -330,8 +330,8 @@ func (sys *System) simulateWithDelay(u *mat.Dense, x0 *mat.VecDense) (*Response,
 	return &Response{Y: Y, XFinal: xFinal}, nil
 }
 
-func (sys *System) simulateWithInternalDelay(u *mat.Dense, x0 *mat.VecDense) (*Response, error) {
-	problem := newSimulationProblem(sys, u, x0, nil)
+func (sys *System) simulateWithInternalDelay(u *mat.Dense, x0 *mat.VecDense, opts *SimulateOpts) (*Response, error) {
+	problem := newSimulationProblem(sys, u, x0, opts)
 	n, m, p, steps := problem.n, problem.m, problem.p, problem.steps
 	N := sys.internalDelayCount()
 
@@ -353,7 +353,7 @@ func (sys *System) simulateWithInternalDelay(u *mat.Dense, x0 *mat.VecDense) (*R
 		bufSize = 1
 	}
 
-	Y := mat.NewDense(p, steps, nil)
+	Y := problem.newY()
 	x := problem.newXFinal()
 
 	var zBuf []float64
