@@ -42,7 +42,7 @@ func NewTuningGoal(spec TuningGoalSpec) (TuningGoal, error) {
 	if spec.Name == "" {
 		return TuningGoal{}, fmt.Errorf("NewTuningGoal: name is empty: %w", ErrDimensionMismatch)
 	}
-	if spec.Max < 0 || spec.Min < 0 {
+	if spec.Type != TuningGoalPole && (spec.Max < 0 || spec.Min < 0) {
 		return TuningGoal{}, fmt.Errorf("NewTuningGoal: negative bound: %w", ErrDimensionMismatch)
 	}
 	return TuningGoal{spec: spec}, nil
