@@ -48,6 +48,24 @@ func TestSystuneTunesSmallMIMOTunableGain(t *testing.T) {
 	}
 }
 
+func TestSystuneUsesTunableBlockInterface(t *testing.T) {
+	plant := makeSISO(-2, 1, 1, 0)
+	k, _ := NewTunableReal("K", 0.1, TunableBounds{Lower: 0.1, Upper: 5})
+	controller := wrappedTunableGain{gain: NewTunableGain("Kblock", [][]*TunableReal{{k}}, 0)}
+	closed, err := NewGeneralizedClosedLoop("loop", plant, controller, "u")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Systune(closed, []TuningGoal{NewTrackingGoal("track", 0.4)}, &SystuneOptions{GridPoints: 9})
+	if err != nil {
+		t.Fatalf("Systune: %v", err)
+	}
+	if !result.Pass {
+		t.Fatalf("expected wrapped tunable block to tune, got %#v", result)
+	}
+}
+
 func TestSystuneUnsupportedControllerFailsClearly(t *testing.T) {
 	plant := makeSISO(-1, 1, 1, 0)
 	fixed := makeSISO(-2, 1, 1, 0)
@@ -58,4 +76,24 @@ func TestSystuneUnsupportedControllerFailsClearly(t *testing.T) {
 	if _, err := Systune(closed, []TuningGoal{NewWeightedGainGoal("gain", 1)}, nil); err == nil {
 		t.Fatal("expected unsupported fixed controller to fail")
 	}
+}
+
+type wrappedTunableGain struct {
+	gain *TunableGain
+}
+
+func (w wrappedTunableGain) CurrentSystem() (*System, error) {
+	return w.gain.CurrentSystem()
+}
+
+func (w wrappedTunableGain) FreeParameters() []*TunableReal {
+	return w.gain.FreeParameters()
+}
+
+func (w wrappedTunableGain) SampleBlock(values map[string]float64) (TunableBlock, error) {
+	sampled, err := w.gain.Sample(values)
+	if err != nil {
+		return nil, err
+	}
+	return wrappedTunableGain{gain: sampled}, nil
 }
