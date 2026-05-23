@@ -382,6 +382,38 @@ func benchCanon(b *testing.B, form CanonForm, n int) {
 	}
 }
 
+func BenchmarkDescriptorToExplicit_N10(b *testing.B) {
+	sys := benchDescriptorSystem(b, 10, 2, 2)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := sys.ToExplicit(); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkFixedInputReduction_N10(b *testing.B) {
+	sys := benchSysNonSym(10, 4, 2)
+	fixed := map[int]float64{1: 0.5, 3: -2}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := sys.FixedInputReduction(fixed, "offset"); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func benchDescriptorSystem(b *testing.B, n, m, p int) *System {
+	b.Helper()
+	sys := benchSysNonSym(n, m, p)
+	E := mat.NewDense(n, n, nil)
+	for i := 0; i < n; i++ {
+		E.Set(i, i, 1+0.1*float64(i+1))
+	}
+	sys.E = E
+	return sys
+}
+
 func BenchmarkStabsep_N2(b *testing.B)   { benchStabsep(b, 2) }
 func BenchmarkStabsep_N10(b *testing.B)  { benchStabsep(b, 10) }
 func BenchmarkStabsep_N50(b *testing.B)  { benchStabsep(b, 50) }
