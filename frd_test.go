@@ -167,6 +167,110 @@ func TestFRD_OwnsConstructedAndExportedSampledResponseData(t *testing.T) {
 	}
 }
 
+func TestFRDConvenienceOperationsPreserveGridAndMetadata(t *testing.T) {
+	frd, err := NewFRD([][][]complex128{
+		{{3 + 4i, 1 - 1i}, {0 + 2i, -2}},
+		{{1 + 0i, 0 + 3i}, {4 + 0i, 0 - 1i}},
+		{{0 + 2i, 2 + 0i}, {1 + 1i, -30 + 40i}},
+	}, []float64{0.5, 1, 2}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	frd.InputName = []string{"u1", "u2"}
+	frd.OutputName = []string{"y1", "y2"}
+
+	abs := frd.Abs()
+	if abs.At(0, 0, 0) != 5 {
+		t.Fatalf("Abs response[0][0][0] = %v, want 5", abs.At(0, 0, 0))
+	}
+	if abs.Omega[2] != 2 || abs.InputName[1] != "u2" || abs.OutputName[0] != "y1" {
+		t.Fatalf("Abs did not preserve frequency grid or metadata")
+	}
+
+	selected, err := frd.SelectFrequencies([]int{0, 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if selected.NumFrequencies() != 2 || selected.Omega[1] != 2 {
+		t.Fatalf("selected grid = %v, want [0.5 2]", selected.Omega)
+	}
+	if selected.At(1, 1, 1) != -30+40i {
+		t.Fatalf("selected response = %v, want -30+40i", selected.At(1, 1, 1))
+	}
+
+	ranged, err := frd.SelectFrequencyRange(0.75, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(ranged.Omega, []float64{1, 2}) {
+		t.Fatalf("range grid = %v, want [1 2]", ranged.Omega)
+	}
+
+	mapped, err := frd.MapResponse(func(freq int, omega float64, h [][]complex128) ([][]complex128, error) {
+		out := make([][]complex128, len(h))
+		for i := range h {
+			out[i] = make([]complex128, len(h[i]))
+			for j := range h[i] {
+				out[i][j] = complex(omega, 0) * h[i][j] * complex(float64(freq+1), 0)
+			}
+		}
+		return out, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mapped.At(1, 0, 1) != 0+6i {
+		t.Fatalf("mapped response = %v, want 0+6i", mapped.At(1, 0, 1))
+	}
+
+	peak, err := frd.PeakGain()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if peak.Frequency != 2 {
+		t.Fatalf("peak frequency = %g, want 2", peak.Frequency)
+	}
+	if peak.Gain <= 5 {
+		t.Fatalf("peak gain = %g, want above 5 for MIMO sample", peak.Gain)
+	}
+}
+
+func TestFRDConcatValidatesCompatibilityAndFrequencyOrder(t *testing.T) {
+	left, err := NewFRD([][][]complex128{{{1}}, {{2}}}, []float64{1, 2}, 0.1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	right, err := NewFRD([][][]complex128{{{3}}, {{4}}}, []float64{3, 4}, 0.1)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	joined, err := FRDConcat(left, right)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(joined.Omega, []float64{1, 2, 3, 4}) {
+		t.Fatalf("joined omega = %v, want [1 2 3 4]", joined.Omega)
+	}
+	if joined.At(3, 0, 0) != 4 {
+		t.Fatalf("joined final response = %v, want 4", joined.At(3, 0, 0))
+	}
+
+	_, err = FRDConcat(left, left)
+	if !errors.Is(err, ErrDimensionMismatch) {
+		t.Fatalf("duplicate frequency error = %v, want ErrDimensionMismatch", err)
+	}
+
+	differentDt, err := NewFRD([][][]complex128{{{5}}}, []float64{3}, 0.2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = FRDConcat(left, differentDt)
+	if !errors.Is(err, ErrDomainMismatch) {
+		t.Fatalf("domain mismatch error = %v, want ErrDomainMismatch", err)
+	}
+}
+
 func TestFRD_Discrete(t *testing.T) {
 	sys, err := New(
 		mat.NewDense(1, 1, []float64{0.5}),

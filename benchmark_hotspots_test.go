@@ -157,6 +157,38 @@ func benchFRDFeedback(b *testing.B, n, m, p, nw int) {
 	}
 }
 
+func BenchmarkFRDAbs_MIMO_2000(b *testing.B) {
+	frd := benchFRDFromSys(benchSysNonSym(10, 3, 4), 2000)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		frd.Abs()
+	}
+}
+
+func BenchmarkFRDSelectFrequencies_MIMO_2000(b *testing.B) {
+	frd := benchFRDFromSys(benchSysNonSym(10, 3, 4), 2000)
+	indices := make([]int, 0, 1000)
+	for i := 0; i < 2000; i += 2 {
+		indices = append(indices, i)
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := frd.SelectFrequencies(indices); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkFRDPeakGain_MIMO_2000(b *testing.B) {
+	frd := benchFRDFromSys(benchSysNonSym(10, 3, 4), 2000)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := frd.PeakGain(); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
 // --------------- Time-response wrappers ---------------
 
 func BenchmarkStep_SISO_N2(b *testing.B)  { benchStep(b, 2, 1, 1) }
@@ -169,6 +201,23 @@ func benchStep(b *testing.B, n, m, p int) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		Step(sys, 10)
+	}
+}
+
+func BenchmarkStepInfo_SISO_N10(b *testing.B) { benchStepInfo(b, 10, 1, 1) }
+func BenchmarkStepInfo_MIMO_N10(b *testing.B) { benchStepInfo(b, 10, 3, 4) }
+
+func benchStepInfo(b *testing.B, n, m, p int) {
+	sys := benchSysNonSym(n, m, p)
+	resp, err := Step(sys, 10)
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := StepInfo(resp, nil); err != nil {
+			b.Fatal(err)
+		}
 	}
 }
 

@@ -208,6 +208,180 @@ func (f *FRD) At(freqIdx, i, j int) complex128 {
 	return f.Response[freqIdx][i][j]
 }
 
+type FRDResponseMapper func(freq int, omega float64, h [][]complex128) ([][]complex128, error)
+
+type FRDPeakGainResult struct {
+	Gain      float64
+	Frequency float64
+	Index     int
+}
+
+func (f *FRD) Abs() *FRD {
+	p, m := f.Dims()
+	nw := len(f.Omega)
+	response, data := newFRDResponseStorage(nw, p, m)
+	pm := p * m
+	for k := 0; k < nw; k++ {
+		base := k * pm
+		for i := 0; i < p; i++ {
+			for j := 0; j < m; j++ {
+				data[base+i*m+j] = complex(cmplx.Abs(f.Response[k][i][j]), 0)
+			}
+		}
+	}
+	return f.withResponse(response)
+}
+
+func (f *FRD) SelectFrequencies(indices []int) (*FRD, error) {
+	p, m := f.Dims()
+	response, data := newFRDResponseStorage(len(indices), p, m)
+	omega := make([]float64, len(indices))
+	prev := -1
+	pm := p * m
+	for out, idx := range indices {
+		if idx < 0 || idx >= len(f.Omega) {
+			return nil, fmt.Errorf("FRD SelectFrequencies: index %d out of range: %w", idx, ErrDimensionMismatch)
+		}
+		if idx <= prev {
+			return nil, fmt.Errorf("FRD SelectFrequencies: indices must be strictly increasing: %w", ErrDimensionMismatch)
+		}
+		prev = idx
+		omega[out] = f.Omega[idx]
+		copyComplexMatrixInto(data[out*pm:(out+1)*pm], f.Response[idx], p, m)
+	}
+	return f.withResponseAndOmega(response, omega), nil
+}
+
+func (f *FRD) SelectFrequencyRange(minOmega, maxOmega float64) (*FRD, error) {
+	if minOmega > maxOmega {
+		return nil, fmt.Errorf("FRD SelectFrequencyRange: min frequency exceeds max frequency: %w", ErrDimensionMismatch)
+	}
+	var indices []int
+	for k, w := range f.Omega {
+		if w >= minOmega && w <= maxOmega {
+			indices = append(indices, k)
+		}
+	}
+	return f.SelectFrequencies(indices)
+}
+
+func (f *FRD) MapResponse(mapper FRDResponseMapper) (*FRD, error) {
+	if mapper == nil {
+		return nil, fmt.Errorf("FRD MapResponse: mapper must not be nil: %w", ErrDimensionMismatch)
+	}
+	p, m := f.Dims()
+	response, data := newFRDResponseStorage(len(f.Omega), p, m)
+	pm := p * m
+	for k, w := range f.Omega {
+		mapped, err := mapper(k, w, f.EvalFr(k))
+		if err != nil {
+			return nil, fmt.Errorf("FRD MapResponse: frequency index %d: %w", k, err)
+		}
+		if len(mapped) != p {
+			return nil, fmt.Errorf("FRD MapResponse: frequency index %d has %d rows, want %d: %w", k, len(mapped), p, ErrDimensionMismatch)
+		}
+		for i := range mapped {
+			if len(mapped[i]) != m {
+				return nil, fmt.Errorf("FRD MapResponse: frequency index %d row %d has %d cols, want %d: %w", k, i, len(mapped[i]), m, ErrDimensionMismatch)
+			}
+		}
+		copyComplexMatrixInto(data[k*pm:(k+1)*pm], mapped, p, m)
+	}
+	return f.withResponse(response), nil
+}
+
+func (f *FRD) PeakGain() (*FRDPeakGainResult, error) {
+	p, m := f.Dims()
+	nw := len(f.Omega)
+	if nw == 0 || p == 0 || m == 0 {
+		return nil, fmt.Errorf("FRD PeakGain: no frequency response data: %w", ErrInsufficientData)
+	}
+	result := &FRDPeakGainResult{Gain: math.Inf(-1), Index: -1}
+	if p == 1 && m == 1 {
+		for k := 0; k < nw; k++ {
+			gain := cmplx.Abs(f.Response[k][0][0])
+			if gain > result.Gain {
+				result.Gain = gain
+				result.Frequency = f.Omega[k]
+				result.Index = k
+			}
+		}
+		return result, nil
+	}
+	ws := newComplexSVDWorkspace(p, m)
+	sv := make([]float64, min(p, m))
+	for k := 0; k < nw; k++ {
+		ws.singularValuesFromNested(sv, f.Response[k], p, m)
+		if sv[0] > result.Gain {
+			result.Gain = sv[0]
+			result.Frequency = f.Omega[k]
+			result.Index = k
+		}
+	}
+	return result, nil
+}
+
+func FRDConcat(first *FRD, rest ...*FRD) (*FRD, error) {
+	if first == nil {
+		return nil, fmt.Errorf("FRDConcat: first model must not be nil: %w", ErrDimensionMismatch)
+	}
+	p, m := first.Dims()
+	total := len(first.Omega)
+	for idx, f := range rest {
+		if f == nil {
+			return nil, fmt.Errorf("FRDConcat: model %d must not be nil: %w", idx+1, ErrDimensionMismatch)
+		}
+		fp, fm := f.Dims()
+		if fp != p || fm != m {
+			return nil, fmt.Errorf("FRDConcat: model %d has dimensions %dx%d, want %dx%d: %w", idx+1, fp, fm, p, m, ErrDimensionMismatch)
+		}
+		if f.Dt != first.Dt {
+			return nil, fmt.Errorf("FRDConcat: model %d sample time %g does not match %g: %w", idx+1, f.Dt, first.Dt, ErrDomainMismatch)
+		}
+		total += len(f.Omega)
+	}
+	response, data := newFRDResponseStorage(total, p, m)
+	omega := make([]float64, 0, total)
+	pm := p * m
+	pos := 0
+	appendModel := func(f *FRD) error {
+		for k, w := range f.Omega {
+			if len(omega) > 0 && w <= omega[len(omega)-1] {
+				return fmt.Errorf("FRDConcat: frequencies must be strictly increasing across models: %w", ErrDimensionMismatch)
+			}
+			omega = append(omega, w)
+			copyComplexMatrixInto(data[pos*pm:(pos+1)*pm], f.Response[k], p, m)
+			pos++
+		}
+		return nil
+	}
+	if err := appendModel(first); err != nil {
+		return nil, err
+	}
+	for _, f := range rest {
+		if err := appendModel(f); err != nil {
+			return nil, err
+		}
+	}
+	return first.withResponseAndOmega(response, omega), nil
+}
+
+func (f *FRD) withResponse(response [][][]complex128) *FRD {
+	omega := make([]float64, len(f.Omega))
+	copy(omega, f.Omega)
+	return f.withResponseAndOmega(response, omega)
+}
+
+func (f *FRD) withResponseAndOmega(response [][][]complex128, omega []float64) *FRD {
+	return &FRD{
+		Response:   response,
+		Omega:      omega,
+		Dt:         f.Dt,
+		InputName:  copyStringSlice(f.InputName),
+		OutputName: copyStringSlice(f.OutputName),
+	}
+}
+
 // EvalFr returns the p*m complex response at frequency omega[freqIdx].
 func (f *FRD) EvalFr(freqIdx int) [][]complex128 {
 	p, m := f.Dims()
