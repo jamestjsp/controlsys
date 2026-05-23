@@ -1,6 +1,7 @@
 package controlsys
 
 import (
+	"fmt"
 	"math"
 	"testing"
 
@@ -403,6 +404,31 @@ func BenchmarkFixedInputReduction_N10(b *testing.B) {
 	}
 }
 
+func BenchmarkTunableGainCurrentSystem_4x4(b *testing.B) {
+	block := benchTunableGain(b, 4, 4)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := block.CurrentSystem(); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkTunableGainSampleCurrentSystem_4x4(b *testing.B) {
+	block := benchTunableGain(b, 4, 4)
+	values := map[string]float64{"p_0_0": 2.5, "p_3_3": -1.5}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		sampled, err := block.Sample(values)
+		if err != nil {
+			b.Fatal(err)
+		}
+		if _, err := sampled.CurrentSystem(); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
 func benchDescriptorSystem(b *testing.B, n, m, p int) *System {
 	b.Helper()
 	sys := benchSysNonSym(n, m, p)
@@ -412,6 +438,26 @@ func benchDescriptorSystem(b *testing.B, n, m, p int) *System {
 	}
 	sys.E = E
 	return sys
+}
+
+func benchTunableGain(b *testing.B, p, m int) *TunableGain {
+	b.Helper()
+	params := make([][]*TunableReal, p)
+	for i := range params {
+		params[i] = make([]*TunableReal, m)
+		for j := range params[i] {
+			param, err := NewTunableReal(
+				fmt.Sprintf("p_%d_%d", i, j),
+				float64(i-j),
+				TunableBounds{Lower: -10, Upper: 10},
+			)
+			if err != nil {
+				b.Fatal(err)
+			}
+			params[i][j] = param
+		}
+	}
+	return NewTunableGain("gain", params, 0)
 }
 
 func BenchmarkStabsep_N2(b *testing.B)   { benchStabsep(b, 2) }
