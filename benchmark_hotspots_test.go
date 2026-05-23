@@ -429,6 +429,37 @@ func BenchmarkTunableGainSampleCurrentSystem_4x4(b *testing.B) {
 	}
 }
 
+func BenchmarkGeneralizedCurrentSystem_SISO(b *testing.B) {
+	k, _ := NewTunableReal("K", 2, TunableBounds{Lower: 0, Upper: 10})
+	block := NewTunableGain("Kblock", [][]*TunableReal{{k}}, 0)
+	gm, err := NewGeneralizedModel("loop", block)
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := gm.CurrentSystem(); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkGeneralizedClosedLoop_SISO(b *testing.B) {
+	plant := benchSysNonSym(4, 1, 1)
+	k, _ := NewTunableReal("K", 2, TunableBounds{Lower: 0, Upper: 10})
+	block := NewTunableGain("Kblock", [][]*TunableReal{{k}}, 0)
+	gm, err := NewGeneralizedClosedLoop("loop", plant, block, "u")
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := gm.ComplementarySensitivity("u"); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
 func benchDescriptorSystem(b *testing.B, n, m, p int) *System {
 	b.Helper()
 	sys := benchSysNonSym(n, m, p)
