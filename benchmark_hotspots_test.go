@@ -1,6 +1,7 @@
 package controlsys
 
 import (
+	"fmt"
 	"math"
 	"testing"
 
@@ -45,6 +46,24 @@ func benchFRDFromSys(sys *System, nw int) *FRD {
 	omega := logspace(-2, 3, nw)
 	f, _ := sys.FRD(omega)
 	return f
+}
+
+func benchModelArray(b *testing.B, count, n, m, p int) *ModelArray {
+	b.Helper()
+	models := make([]*System, count)
+	for i := range models {
+		if i%7 == 3 {
+			continue
+		}
+		sys := benchSysNonSym(n, m, p)
+		sys.A.Set(0, 0, sys.A.At(0, 0)-float64(i)*0.01)
+		models[i] = sys
+	}
+	arr, err := NewModelArray([]int{count}, models)
+	if err != nil {
+		b.Fatal(err)
+	}
+	return arr
 }
 
 // --------------- FRD stack ---------------
@@ -157,6 +176,66 @@ func benchFRDFeedback(b *testing.B, n, m, p, nw int) {
 	}
 }
 
+func BenchmarkFRDAbs_MIMO_2000(b *testing.B) {
+	frd := benchFRDFromSys(benchSysNonSym(10, 3, 4), 2000)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		frd.Abs()
+	}
+}
+
+func BenchmarkFRDSelectFrequencies_MIMO_2000(b *testing.B) {
+	frd := benchFRDFromSys(benchSysNonSym(10, 3, 4), 2000)
+	indices := make([]int, 0, 1000)
+	for i := 0; i < 2000; i += 2 {
+		indices = append(indices, i)
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := frd.SelectFrequencies(indices); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkFRDPeakGain_MIMO_2000(b *testing.B) {
+	frd := benchFRDFromSys(benchSysNonSym(10, 3, 4), 2000)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := frd.PeakGain(); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkModelArrayFreqResponse_MIMO_16x200(b *testing.B) {
+	arr := benchModelArray(b, 16, 10, 3, 4)
+	omega := logspace(-2, 3, 200)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := arr.FreqResponse(omega); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkModelArrayFreqResponseManualLoop_MIMO_16x200(b *testing.B) {
+	arr := benchModelArray(b, 16, 10, 3, 4)
+	models := arr.models
+	omega := logspace(-2, 3, 200)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		for _, sys := range models {
+			if sys == nil {
+				continue
+			}
+			if _, err := sys.FreqResponse(omega); err != nil {
+				b.Fatal(err)
+			}
+		}
+	}
+}
+
 // --------------- Time-response wrappers ---------------
 
 func BenchmarkStep_SISO_N2(b *testing.B)  { benchStep(b, 2, 1, 1) }
@@ -169,6 +248,49 @@ func benchStep(b *testing.B, n, m, p int) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		Step(sys, 10)
+	}
+}
+
+func BenchmarkStepInfo_SISO_N10(b *testing.B) { benchStepInfo(b, 10, 1, 1) }
+func BenchmarkStepInfo_MIMO_N10(b *testing.B) { benchStepInfo(b, 10, 3, 4) }
+
+func benchStepInfo(b *testing.B, n, m, p int) {
+	sys := benchSysNonSym(n, m, p)
+	resp, err := Step(sys, 10)
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := StepInfo(resp, nil); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkModelArrayStep_MIMO_16(b *testing.B) {
+	arr := benchModelArray(b, 16, 10, 3, 4)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := arr.Step(10); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkModelArrayStepManualLoop_MIMO_16(b *testing.B) {
+	arr := benchModelArray(b, 16, 10, 3, 4)
+	models := arr.models
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		for _, sys := range models {
+			if sys == nil {
+				continue
+			}
+			if _, err := Step(sys, 10); err != nil {
+				b.Fatal(err)
+			}
+		}
 	}
 }
 
@@ -259,6 +381,245 @@ func benchCanon(b *testing.B, form CanonForm, n int) {
 	for i := 0; i < b.N; i++ {
 		Canon(sys, form)
 	}
+}
+
+func BenchmarkDescriptorToExplicit_N10(b *testing.B) {
+	sys := benchDescriptorSystem(b, 10, 2, 2)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := sys.ToExplicit(); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkFixedInputReduction_N10(b *testing.B) {
+	sys := benchSysNonSym(10, 4, 2)
+	fixed := map[int]float64{1: 0.5, 3: -2}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := sys.FixedInputReduction(fixed, "offset"); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkTunableGainCurrentSystem_4x4(b *testing.B) {
+	block := benchTunableGain(b, 4, 4)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := block.CurrentSystem(); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkTunableGainSampleCurrentSystem_4x4(b *testing.B) {
+	block := benchTunableGain(b, 4, 4)
+	values := map[string]float64{"p_0_0": 2.5, "p_3_3": -1.5}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		sampled, err := block.Sample(values)
+		if err != nil {
+			b.Fatal(err)
+		}
+		if _, err := sampled.CurrentSystem(); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkGeneralizedCurrentSystem_SISO(b *testing.B) {
+	k, _ := NewTunableReal("K", 2, TunableBounds{Lower: 0, Upper: 10})
+	block := NewTunableGain("Kblock", [][]*TunableReal{{k}}, 0)
+	gm, err := NewGeneralizedModel("loop", block)
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := gm.CurrentSystem(); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkGeneralizedClosedLoop_SISO(b *testing.B) {
+	plant := benchSysNonSym(4, 1, 1)
+	k, _ := NewTunableReal("K", 2, TunableBounds{Lower: 0, Upper: 10})
+	block := NewTunableGain("Kblock", [][]*TunableReal{{k}}, 0)
+	gm, err := NewGeneralizedClosedLoop("loop", plant, block, "u")
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := gm.ComplementarySensitivity("u"); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkTuningGoalWeightedGain_SISO(b *testing.B) {
+	sys := benchSysNonSym(4, 1, 1)
+	goal := NewWeightedGainGoal("gain", 10)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := goal.Evaluate(sys); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkTuningGoalWeightedGain_MIMO(b *testing.B) {
+	sys := benchSysNonSym(8, 3, 3)
+	goal := NewWeightedGainGoal("gain", 10)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := goal.Evaluate(sys); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkSystune_SISO(b *testing.B) {
+	plant := benchSysNonSym(2, 1, 1)
+	k, _ := NewTunableReal("K", 0.5, TunableBounds{Lower: 0.1, Upper: 3})
+	controller := NewTunableGain("Kblock", [][]*TunableReal{{k}}, 0)
+	model, err := NewGeneralizedClosedLoop("loop", plant, controller, "u")
+	if err != nil {
+		b.Fatal(err)
+	}
+	goals := []TuningGoal{NewWeightedGainGoal("gain", 10)}
+	opts := &SystuneOptions{GridPoints: 5}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := Systune(model, goals, opts); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkSystune_MIMO(b *testing.B) {
+	plant := benchSysNonSym(2, 2, 2)
+	k1, _ := NewTunableReal("K1", 0.5, TunableBounds{Lower: 0.1, Upper: 2})
+	k2, _ := NewTunableReal("K2", 0.5, TunableBounds{Lower: 0.1, Upper: 2})
+	controller := NewTunableGain("Kblock", [][]*TunableReal{{k1, fixedBenchReal("z12", 0)}, {fixedBenchReal("z21", 0), k2}}, 0)
+	model, err := NewGeneralizedClosedLoop("loop", plant, controller, "u")
+	if err != nil {
+		b.Fatal(err)
+	}
+	goals := []TuningGoal{NewWeightedGainGoal("gain", 10)}
+	opts := &SystuneOptions{GridPoints: 3}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := Systune(model, goals, opts); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkPhysicalAssembly_8Components(b *testing.B) {
+	components := make([]PhysicalComponent, 8)
+	for i := range components {
+		sys := benchDescriptorSystem(b, 4, 1, 1)
+		sys.InputName = []string{"force"}
+		sys.OutputName = []string{"position"}
+		sys.StateName = autoLabel("x", 4)
+		components[i] = NewPhysicalComponent(
+			fmt.Sprintf("c%d", i),
+			sys,
+			[]PhysicalPort{{Name: "mount", Kind: PhysicalPortDisplacement, Dimension: 1}},
+		)
+	}
+	connections := make([]PhysicalConnection, 0, len(components)-1)
+	for i := 0; i < len(components)-1; i++ {
+		connections = append(connections, PhysicalConnection{
+			FromComponent: fmt.Sprintf("c%d", i),
+			FromPort:      "mount",
+			ToComponent:   fmt.Sprintf("c%d", i+1),
+			ToPort:        "mount",
+		})
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := AssemblePhysical("chain", components, connections); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkModalTruncate_N50_Order10(b *testing.B) {
+	sys := benchSysNonSym(50, 2, 2)
+	opts := &ModalTruncateOptions{Order: 10}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := ModalTruncate(sys, opts); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkPassivity_SISO(b *testing.B) {
+	sys := makeSISO(-1, 1, 1, 0)
+	opts := &PassivityOptions{Omega: logspace(-2, 2, 200)}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := Passive(sys, opts); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkFRDPassivity_MIMO(b *testing.B) {
+	sys := benchSysNonSym(4, 2, 2)
+	frd, err := sys.FRD(logspace(-2, 2, 200))
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := FRDPassive(frd, nil); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func benchDescriptorSystem(b *testing.B, n, m, p int) *System {
+	b.Helper()
+	sys := benchSysNonSym(n, m, p)
+	E := mat.NewDense(n, n, nil)
+	for i := 0; i < n; i++ {
+		E.Set(i, i, 1+0.1*float64(i+1))
+	}
+	sys.E = E
+	return sys
+}
+
+func fixedBenchReal(name string, value float64) *TunableReal {
+	param, _ := NewTunableReal(name, value, TunableBounds{})
+	param.SetFixed(true)
+	return param
+}
+
+func benchTunableGain(b *testing.B, p, m int) *TunableGain {
+	b.Helper()
+	params := make([][]*TunableReal, p)
+	for i := range params {
+		params[i] = make([]*TunableReal, m)
+		for j := range params[i] {
+			param, err := NewTunableReal(
+				fmt.Sprintf("p_%d_%d", i, j),
+				float64(i-j),
+				TunableBounds{Lower: -10, Upper: 10},
+			)
+			if err != nil {
+				b.Fatal(err)
+			}
+			params[i][j] = param
+		}
+	}
+	return NewTunableGain("gain", params, 0)
 }
 
 func BenchmarkStabsep_N2(b *testing.B)   { benchStabsep(b, 2) }
