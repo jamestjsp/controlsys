@@ -549,6 +549,17 @@ func BenchmarkPhysicalAssembly_8Components(b *testing.B) {
 	}
 }
 
+func BenchmarkModalTruncate_N50_Order10(b *testing.B) {
+	sys := benchSysNonSym(50, 2, 2)
+	opts := &ModalTruncateOptions{Order: 10}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := ModalTruncate(sys, opts); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
 func BenchmarkPassivity_SISO(b *testing.B) {
 	sys := makeSISO(-1, 1, 1, 0)
 	opts := &PassivityOptions{Omega: logspace(-2, 2, 200)}
