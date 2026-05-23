@@ -39,6 +39,28 @@ func TestPassivityDenseAndFRD(t *testing.T) {
 	}
 }
 
+func TestFRDPassiveUsesMIMOHermitianEigenvalue(t *testing.T) {
+	frd, err := NewFRD([][][]complex128{
+		{
+			{1, 2},
+			{2, 1},
+		},
+	}, []float64{1}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := FRDPassive(frd, nil)
+	if err != nil {
+		t.Fatalf("FRDPassive: %v", err)
+	}
+	if result.Passive {
+		t.Fatalf("expected nonpassive MIMO result, got %#v", result)
+	}
+	if result.MinHermitianPart != -1 {
+		t.Fatalf("min Hermitian part = %g, want -1", result.MinHermitianPart)
+	}
+}
+
 func TestSpectralFactorStaticGainAndUnsupportedCases(t *testing.T) {
 	sys, err := NewGain(mat.NewDense(1, 1, []float64{4}), 0)
 	if err != nil {

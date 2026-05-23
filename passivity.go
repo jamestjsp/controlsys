@@ -3,6 +3,9 @@ package controlsys
 import (
 	"fmt"
 	"math"
+	"math/cmplx"
+
+	"gonum.org/v1/gonum/mat"
 )
 
 type PassivityOptions struct {
@@ -114,12 +117,38 @@ func minHermitianPart(h [][]complex128) float64 {
 	if len(h) == 1 && len(h[0]) == 1 {
 		return real(h[0][0])
 	}
-	minDiag := math.Inf(1)
-	for i := range h {
-		v := real(h[i][i])
-		if v < minDiag {
-			minDiag = v
+	n := len(h)
+	if n == 2 {
+		a := real(h[0][0])
+		d := real(h[1][1])
+		off := (h[0][1] + cmplx.Conj(h[1][0])) / 2
+		halfDiff := (a - d) / 2
+		radius := math.Sqrt(halfDiff*halfDiff + real(off)*real(off) + imag(off)*imag(off))
+		return (a+d)/2 - radius
+	}
+	dim := 2 * n
+	sym := mat.NewSymDense(dim, nil)
+	for i := 0; i < n; i++ {
+		for j := 0; j < n; j++ {
+			herm := (h[i][j] + cmplx.Conj(h[j][i])) / 2
+			re := real(herm)
+			im := imag(herm)
+			sym.SetSym(i, j, re)
+			sym.SetSym(i, n+j, -im)
+			sym.SetSym(n+i, j, im)
+			sym.SetSym(n+i, n+j, re)
 		}
 	}
-	return minDiag
+	var eig mat.EigenSym
+	if ok := eig.Factorize(sym, false); !ok {
+		return math.Inf(-1)
+	}
+	vals := eig.Values(nil)
+	minPart := vals[0]
+	for _, v := range vals[1:] {
+		if v < minPart {
+			minPart = v
+		}
+	}
+	return minPart
 }

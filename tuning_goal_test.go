@@ -58,4 +58,22 @@ func TestTuningGoalValidation(t *testing.T) {
 	if _, err := NewTuningGoal(TuningGoalSpec{Name: "bad", Type: TuningGoalWeightedGain, Max: -1}); err == nil {
 		t.Fatal("negative max should fail")
 	}
+	if _, err := NewTuningGoal(TuningGoalSpec{Name: "pole_spec", Type: TuningGoalPole, Min: -2, Max: -0.5}); err != nil {
+		t.Fatalf("negative pole bounds should pass: %v", err)
+	}
+	goal := NewPoleGoal("stable_fast", -0.5)
+	pass, err := goal.Evaluate(makeSISO(-1, 1, 1, 0))
+	if err != nil {
+		t.Fatalf("Evaluate stable pole goal: %v", err)
+	}
+	if !pass.Pass {
+		t.Fatalf("expected pole goal pass, got %#v", pass)
+	}
+	fail, err := goal.Evaluate(makeSISO(-0.2, 1, 1, 0))
+	if err != nil {
+		t.Fatalf("Evaluate slow pole goal: %v", err)
+	}
+	if fail.Pass {
+		t.Fatalf("expected pole goal failure, got %#v", fail)
+	}
 }
