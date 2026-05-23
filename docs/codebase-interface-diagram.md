@@ -97,7 +97,7 @@ flowchart LR
     constructFRD --> FRD
     constructModelArray --> ModelArray
     identifyERA --> System
-    estimateFreqResponse --> FreqResp
+    estimateFreqResponse --> freqResponseMatrix
     estimateFreqResponse --> FRD
     linearizeNonlinear --> System
     assemblePhysical --> System
