@@ -202,7 +202,7 @@ func main() {
 | `NewEKF(model, x0, P0)` | Create an Extended Kalman Filter |
 | `(*EKF).Predict(u)` | Propagate state and covariance one step |
 | `(*EKF).Update(y)` | Correct state with a measurement |
-| `(*EKF).State()` | Return current state estimate |
+| `(*EKF).Step(u, z)` | Run a predict-then-update cycle |
 | `type EKFModel` | Nonlinear model: F, H, Jacobians FJac/HJac, noise Q/R |
 
 ### System Identification
@@ -285,7 +285,7 @@ func main() {
 | `DiscretizeZOH` | Zero-order hold c2d |
 | `DiscretizeFOH` | First-order hold c2d |
 | `DiscretizeMatched` | Matched pole-zero c2d |
-| `DiscretizeD2D` | Discrete-to-discrete resampling |
+| `D2D` | Discrete-to-discrete resampling |
 | `Undiscretize` | Bilinear d2c |
 
 ### Interconnection
