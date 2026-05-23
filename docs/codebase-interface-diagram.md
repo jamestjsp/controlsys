@@ -1,6 +1,6 @@
 # Controlsys Codebase Interface Diagram
 
-This diagram shows the current module interfaces after the architecture deepening work. It is a codebase-level view, not a complete call graph: the public model interfaces are centered, and the internal seams show where recurring rules are localized.
+This diagram shows the current module interfaces after the PR149-151 architecture deepening work. It is a codebase-level view, not a complete call graph: the public model interfaces are centered, and the internal seams show where recurring rules are localized.
 
 ## Public Interface Map
 
@@ -15,18 +15,24 @@ flowchart LR
         TF["TransferFunc<br/>polynomial-ratio model"]
         ZPK["ZPK<br/>zero-pole-gain model"]
         FRD["FRD<br/>frequency-response data model"]
+        ModelArray["ModelArray<br/>compatible model grid"]
+        Generalized["GeneralizedModel / GeneralizedClosedLoop<br/>analysis-point model interface"]
+        Tunable["TunableBlock<br/>tunable gain, PID, TF, or SS block"]
         FreqResp["FreqResponseMatrix<br/>sampled complex response"]
         TimeResp["TimeResponse<br/>sampled time-domain output"]
     end
 
     subgraph construction["Construction and identification"]
         New["New / NewGain / NewFromSlices"]
+        NewDescriptor["NewDescriptor / ToExplicit"]
         NewTF["TransferFunc.StateSpace"]
         NewZPK["NewZPK / NewZPKMIMO"]
         NewFRD["NewFRD"]
+        NewArray["NewModelArray / StackModelArrays"]
         ERA["ERA<br/>Markov parameters to state-space model"]
         FreqEst["FreqRespEst<br/>sampled input/output to response estimate"]
         Linearize["Linearize / EKF<br/>local nonlinear approximation"]
+        Physical["AssemblePhysical<br/>port-checked component assembly"]
     end
 
     subgraph interconnection["Interconnection interfaces"]
@@ -43,20 +49,22 @@ flowchart LR
         FRDConv["System.FRD"]
         C2D["Discretize / DiscretizeWithOpts"]
         D2C["Undiscretize / D2C"]
+        StateUtils["StateTransform / EliminateStates<br/>FixedInputReduction"]
     end
 
     subgraph analysis["Analysis interfaces"]
-        TimeAnalysis["Step / Impulse / Initial / Lsim / Simulate"]
-        FreqAnalysis["FreqResponse / Bode / Nyquist / Margin / Sigma"]
+        TimeAnalysis["Step / Impulse / Initial / Lsim / Simulate / StepInfo"]
+        FreqAnalysis["FreqResponse / Bode / Nyquist / Margin / Sigma / FRD helpers"]
         ModelAnalysis["Poles / Zeros / Damp / IsStable / Pzmap"]
-        EnergyAnalysis["Gram / HSV / H2Norm / HinfNorm / Covar"]
+        EnergyAnalysis["Gram / HSV / H2Norm / HinfNorm / Covar / Passive"]
         StructureAnalysis["Ctrb / Obsv / Stabilizable / Detectable"]
         LoopAnalysis["Loopsens / RootLocus"]
+        Passivity["Passive / FRDPassive / SpectralFactor"]
     end
 
     subgraph transforms["Transformation and reduction"]
         Realization["SS2SS / Xperm / Canon"]
-        Balancing["Balreal / Balred / Modred / Sminreal"]
+        Balancing["Balreal / Balred / Modred / Sminreal / ModalTruncate"]
         Decomposition["Stabsep / Modsep / Prescale / Ssbal"]
         Algebra["Inv / Augstate"]
     end
@@ -67,24 +75,33 @@ flowchart LR
         Observer["Kalman / LQG / Observer assembly"]
         Robust["H2Syn / HinfSyn"]
         PID["Pidtune / PID / SmithPredictor"]
+        FixedTuning["Systune / Looptune<br/>tuning goals"]
     end
 
     caller --> New
+    caller --> NewDescriptor
     caller --> NewTF
     caller --> NewZPK
     caller --> NewFRD
+    caller --> NewArray
     caller --> ERA
     caller --> FreqEst
     caller --> Linearize
+    caller --> Physical
+    caller --> Tunable
 
     New --> System
+    NewDescriptor --> System
     NewTF --> System
     NewZPK --> ZPK
     NewFRD --> FRD
+    NewArray --> ModelArray
     ERA --> System
     FreqEst --> FreqResp
     FreqEst --> FRD
     Linearize --> System
+    Physical --> System
+    Tunable --> Generalized
 
     TF <--> ZPK
     TF --> System
@@ -94,6 +111,10 @@ flowchart LR
     System --> ZPKConv --> ZPK
     System --> FRDConv --> FRD
     FRD --> FreqResp
+    ModelArray --> System
+    ModelArray --> FreqResp
+    ModelArray --> TimeResp
+    Generalized --> System
 
     System --> Series --> System
     System --> Parallel --> System
@@ -103,6 +124,7 @@ flowchart LR
 
     System --> C2D --> System
     System --> D2C --> System
+    System --> StateUtils --> System
 
     System --> TimeAnalysis --> TimeResp
     System --> FreqAnalysis --> FreqResp
@@ -111,6 +133,8 @@ flowchart LR
     System --> EnergyAnalysis
     System --> StructureAnalysis
     System --> LoopAnalysis
+    System --> Passivity
+    FRD --> Passivity
 
     System --> Realization --> System
     System --> Balancing --> System
@@ -121,6 +145,9 @@ flowchart LR
     System --> Observer
     System --> Robust
     System --> PID
+    System --> Generalized
+    Generalized --> FixedTuning
+    Tunable --> FixedTuning
     Riccati --> Controller
     Riccati --> Observer
     Riccati --> Robust
@@ -128,6 +155,7 @@ flowchart LR
     Observer --> System
     Robust --> System
     PID --> System
+    FixedTuning --> System
 ```
 
 ## Internal Seam Map
@@ -168,8 +196,39 @@ classDiagram
         +Dims()
         +NumFrequencies()
         +At()
+        +Abs()
+        +SelectFrequencies()
+        +MapResponse()
+        +PeakGain()
         +FreqResponse()
         +Bode()
+    }
+
+    class ModelArray {
+        +Shape()
+        +Model()
+        +SelectFlat()
+        +FreqResponse()
+        +Step()
+    }
+
+    class GeneralizedModel {
+        +InsertAnalysisPoint()
+        +AnalysisPoint()
+        +CurrentSystem()
+    }
+
+    class GeneralizedClosedLoop {
+        +OpenLoop()
+        +ClosedLoop()
+        +Sensitivity()
+        +ComplementarySensitivity()
+    }
+
+    class TunableBlock {
+        +CurrentSystem()
+        +FreeParameters()
+        +SampleBlock()
     }
 
     class descriptorPolicy {
@@ -213,6 +272,14 @@ classDiagram
         +resultWithZeroFeedthrough()
     }
 
+    class stateSpaceUtilitySeam {
+        +NewDescriptor()
+        +ToExplicit()
+        +EliminateStates()
+        +FixedInputReduction()
+        +AugmentInternalDelayOutputs()
+    }
+
     class frequencyEvaluator {
         +response()
         +eval()
@@ -238,6 +305,41 @@ classDiagram
         +closedLoopPoles()
     }
 
+    class generalizedTuningSeam {
+        +analysisPoints()
+        +openLoop()
+        +closedLoop()
+        +tunableController()
+    }
+
+    class tuningGoalEvaluator {
+        +tracking()
+        +maxGain()
+        +loopShape()
+        +margin()
+        +pole()
+        +overshoot()
+    }
+
+    class passivitySeam {
+        +Passive()
+        +FRDPassive()
+        +SpectralFactor()
+    }
+
+    class physicalAssemblySeam {
+        +validatePorts()
+        +prefixMetadata()
+        +appendComponents()
+    }
+
+    class modelArraySeam {
+        +validateCompatible()
+        +flatIndex()
+        +freqResponse()
+        +step()
+    }
+
     class controllerObserverPolicy {
         +validateNoise()
         +regulator()
@@ -255,16 +357,26 @@ classDiagram
     System --> delayConversionPolicy : delay conversion
     System --> interconnectionTopology : interconnection planning
     System --> realizationTransformPolicy : realization assembly
+    System --> stateSpaceUtilitySeam : state-space utilities
     System --> frequencyEvaluator : frequency response
     System --> timeResponsePlanner : time response
     System --> simulationDispatcher : sampled simulation
+    System --> passivitySeam : passivity and spectral factor
+    System --> physicalAssemblySeam : physical component assembly
+    System --> ModelArray : compatible model arrays
 
     TransferFunc --> System : realization
     ZPK --> TransferFunc : rational-channel conversion
     FRD --> sampledResponseLayout : sampled response access
     frequencyEvaluator --> sampledResponseLayout : flat response layout
+    ModelArray --> modelArraySeam : array validation and analysis
+    GeneralizedModel --> generalizedTuningSeam : analysis-point model wrapper
+    GeneralizedClosedLoop --> generalizedTuningSeam : loop extraction
+    TunableBlock --> generalizedTuningSeam : sampled controller blocks
 
     generalizedPlantPartition --> System : H2/Hinf controller synthesis
+    generalizedTuningSeam --> tuningGoalEvaluator : fixed-structure tuning
+    tuningGoalEvaluator --> System : evaluates closed-loop model
     controllerObserverPolicy --> System : regulator and estimator assembly
     matrixEquationProblem --> controllerObserverPolicy : Riccati and Lyapunov validation
 ```
@@ -272,8 +384,9 @@ classDiagram
 ## Interface Reading Guide
 
 - `System` is the fundamental representation. Most public workflows either consume it, return it, or convert another model interface into it.
-- `TransferFunc`, `ZPK`, and `FRD` are alternate model interfaces. They preserve input/output names and sample time where the representation supports them.
+- `TransferFunc`, `ZPK`, `FRD`, `ModelArray`, and generalized/tunable model wrappers are alternate caller-facing interfaces. They preserve input/output names, sample time, and analysis-point metadata where the representation supports them.
 - Interconnection routines concentrate compatibility checks, direct feedthrough handling, delay movement, and metadata propagation behind a small caller-facing interface.
 - Delay behavior is intentionally split between topology and conversion seams: topology answers what delay structure exists; conversion decides whether it remains explicit, becomes a delay bank, or moves into LFT form.
 - Analysis routines share sampled-response layouts so frequency-response data, Bode results, singular-value analysis, and frequency-response estimates use the same output/input/frequency indexing.
-- Synthesis routines route generalized-plant and controller/observer rules through policy modules before returning controller state-space models.
+- Model-array, physical-assembly, and state-space utility seams make MATLAB-parity workflows available while keeping compatibility checks and metadata rules localized.
+- Synthesis routines route generalized-plant, generalized tuning, and controller/observer rules through policy modules before returning controller or closed-loop state-space models.
