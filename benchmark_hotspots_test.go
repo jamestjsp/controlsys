@@ -549,6 +549,31 @@ func BenchmarkPhysicalAssembly_8Components(b *testing.B) {
 	}
 }
 
+func BenchmarkPassivity_SISO(b *testing.B) {
+	sys := makeSISO(-1, 1, 1, 0)
+	opts := &PassivityOptions{Omega: logspace(-2, 2, 200)}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := Passive(sys, opts); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkFRDPassivity_MIMO(b *testing.B) {
+	sys := benchSysNonSym(4, 2, 2)
+	frd, err := sys.FRD(logspace(-2, 2, 200))
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := FRDPassive(frd, nil); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
 func benchDescriptorSystem(b *testing.B, n, m, p int) *System {
 	b.Helper()
 	sys := benchSysNonSym(n, m, p)
