@@ -26,15 +26,16 @@ This package is intended to be usable in production control and estimation code,
 
 ## Features
 
-- **Three representations:** state-space, transfer function, zero-pole-gain (ZPK), and frequency-response data (FRD)
+- **Four representations:** state-space, transfer function, zero-pole-gain (ZPK), and frequency-response data (FRD)
 - **Frequency response:** Bode, Nyquist, Nichols, singular values
-- **Stability analysis:** gain/phase margins, disk margins, bandwidth, damping, root locus
+- **Stability and response analysis:** gain/phase margins, disk margins, bandwidth, damping, root locus, passivity, step-response metrics
 - **Control design:** LQR, LQE (Kalman), LQI, LQG, H2 synthesis, H-infinity synthesis, pole placement, Ackermann placement, Riccati solvers (CARE/DARE)
-- **PID control:** PID/PID2 controller models, standard/parallel forms, and `Pidtune` autotuning
+- **PID and fixed-structure tuning:** PID/PID2 controller models, standard/parallel forms, `Pidtune`, tunable blocks, generalized closed-loop models, tuning goals, `Systune`, and `Looptune`
 - **State estimation:** Extended Kalman Filter (EKF) for nonlinear systems
 - **System identification:** Eigensystem Realization Algorithm (ERA) and frequency-response estimation from I/O data
 - **Nonlinear systems:** Jacobian linearization around operating points; Smith predictor for time-delay plants
-- **Model reduction & decomposition:** controllability/observability staircase, balanced realization, balanced truncation, stable/unstable and modal separation
+- **Model arrays and physical assembly:** compatible model grids for parameter sweeps and port-checked physical component assembly
+- **Model reduction & decomposition:** controllability/observability staircase, balanced realization, balanced truncation, stable/unstable and modal separation, modal truncation
 - **System norms & covariance:** H2/H-infinity norms, Hankel singular values, state covariance
 - **Interconnection:** series, parallel, feedback, append, sum blocks
 - **Time-domain:** step, impulse, initial condition, arbitrary input (lsim), discrete simulation
@@ -87,6 +88,9 @@ func main() {
 | `NewZPK` | SISO zero-pole-gain model |
 | `NewZPKMIMO` | MIMO zero-pole-gain model |
 | `NewFRD` | Frequency-response data model from sampled complex responses |
+| `NewModelArray` | Compatible array of state-space models for sweeps or model grids |
+| `StackModelArrays` | Concatenate compatible model arrays along a new leading axis |
+| `NewDescriptor` | Descriptor state-space model with explicit E matrix |
 | `Rss` | Random stable continuous-time state-space model |
 | `Drss` | Random stable discrete-time state-space model |
 
@@ -103,6 +107,23 @@ func main() {
 | `(*PID).System` / `(*PID2).System` | Convert controller model to state-space |
 | `Loopsens` | Sensitivity and complementary-sensitivity functions |
 | `Pzmap` | Pole-zero map |
+
+### Generalized & Tunable Models
+
+| Function/Type | Description |
+|---------------|-------------|
+| `NewGeneralizedModel` | Wrap a fixed or tunable block and attach analysis points |
+| `NewGeneralizedClosedLoop` | Build a plant/controller closed-loop model with an analysis point |
+| `TunableReal` | Bounded scalar parameter used by tunable blocks |
+| `TunableGain` | Tunable static-gain block |
+| `TunablePID` | Tunable PID controller block |
+| `TunableTF` | Tunable transfer-function block |
+| `TunableSS` | Tunable state-space block |
+| `NewTrackingGoal` / `NewRejectionGoal` | Tuning-goal constructors for tracking and disturbance rejection |
+| `NewSensitivityGoal` / `NewWeightedGainGoal` | Tuning-goal constructors for gain and sensitivity limits |
+| `NewLoopShapeGoal` / `NewMarginGoal` | Tuning-goal constructors for loop-shape and robustness constraints |
+| `NewPoleGoal` / `NewOvershootGoal` | Tuning-goal constructors for pole-location and step-response constraints |
+| `Systune` / `Looptune` | Fixed-structure tuning over free tunable parameters |
 
 ### Frequency Response & Plotting
 
@@ -123,6 +144,12 @@ func main() {
 | `(*FRD).Bode` | Bode data from FRD samples |
 | `(*FRD).Nyquist` | Nyquist contour from FRD samples |
 | `(*FRD).Sigma` | Singular values from FRD samples |
+| `(*FRD).Abs` | Magnitude-only FRD response |
+| `(*FRD).SelectFrequencies` | Select samples by frequency index |
+| `(*FRD).SelectFrequencyRange` | Select samples within a frequency band |
+| `(*FRD).MapResponse` | Transform each sampled complex response matrix |
+| `(*FRD).PeakGain` | Peak gain over sampled frequencies |
+| `FRDConcat` | Concatenate compatible FRD models along the frequency grid |
 | `FRDMargin` | Gain/phase margins from SISO FRD data |
 | `FRDSeries` | Cascade composition of FRD models |
 | `FRDParallel` | Parallel composition of FRD models |
@@ -145,6 +172,8 @@ func main() {
 | `Bandwidth` | -3 dB bandwidth |
 | `RootLocus` | Root locus as a function of loop gain |
 | `Pzmap` | Poles and transmission zeros for plotting/inspection |
+| `Passive` / `FRDPassive` | Passivity check from a state-space model or FRD samples |
+| `SpectralFactor` | Spectral factor for supported static-gain models |
 
 ### Control Design
 
@@ -203,10 +232,17 @@ func main() {
 | `Sminreal` | Minimal realization via staircase reduction |
 | `Stabsep` | Stable/unstable decomposition |
 | `Modsep` | Modal decomposition around a cutoff |
+| `ModalTruncate` | Modal truncation result with kept-state metadata |
 | `Canon` | Modal or companion canonical form |
 | `SS2SS` | Similarity transform with a user-supplied state basis |
+| `StateTransform` | Alias-style state-basis transform helper |
 | `Xperm` | State permutation transform |
 | `Prescale` | Pre-scale states/inputs/outputs for numerical conditioning |
+| `ToExplicit` | Convert supported descriptor models to explicit state-space form |
+| `DescriptorE` | Return a copy of the descriptor E matrix |
+| `EliminateStates` | Remove selected states using the model-reduction methods |
+| `FixedInputReduction` | Reduce a model by fixing selected input channels |
+| `AugmentInternalDelayOutputs` | Expose internal delay-bank outputs with prefixed names |
 | `Ctrb` | Controllability matrix |
 | `Obsv` | Observability matrix |
 | `CtrbF` | Controllability staircase decomposition |
@@ -277,6 +313,27 @@ func main() {
 | `Lsim` | Response to arbitrary input on a uniform time grid |
 | `Simulate` | Discrete-time simulation |
 | `GenSig` | Generate test signals (step, sine, square, pulse) |
+| `StepInfo` | Step-response rise time, settling time, overshoot, peak, and steady-state metrics |
+| `StepInfoForSystem` | Simulate a stable model's step response and compute step metrics |
+
+### Model Arrays
+
+| Function/Method | Description |
+|-----------------|-------------|
+| `NewModelArray` | Create a shaped array of compatible state-space models |
+| `StackModelArrays` | Stack compatible model arrays |
+| `(*ModelArray).Model` / `ModelFlat` | Retrieve a model by multidimensional or flat index |
+| `(*ModelArray).SelectFlat` | Select a flat-index subset of models |
+| `(*ModelArray).FreqResponse` | Frequency response for every model in the array |
+| `(*ModelArray).Step` | Step response for every model in the array |
+
+### Physical Assembly
+
+| Function/Type | Description |
+|---------------|-------------|
+| `NewPhysicalComponent` | Wrap a model with named physical ports |
+| `AssemblePhysical` | Validate physical port compatibility and append component models |
+| `PhysicalPort` / `PhysicalConnection` | Port and connection metadata for physical assembly |
 
 ### Transport Delays
 
