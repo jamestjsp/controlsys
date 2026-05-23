@@ -12,150 +12,150 @@ flowchart LR
 
     subgraph models["Model interfaces"]
         System["System<br/>fundamental state-space model<br/>A, B, C, D, optional E, delays, names"]
-        TF["TransferFunc<br/>polynomial-ratio model"]
+        transferFunc["TransferFunc<br/>polynomial-ratio model"]
         ZPK["ZPK<br/>zero-pole-gain model"]
         FRD["FRD<br/>frequency-response data model"]
         ModelArray["ModelArray<br/>compatible model grid"]
-        Generalized["GeneralizedModel / GeneralizedClosedLoop<br/>analysis-point model interface"]
-        Tunable["TunableBlock<br/>tunable gain, PID, TF, or SS block"]
-        FreqResp["FreqResponseMatrix<br/>sampled complex response"]
-        TimeResp["TimeResponse<br/>sampled time-domain output"]
+        generalizedModels["GeneralizedModel / GeneralizedClosedLoop<br/>analysis-point model interface"]
+        tunableBlocks["TunableBlock<br/>tunable gain, PID, TF, or SS block"]
+        freqResponseMatrix["FreqResponseMatrix<br/>sampled complex response"]
+        timeResponse["TimeResponse<br/>sampled time-domain output"]
     end
 
     subgraph construction["Construction and identification"]
-        New["New / NewGain / NewFromSlices"]
-        NewDescriptor["NewDescriptor / ToExplicit"]
-        NewTF["TransferFunc.StateSpace"]
-        NewZPK["NewZPK / NewZPKMIMO"]
-        NewFRD["NewFRD"]
-        NewArray["NewModelArray / StackModelArrays"]
-        ERA["ERA<br/>Markov parameters to state-space model"]
-        FreqEst["FreqRespEst<br/>sampled input/output to response estimate"]
-        Linearize["Linearize / EKF<br/>local nonlinear approximation"]
-        Physical["AssemblePhysical<br/>port-checked component assembly"]
+        constructStateSpace["New / NewGain / NewFromSlices"]
+        constructDescriptor["NewDescriptor / ToExplicit"]
+        realizeTransferFunc["TransferFunc.StateSpace"]
+        constructZPK["NewZPK / NewZPKMIMO"]
+        constructFRD["NewFRD"]
+        constructModelArray["NewModelArray / StackModelArrays"]
+        identifyERA["ERA<br/>Markov parameters to state-space model"]
+        estimateFreqResponse["FreqRespEst<br/>sampled input/output to response estimate"]
+        linearizeNonlinear["Linearize / EKF<br/>local nonlinear approximation"]
+        assemblePhysical["AssemblePhysical<br/>port-checked component assembly"]
     end
 
     subgraph interconnection["Interconnection interfaces"]
-        Series["Series"]
-        Parallel["Parallel"]
-        Feedback["Feedback / SafeFeedback"]
-        AppendConnect["Append / Connect / LFT / SumBlk"]
-        DelayOps["PadeDelay / ThiranDelay<br/>PullDelaysToLFT / AbsorbDelay"]
+        seriesOp["Series"]
+        parallelOp["Parallel"]
+        feedbackOp["Feedback / SafeFeedback"]
+        connectOps["Append / Connect / LFT / SumBlk"]
+        delayOps["PadeDelay / ThiranDelay<br/>PullDelaysToLFT / AbsorbDelay"]
     end
 
     subgraph conversion["Representation and domain conversion"]
-        TFConv["System.TransferFunction"]
-        ZPKConv["System.ZPKModel"]
-        FRDConv["System.FRD"]
-        C2D["Discretize / DiscretizeWithOpts"]
-        D2C["Undiscretize / D2C"]
-        StateUtils["StateTransform / EliminateStates<br/>FixedInputReduction"]
+        convertToTF["System.TransferFunction"]
+        convertToZPK["System.ZPKModel"]
+        convertToFRD["System.FRD"]
+        convertToDiscrete["Discretize / DiscretizeWithOpts / D2D"]
+        convertToContinuous["System.Undiscretize / System.D2C"]
+        stateSpaceUtilities["StateTransform / EliminateStates<br/>FixedInputReduction"]
     end
 
     subgraph analysis["Analysis interfaces"]
-        TimeAnalysis["Step / Impulse / Initial / Lsim / Simulate / StepInfo"]
-        FreqAnalysis["FreqResponse / Bode / Nyquist / Margin / Sigma / FRD helpers"]
-        ModelAnalysis["Poles / Zeros / Damp / IsStable / Pzmap"]
-        EnergyAnalysis["Gram / HSV / H2Norm / HinfNorm / Covar / Passive"]
-        StructureAnalysis["Ctrb / Obsv / Stabilizable / Detectable"]
-        LoopAnalysis["Loopsens / RootLocus"]
-        Passivity["Passive / FRDPassive / SpectralFactor"]
+        timeAnalysis["Step / Impulse / Initial / Lsim / Simulate / StepInfo"]
+        freqAnalysis["FreqResponse / Bode / Nyquist / Margin / Sigma / FRD helpers"]
+        modelAnalysis["Poles / Zeros / Damp / IsStable / Pzmap"]
+        energyAnalysis["Gram / HSV / H2Norm / HinfNorm / Covar / Passive"]
+        structureAnalysis["Ctrb / Obsv / Stabilizable / Detectable"]
+        loopAnalysis["Loopsens / RootLocus"]
+        passivityAnalysis["Passive / FRDPassive / SpectralFactor"]
     end
 
     subgraph transforms["Transformation and reduction"]
-        Realization["SS2SS / Xperm / Canon"]
-        Balancing["Balreal / Balred / Modred / Sminreal / ModalTruncate"]
-        Decomposition["Stabsep / Modsep / Prescale / Ssbal"]
-        Algebra["Inv / Augstate"]
+        realizationTransforms["SS2SS / Xperm / Canon"]
+        balancingTransforms["Balreal / Balred / Modred / Sminreal / ModalTruncate"]
+        decompositionTransforms["Stabsep / Modsep / Prescale / Ssbal"]
+        algebraTransforms["Inv / Augstate"]
     end
 
     subgraph synthesis["Design and synthesis"]
-        Riccati["Care / Dare / Lyap / DLyap"]
-        Controller["Lqr / Dlqr / Lqi / Lqrd / Place / Acker"]
-        Observer["Kalman / LQG / Observer assembly"]
-        Robust["H2Syn / HinfSyn"]
-        PID["Pidtune / PID / SmithPredictor"]
-        FixedTuning["Systune / Looptune<br/>tuning goals"]
+        riccatiSolvers["Care / Dare / Lyap / DLyap"]
+        controllerDesign["Lqr / Dlqr / Lqi / Lqrd / Place / Acker"]
+        observerDesign["Kalman / Lqg / Observer assembly"]
+        robustSynthesis["H2Syn / HinfSyn"]
+        pidDesign["Pidtune / PID / SmithPredictor"]
+        fixedStructureTuning["Systune / Looptune<br/>tuning goals"]
     end
 
-    caller --> New
-    caller --> NewDescriptor
-    caller --> NewTF
-    caller --> NewZPK
-    caller --> NewFRD
-    caller --> NewArray
-    caller --> ERA
-    caller --> FreqEst
-    caller --> Linearize
-    caller --> Physical
-    caller --> Tunable
+    caller --> constructStateSpace
+    caller --> constructDescriptor
+    caller --> realizeTransferFunc
+    caller --> constructZPK
+    caller --> constructFRD
+    caller --> constructModelArray
+    caller --> identifyERA
+    caller --> estimateFreqResponse
+    caller --> linearizeNonlinear
+    caller --> assemblePhysical
+    caller --> tunableBlocks
 
-    New --> System
-    NewDescriptor --> System
-    NewTF --> System
-    NewZPK --> ZPK
-    NewFRD --> FRD
-    NewArray --> ModelArray
-    ERA --> System
-    FreqEst --> FreqResp
-    FreqEst --> FRD
-    Linearize --> System
-    Physical --> System
-    Tunable --> Generalized
+    constructStateSpace --> System
+    constructDescriptor --> System
+    realizeTransferFunc --> System
+    constructZPK --> ZPK
+    constructFRD --> FRD
+    constructModelArray --> ModelArray
+    identifyERA --> System
+    estimateFreqResponse --> FreqResp
+    estimateFreqResponse --> FRD
+    linearizeNonlinear --> System
+    assemblePhysical --> System
+    tunableBlocks --> generalizedModels
 
-    TF <--> ZPK
-    TF --> System
-    ZPK --> TF
+    transferFunc <--> ZPK
+    transferFunc --> System
+    ZPK --> transferFunc
     ZPK --> System
-    System --> TFConv --> TF
-    System --> ZPKConv --> ZPK
-    System --> FRDConv --> FRD
-    FRD --> FreqResp
+    System --> convertToTF --> transferFunc
+    System --> convertToZPK --> ZPK
+    System --> convertToFRD --> FRD
+    FRD --> freqResponseMatrix
     ModelArray --> System
-    ModelArray --> FreqResp
-    ModelArray --> TimeResp
-    Generalized --> System
+    ModelArray --> freqResponseMatrix
+    ModelArray --> timeResponse
+    generalizedModels --> System
 
-    System --> Series --> System
-    System --> Parallel --> System
-    System --> Feedback --> System
-    System --> AppendConnect --> System
-    System --> DelayOps --> System
+    System --> seriesOp --> System
+    System --> parallelOp --> System
+    System --> feedbackOp --> System
+    System --> connectOps --> System
+    System --> delayOps --> System
 
-    System --> C2D --> System
-    System --> D2C --> System
-    System --> StateUtils --> System
+    System --> convertToDiscrete --> System
+    System --> convertToContinuous --> System
+    System --> stateSpaceUtilities --> System
 
-    System --> TimeAnalysis --> TimeResp
-    System --> FreqAnalysis --> FreqResp
-    FRD --> FreqAnalysis
-    System --> ModelAnalysis
-    System --> EnergyAnalysis
-    System --> StructureAnalysis
-    System --> LoopAnalysis
-    System --> Passivity
-    FRD --> Passivity
+    System --> timeAnalysis --> timeResponse
+    System --> freqAnalysis --> freqResponseMatrix
+    FRD --> freqAnalysis
+    System --> modelAnalysis
+    System --> energyAnalysis
+    System --> structureAnalysis
+    System --> loopAnalysis
+    System --> passivityAnalysis
+    FRD --> passivityAnalysis
 
-    System --> Realization --> System
-    System --> Balancing --> System
-    System --> Decomposition --> System
-    System --> Algebra --> System
+    System --> realizationTransforms --> System
+    System --> balancingTransforms --> System
+    System --> decompositionTransforms --> System
+    System --> algebraTransforms --> System
 
-    System --> Controller
-    System --> Observer
-    System --> Robust
-    System --> PID
-    System --> Generalized
-    Generalized --> FixedTuning
-    Tunable --> FixedTuning
-    Riccati --> Controller
-    Riccati --> Observer
-    Riccati --> Robust
-    Controller --> System
-    Observer --> System
-    Robust --> System
-    PID --> System
-    FixedTuning --> System
+    System --> controllerDesign
+    System --> observerDesign
+    System --> robustSynthesis
+    System --> pidDesign
+    System --> generalizedModels
+    generalizedModels --> fixedStructureTuning
+    tunableBlocks --> fixedStructureTuning
+    riccatiSolvers --> controllerDesign
+    riccatiSolvers --> observerDesign
+    riccatiSolvers --> robustSynthesis
+    controllerDesign --> System
+    observerDesign --> System
+    robustSynthesis --> System
+    pidDesign --> System
+    fixedStructureTuning --> System
 ```
 
 ## Internal Seam Map

@@ -450,8 +450,9 @@ C := mat.NewDense(1, 3, []float64{1, 0, 0})
 
 ```go
 // tf2ss of static gain must produce 0-state system, not crash
-tf := NewTransferFunc([]float64{23}, []float64{46})
-sys := tf.StateSpace()
+tf := &TransferFunc{Num: [][][]float64{{{23}}}, Den: [][]float64{{46}}}
+result, err := tf.StateSpace(nil)
+sys := result.Sys
 // sys.A should be 0x0, sys.D should be [[0.5]]
 ```
 
@@ -588,7 +589,9 @@ MATLAB does continuous unwrapping.
 
 ```go
 // 1/s^3 should show -270 deg (MATLAB), not +90 deg
-sys := NewTransferFunc([]float64{1}, []float64{1, 0, 0, 0})
+tf := &TransferFunc{Num: [][][]float64{{{1}}}, Den: [][]float64{{1, 0, 0, 0}}}
+result, err := tf.StateSpace(nil)
+sys := result.Sys
 // Phase at any frequency should be -270, not +90
 ```
 
@@ -722,10 +725,12 @@ of `dcgain()` for gain normalization, producing ~10x error.
 ```go
 // For all discretization methods, verify:
 // dcgain(c2d(sys, dt)) == dcgain(sys)
-sys := NewSS(A, B, C, D)
+sys, err := New(A, B, C, D, 0)
 for _, method := range []string{"zoh", "foh", "tustin", "matched"} {
-    sysd := Discretize(sys, dt, method)
-    assert(abs(DCGain(sysd) - DCGain(sys)) < tol)
+    sysd, err := sys.DiscretizeWithOpts(dt, C2DOptions{Method: method})
+    got, err := sysd.DCGain()
+    want, err := sys.DCGain()
+    assert(abs(got.At(0, 0) - want.At(0, 0)) < tol)
 }
 ```
 
