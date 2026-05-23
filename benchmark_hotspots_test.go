@@ -460,6 +460,28 @@ func BenchmarkGeneralizedClosedLoop_SISO(b *testing.B) {
 	}
 }
 
+func BenchmarkTuningGoalWeightedGain_SISO(b *testing.B) {
+	sys := benchSysNonSym(4, 1, 1)
+	goal := NewWeightedGainGoal("gain", 10)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := goal.Evaluate(sys); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkTuningGoalWeightedGain_MIMO(b *testing.B) {
+	sys := benchSysNonSym(8, 3, 3)
+	goal := NewWeightedGainGoal("gain", 10)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := goal.Evaluate(sys); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
 func benchDescriptorSystem(b *testing.B, n, m, p int) *System {
 	b.Helper()
 	sys := benchSysNonSym(n, m, p)
