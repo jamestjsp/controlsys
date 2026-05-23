@@ -47,6 +47,24 @@ func benchFRDFromSys(sys *System, nw int) *FRD {
 	return f
 }
 
+func benchModelArray(b *testing.B, count, n, m, p int) *ModelArray {
+	b.Helper()
+	models := make([]*System, count)
+	for i := range models {
+		if i%7 == 3 {
+			continue
+		}
+		sys := benchSysNonSym(n, m, p)
+		sys.A.Set(0, 0, sys.A.At(0, 0)-float64(i)*0.01)
+		models[i] = sys
+	}
+	arr, err := NewModelArray([]int{count}, models)
+	if err != nil {
+		b.Fatal(err)
+	}
+	return arr
+}
+
 // --------------- FRD stack ---------------
 
 func BenchmarkSystemFRD_SISO_200(b *testing.B)   { benchSystemFRD(b, 2, 1, 1, 200) }
@@ -189,6 +207,34 @@ func BenchmarkFRDPeakGain_MIMO_2000(b *testing.B) {
 	}
 }
 
+func BenchmarkModelArrayFreqResponse_MIMO_16x200(b *testing.B) {
+	arr := benchModelArray(b, 16, 10, 3, 4)
+	omega := logspace(-2, 3, 200)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := arr.FreqResponse(omega); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkModelArrayFreqResponseManualLoop_MIMO_16x200(b *testing.B) {
+	arr := benchModelArray(b, 16, 10, 3, 4)
+	models := arr.models
+	omega := logspace(-2, 3, 200)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		for _, sys := range models {
+			if sys == nil {
+				continue
+			}
+			if _, err := sys.FreqResponse(omega); err != nil {
+				b.Fatal(err)
+			}
+		}
+	}
+}
+
 // --------------- Time-response wrappers ---------------
 
 func BenchmarkStep_SISO_N2(b *testing.B)  { benchStep(b, 2, 1, 1) }
@@ -217,6 +263,32 @@ func benchStepInfo(b *testing.B, n, m, p int) {
 	for i := 0; i < b.N; i++ {
 		if _, err := StepInfo(resp, nil); err != nil {
 			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkModelArrayStep_MIMO_16(b *testing.B) {
+	arr := benchModelArray(b, 16, 10, 3, 4)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := arr.Step(10); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkModelArrayStepManualLoop_MIMO_16(b *testing.B) {
+	arr := benchModelArray(b, 16, 10, 3, 4)
+	models := arr.models
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		for _, sys := range models {
+			if sys == nil {
+				continue
+			}
+			if _, err := Step(sys, 10); err != nil {
+				b.Fatal(err)
+			}
 		}
 	}
 }
