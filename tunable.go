@@ -161,6 +161,17 @@ func (b *TunableGain) RandomSample(rng *rand.Rand) (*TunableGain, error) {
 	return &TunableGain{name: b.name, D: D, dt: b.dt}, nil
 }
 
+func (b *TunableGain) FreeParameters() []*TunableReal {
+	if b == nil {
+		return nil
+	}
+	return uniqueFreeTunableReals(b.D)
+}
+
+func (b *TunableGain) SampleBlock(values map[string]float64) (TunableBlock, error) {
+	return b.Sample(values)
+}
+
 type TunablePID struct {
 	name       string
 	Kp, Ki, Kd *TunableReal
@@ -207,6 +218,17 @@ func (b *TunablePID) RandomSample(rng *rand.Rand) (*TunablePID, error) {
 		return nil, err
 	}
 	return &TunablePID{name: b.name, Kp: kp, Ki: ki, Kd: kd, Tf: b.Tf, Dt: b.Dt}, nil
+}
+
+func (b *TunablePID) FreeParameters() []*TunableReal {
+	if b == nil {
+		return nil
+	}
+	return uniqueFreeTunableReals([][]*TunableReal{{b.Kp, b.Ki, b.Kd}})
+}
+
+func (b *TunablePID) SampleBlock(values map[string]float64) (TunableBlock, error) {
+	return b.Sample(values)
 }
 
 type TunableTF struct {
@@ -257,6 +279,17 @@ func (b *TunableTF) RandomSample(rng *rand.Rand) (*TunableTF, error) {
 		return nil, err
 	}
 	return &TunableTF{name: b.name, Num: num, Den: copyFloatRows(b.Den), Dt: b.Dt}, nil
+}
+
+func (b *TunableTF) FreeParameters() []*TunableReal {
+	if b == nil {
+		return nil
+	}
+	return uniqueFreeTunableTensors(b.Num)
+}
+
+func (b *TunableTF) SampleBlock(values map[string]float64) (TunableBlock, error) {
+	return b.Sample(values)
 }
 
 type TunableSS struct {
@@ -334,6 +367,17 @@ func (b *TunableSS) RandomSample(rng *rand.Rand) (*TunableSS, error) {
 		return nil, err
 	}
 	return &TunableSS{name: b.name, A: A, B: B, C: C, D: D, Dt: b.Dt}, nil
+}
+
+func (b *TunableSS) FreeParameters() []*TunableReal {
+	if b == nil {
+		return nil
+	}
+	return uniqueFreeTunableMatrices(b.A, b.B, b.C, b.D)
+}
+
+func (b *TunableSS) SampleBlock(values map[string]float64) (TunableBlock, error) {
+	return b.Sample(values)
 }
 
 func tunableMatrixValues(params [][]*TunableReal, context string) (*mat.Dense, error) {
@@ -433,6 +477,42 @@ func randomSampleTunableTensor(params [][][]*TunableReal, rng *rand.Rand) ([][][
 		out[i] = sampled
 	}
 	return out, nil
+}
+
+func uniqueFreeTunableMatrices(matrices ...[][]*TunableReal) []*TunableReal {
+	seen := make(map[string]bool)
+	var out []*TunableReal
+	for _, matrix := range matrices {
+		for _, row := range matrix {
+			for _, param := range row {
+				if param == nil || param.Fixed() || seen[param.Name()] {
+					continue
+				}
+				seen[param.Name()] = true
+				out = append(out, param)
+			}
+		}
+	}
+	return out
+}
+
+func uniqueFreeTunableTensors(tensors ...[][][]*TunableReal) []*TunableReal {
+	seen := make(map[string]bool)
+	var out []*TunableReal
+	for _, tensor := range tensors {
+		for _, matrix := range tensor {
+			for _, row := range matrix {
+				for _, param := range row {
+					if param == nil || param.Fixed() || seen[param.Name()] {
+						continue
+					}
+					seen[param.Name()] = true
+					out = append(out, param)
+				}
+			}
+		}
+	}
+	return out
 }
 
 func copyFloatRows(rows [][]float64) [][]float64 {

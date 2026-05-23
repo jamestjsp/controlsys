@@ -31,9 +31,9 @@ func tuneFixedStructure(model *GeneralizedClosedLoop, goals []TuningGoal, opts *
 	if model == nil {
 		return nil, fmt.Errorf("Systune: nil model: %w", ErrDimensionMismatch)
 	}
-	gain, ok := model.controllerRaw.(*TunableGain)
-	if !ok {
-		return nil, fmt.Errorf("Systune: only TunableGain controllers are supported by this tracer: %w", ErrDimensionMismatch)
+	controller := model.tunableController
+	if controller == nil {
+		return nil, fmt.Errorf("Systune: controller is not tunable: %w", ErrDimensionMismatch)
 	}
 	if len(goals) == 0 {
 		return nil, fmt.Errorf("Systune: no goals: %w", ErrDimensionMismatch)
@@ -42,7 +42,7 @@ func tuneFixedStructure(model *GeneralizedClosedLoop, goals []TuningGoal, opts *
 	if opts != nil && opts.GridPoints > 0 {
 		gridPoints = opts.GridPoints
 	}
-	params := uniqueFreeTunableReals(gain.D)
+	params := controller.FreeParameters()
 	if len(params) == 0 {
 		return nil, fmt.Errorf("Systune: no free tunable parameters: %w", ErrDimensionMismatch)
 	}
@@ -54,14 +54,14 @@ func tuneFixedStructure(model *GeneralizedClosedLoop, goals []TuningGoal, opts *
 	search = func(idx int) error {
 		if idx == len(params) {
 			iterations++
-			sampled, err := gain.Sample(values)
+			sampled, err := controller.SampleBlock(values)
 			if err != nil {
 				return err
 			}
 			candidate := *model
 			candidate.controller = sampled
-			candidate.controllerRaw = sampled
-			closed, err := candidate.ClosedLoop(firstAnalysisPointName(candidate.analysisPoints))
+			candidate.tunableController = sampled
+			closed, err := candidate.ClosedLoop(candidate.primaryAnalysisPointName())
 			if err != nil {
 				return err
 			}

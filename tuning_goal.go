@@ -122,7 +122,7 @@ func tuningGoalSystem(model any) (*System, error) {
 	case *GeneralizedModel:
 		return v.CurrentSystem()
 	case *GeneralizedClosedLoop:
-		return v.ClosedLoop(firstAnalysisPointName(v.analysisPoints))
+		return v.ClosedLoop(v.primaryAnalysisPointName())
 	default:
 		return nil, fmt.Errorf("TuningGoal.Evaluate: unsupported model %T: %w", model, ErrDimensionMismatch)
 	}

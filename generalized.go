@@ -6,6 +6,12 @@ type NumericBlock interface {
 	CurrentSystem() (*System, error)
 }
 
+type TunableBlock interface {
+	NumericBlock
+	FreeParameters() []*TunableReal
+	SampleBlock(map[string]float64) (TunableBlock, error)
+}
+
 type fixedSystemBlock struct {
 	sys *System
 }
@@ -103,11 +109,12 @@ func (g *GeneralizedModel) CurrentSystem() (*System, error) {
 }
 
 type GeneralizedClosedLoop struct {
-	name           string
-	plant          *System
-	controller     NumericBlock
-	controllerRaw  any
-	analysisPoints map[string]AnalysisPoint
+	name                 string
+	plant                *System
+	controller           NumericBlock
+	tunableController    TunableBlock
+	analysisPoints       map[string]AnalysisPoint
+	primaryAnalysisPoint string
 }
 
 func NewGeneralizedClosedLoop(name string, plant *System, controller any, analysisPoint string) (*GeneralizedClosedLoop, error) {
@@ -119,11 +126,14 @@ func NewGeneralizedClosedLoop(name string, plant *System, controller any, analys
 		return nil, fmt.Errorf("NewGeneralizedClosedLoop: nil plant: %w", ErrDimensionMismatch)
 	}
 	g := &GeneralizedClosedLoop{
-		name:           name,
-		plant:          plant.Copy(),
-		controller:     ctrl,
-		controllerRaw:  controller,
-		analysisPoints: make(map[string]AnalysisPoint),
+		name:                 name,
+		plant:                plant.Copy(),
+		controller:           ctrl,
+		analysisPoints:       make(map[string]AnalysisPoint),
+		primaryAnalysisPoint: analysisPoint,
+	}
+	if tunable, ok := controller.(TunableBlock); ok {
+		g.tunableController = tunable
 	}
 	g.analysisPoints[analysisPoint] = AnalysisPoint{Name: analysisPoint}
 	return g, nil
@@ -176,4 +186,14 @@ func (g *GeneralizedClosedLoop) Sensitivity(name string) (*System, error) {
 	negT.C.Scale(-1, negT.C)
 	negT.D.Scale(-1, negT.D)
 	return Parallel(one, negT)
+}
+
+func (g *GeneralizedClosedLoop) primaryAnalysisPointName() string {
+	if g == nil {
+		return ""
+	}
+	if g.primaryAnalysisPoint != "" {
+		return g.primaryAnalysisPoint
+	}
+	return firstAnalysisPointName(g.analysisPoints)
 }
