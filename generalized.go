@@ -106,6 +106,7 @@ type GeneralizedClosedLoop struct {
 	name           string
 	plant          *System
 	controller     NumericBlock
+	controllerRaw  any
 	analysisPoints map[string]AnalysisPoint
 }
 
@@ -121,6 +122,7 @@ func NewGeneralizedClosedLoop(name string, plant *System, controller any, analys
 		name:           name,
 		plant:          plant.Copy(),
 		controller:     ctrl,
+		controllerRaw:  controller,
 		analysisPoints: make(map[string]AnalysisPoint),
 	}
 	g.analysisPoints[analysisPoint] = AnalysisPoint{Name: analysisPoint}
