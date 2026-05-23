@@ -519,6 +519,36 @@ func BenchmarkSystune_MIMO(b *testing.B) {
 	}
 }
 
+func BenchmarkPhysicalAssembly_8Components(b *testing.B) {
+	components := make([]PhysicalComponent, 8)
+	for i := range components {
+		sys := benchDescriptorSystem(b, 4, 1, 1)
+		sys.InputName = []string{"force"}
+		sys.OutputName = []string{"position"}
+		sys.StateName = autoLabel("x", 4)
+		components[i] = NewPhysicalComponent(
+			fmt.Sprintf("c%d", i),
+			sys,
+			[]PhysicalPort{{Name: "mount", Kind: PhysicalPortDisplacement, Dimension: 1}},
+		)
+	}
+	connections := make([]PhysicalConnection, 0, len(components)-1)
+	for i := 0; i < len(components)-1; i++ {
+		connections = append(connections, PhysicalConnection{
+			FromComponent: fmt.Sprintf("c%d", i),
+			FromPort:      "mount",
+			ToComponent:   fmt.Sprintf("c%d", i+1),
+			ToPort:        "mount",
+		})
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := AssemblePhysical("chain", components, connections); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
 func benchDescriptorSystem(b *testing.B, n, m, p int) *System {
 	b.Helper()
 	sys := benchSysNonSym(n, m, p)
