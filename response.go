@@ -286,11 +286,123 @@ func (sys *System) DCGain() (*mat.Dense, error) {
 }
 
 func (sys *System) dcGainByTransferFunctionLimit() (*mat.Dense, error) {
+	if gain, ok := sys.dcGainByDecoupledSingularModes(); ok {
+		return gain, nil
+	}
 	res, err := sys.TransferFunction(nil)
 	if err != nil {
 		return nil, fmt.Errorf("DCGain: %w", err)
 	}
 	return dcGainFromTransferFunction(res.TF), nil
+}
+
+func (sys *System) dcGainByDecoupledSingularModes() (*mat.Dense, bool) {
+	n, m, p := sys.Dims()
+	target := 0.0
+	if sys.IsDiscrete() {
+		target = 1.0
+	}
+	tol := dcGainMatrixTol(sys.A)
+	singular := make([]bool, n)
+	regularCount := 0
+	for k := 0; k < n; k++ {
+		if math.Abs(sys.A.At(k, k)-target) <= tol && rowColDecoupledAt(sys.A, k, tol) {
+			singular[k] = true
+			continue
+		}
+		regularCount++
+	}
+	if regularCount == n {
+		return nil, false
+	}
+
+	regular := make([]int, 0, regularCount)
+	for k := 0; k < n; k++ {
+		if !singular[k] {
+			regular = append(regular, k)
+		}
+	}
+
+	gain := denseCopySafe(sys.D, p, m)
+	if regularCount > 0 {
+		Areg := mat.NewDense(regularCount, regularCount, nil)
+		Breg := mat.NewDense(regularCount, m, nil)
+		Creg := mat.NewDense(p, regularCount, nil)
+		for ri, srcRow := range regular {
+			for ci, srcCol := range regular {
+				Areg.Set(ri, ci, sys.A.At(srcRow, srcCol))
+			}
+			for j := 0; j < m; j++ {
+				Breg.Set(ri, j, sys.B.At(srcRow, j))
+			}
+			for i := 0; i < p; i++ {
+				Creg.Set(i, ri, sys.C.At(i, srcRow))
+			}
+		}
+
+		var X mat.Dense
+		var err error
+		if sys.IsContinuous() {
+			err = X.Solve(Areg, Breg)
+		} else {
+			ImA := mat.NewDense(regularCount, regularCount, nil)
+			for i := 0; i < regularCount; i++ {
+				for j := 0; j < regularCount; j++ {
+					v := -Areg.At(i, j)
+					if i == j {
+						v += 1
+					}
+					ImA.Set(i, j, v)
+				}
+			}
+			err = X.Solve(ImA, Breg)
+		}
+		if err != nil {
+			return nil, false
+		}
+		var finite mat.Dense
+		finite.Mul(Creg, &X)
+		if sys.IsContinuous() {
+			finite.Scale(-1, &finite)
+		}
+		gain.Add(gain, &finite)
+	}
+
+	for k := 0; k < n; k++ {
+		if !singular[k] {
+			continue
+		}
+		for i := 0; i < p; i++ {
+			c := sys.C.At(i, k)
+			if math.Abs(c) <= tol {
+				continue
+			}
+			for j := 0; j < m; j++ {
+				coeff := c * sys.B.At(k, j)
+				if math.Abs(coeff) > tol {
+					gain.Set(i, j, math.Inf(signInt(coeff)))
+				}
+			}
+		}
+	}
+	return gain, true
+}
+
+func rowColDecoupledAt(a *mat.Dense, k int, tol float64) bool {
+	n, _ := a.Dims()
+	for i := 0; i < n; i++ {
+		if i == k {
+			continue
+		}
+		if math.Abs(a.At(k, i)) > tol || math.Abs(a.At(i, k)) > tol {
+			return false
+		}
+	}
+	return true
+}
+
+func dcGainMatrixTol(m *mat.Dense) float64 {
+	return 100 * eps() * math.Max(denseNorm(m), 1)
 }
 
 func dcGainFromTransferFunction(tf *TransferFunc) *mat.Dense {

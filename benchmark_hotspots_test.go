@@ -48,6 +48,38 @@ func benchFRDFromSys(sys *System, nw int) *FRD {
 	return f
 }
 
+func benchIntegratorMIMOSystem(n, m, p int) *System {
+	A := mat.NewDense(n, n, nil)
+	for i := 1; i < n; i++ {
+		A.Set(i, i, -float64(i+1)*0.25)
+		if i > 1 {
+			A.Set(i, i-1, 0.2)
+		}
+		if i < n-1 {
+			A.Set(i, i+1, 0.05)
+		}
+	}
+	B := mat.NewDense(n, m, nil)
+	for j := 0; j < m; j++ {
+		B.Set(0, j, float64(j+1))
+	}
+	for i := 1; i < n; i++ {
+		B.Set(i, i%m, 1)
+	}
+	C := mat.NewDense(p, n, nil)
+	for i := 0; i < p; i++ {
+		if i%2 == 0 {
+			C.Set(i, 0, 1)
+		}
+		if n > 1 {
+			C.Set(i, 1+i%(n-1), 1)
+		}
+	}
+	D := mat.NewDense(p, m, nil)
+	sys, _ := New(A, B, C, D, 0)
+	return sys
+}
+
 func benchModelArray(b *testing.B, count, n, m, p int) *ModelArray {
 	b.Helper()
 	models := make([]*System, count)
@@ -64,6 +96,38 @@ func benchModelArray(b *testing.B, count, n, m, p int) *ModelArray {
 		b.Fatal(err)
 	}
 	return arr
+}
+
+// --------------- DC gain ---------------
+
+func BenchmarkDCGain_StableMIMO_N10_M4_P6(b *testing.B) {
+	sys := benchSysNonSym(10, 4, 6)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := sys.DCGain(); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkDCGain_IntegratorMIMO_N10_M4_P6(b *testing.B) {
+	sys := benchIntegratorMIMOSystem(10, 4, 6)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := sys.DCGain(); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkDCGain_IntegratorMIMO_N40_M8_P8(b *testing.B) {
+	sys := benchIntegratorMIMOSystem(40, 8, 8)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := sys.DCGain(); err != nil {
+			b.Fatal(err)
+		}
+	}
 }
 
 // --------------- FRD stack ---------------
