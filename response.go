@@ -250,7 +250,7 @@ func (sys *System) DCGain() (*mat.Dense, error) {
 		var X mat.Dense
 		err := X.Solve(sys.A, sys.B)
 		if err != nil {
-			return nil, fmt.Errorf("DCGain: A singular, DC gain undefined: %w", ErrSingularTransform)
+			return sys.dcGainByTransferFunctionLimit()
 		}
 		gain := mat.NewDense(p, m, nil)
 		gain.Mul(sys.C, &X)
@@ -275,7 +275,7 @@ func (sys *System) DCGain() (*mat.Dense, error) {
 	var X mat.Dense
 	err := X.Solve(ImA, sys.B)
 	if err != nil {
-		return nil, fmt.Errorf("DCGain: (I-A) singular, DC gain undefined: %w", ErrSingularTransform)
+		return sys.dcGainByTransferFunctionLimit()
 	}
 	gain := mat.NewDense(p, m, nil)
 	gain.Mul(sys.C, &X)
@@ -283,6 +283,224 @@ func (sys *System) DCGain() (*mat.Dense, error) {
 		gain.Add(gain, sys.D)
 	}
 	return gain, nil
+}
+
+func (sys *System) dcGainByTransferFunctionLimit() (*mat.Dense, error) {
+	if gain, ok := sys.dcGainByDecoupledSingularModes(); ok {
+		return gain, nil
+	}
+	res, err := sys.TransferFunction(nil)
+	if err != nil {
+		return nil, fmt.Errorf("DCGain: %w", err)
+	}
+	return dcGainFromTransferFunction(res.TF), nil
+}
+
+func (sys *System) dcGainByDecoupledSingularModes() (*mat.Dense, bool) {
+	n, m, p := sys.Dims()
+	target := 0.0
+	if sys.IsDiscrete() {
+		target = 1.0
+	}
+	tol := dcGainMatrixTol(sys.A)
+	singular := make([]bool, n)
+	regularCount := 0
+	for k := 0; k < n; k++ {
+		if math.Abs(sys.A.At(k, k)-target) <= tol && rowColDecoupledAt(sys.A, k, tol) {
+			singular[k] = true
+			continue
+		}
+		regularCount++
+	}
+	if regularCount == n {
+		return nil, false
+	}
+
+	regular := make([]int, 0, regularCount)
+	for k := 0; k < n; k++ {
+		if !singular[k] {
+			regular = append(regular, k)
+		}
+	}
+
+	gain := denseCopySafe(sys.D, p, m)
+	if regularCount > 0 {
+		Areg := mat.NewDense(regularCount, regularCount, nil)
+		Breg := mat.NewDense(regularCount, m, nil)
+		Creg := mat.NewDense(p, regularCount, nil)
+		for ri, srcRow := range regular {
+			for ci, srcCol := range regular {
+				Areg.Set(ri, ci, sys.A.At(srcRow, srcCol))
+			}
+			for j := 0; j < m; j++ {
+				Breg.Set(ri, j, sys.B.At(srcRow, j))
+			}
+			for i := 0; i < p; i++ {
+				Creg.Set(i, ri, sys.C.At(i, srcRow))
+			}
+		}
+
+		var X mat.Dense
+		var err error
+		if sys.IsContinuous() {
+			err = X.Solve(Areg, Breg)
+		} else {
+			ImA := mat.NewDense(regularCount, regularCount, nil)
+			for i := 0; i < regularCount; i++ {
+				for j := 0; j < regularCount; j++ {
+					v := -Areg.At(i, j)
+					if i == j {
+						v += 1
+					}
+					ImA.Set(i, j, v)
+				}
+			}
+			err = X.Solve(ImA, Breg)
+		}
+		if err != nil {
+			return nil, false
+		}
+		var finite mat.Dense
+		finite.Mul(Creg, &X)
+		if sys.IsContinuous() {
+			finite.Scale(-1, &finite)
+		}
+		gain.Add(gain, &finite)
+	}
+
+	residue := mat.NewDense(p, m, nil)
+	for k := 0; k < n; k++ {
+		if !singular[k] {
+			continue
+		}
+		for i := 0; i < p; i++ {
+			c := sys.C.At(i, k)
+			if math.Abs(c) <= tol {
+				continue
+			}
+			for j := 0; j < m; j++ {
+				coeff := c * sys.B.At(k, j)
+				if math.Abs(coeff) > tol {
+					residue.Set(i, j, residue.At(i, j)+coeff)
+				}
+			}
+		}
+	}
+	for i := 0; i < p; i++ {
+		for j := 0; j < m; j++ {
+			coeff := residue.At(i, j)
+			if math.Abs(coeff) > tol {
+				gain.Set(i, j, math.Inf(signInt(coeff)))
+			}
+		}
+	}
+	return gain, true
+}
+
+func rowColDecoupledAt(a *mat.Dense, k int, tol float64) bool {
+	n, _ := a.Dims()
+	for i := 0; i < n; i++ {
+		if i == k {
+			continue
+		}
+		if math.Abs(a.At(k, i)) > tol || math.Abs(a.At(i, k)) > tol {
+			return false
+		}
+	}
+	return true
+}
+
+func dcGainMatrixTol(m *mat.Dense) float64 {
+	return 100 * eps() * math.Max(denseNorm(m), 1)
+}
+
+func dcGainFromTransferFunction(tf *TransferFunc) *mat.Dense {
+	p, m := tf.Dims()
+	point := 0.0
+	if tf.Dt > 0 {
+		point = 1.0
+	}
+	gain := mat.NewDense(p, m, nil)
+	for i := 0; i < p; i++ {
+		for j := 0; j < m; j++ {
+			gain.Set(i, j, rationalLimitAtReal(tf.Num[i][j], tf.Den[i], point))
+		}
+	}
+	return gain
+}
+
+func rationalLimitAtReal(num, den []float64, point float64) float64 {
+	numMult, numValue, numZero := polynomialRootMultiplicityValue(num, point)
+	if numZero {
+		return 0
+	}
+	denMult, denValue, denZero := polynomialRootMultiplicityValue(den, point)
+	if denZero {
+		return math.NaN()
+	}
+	if denMult > numMult {
+		return math.Inf(signInt(numValue / denValue))
+	}
+	if denMult < numMult {
+		return 0
+	}
+	return numValue / denValue
+}
+
+func polynomialRootMultiplicityValue(poly []float64, root float64) (multiplicity int, value float64, zero bool) {
+	p := trimLeadingNearZero(poly, dcGainPolyTol(poly))
+	if len(p) == 0 {
+		return 0, 0, true
+	}
+	tol := dcGainPolyTol(p)
+	for len(p) > 1 {
+		q, rem := deflateRealRoot(p, root)
+		if math.Abs(rem) > tol {
+			break
+		}
+		multiplicity++
+		p = trimLeadingNearZero(q, tol)
+		if len(p) == 0 {
+			return multiplicity, 0, true
+		}
+		tol = dcGainPolyTol(p)
+	}
+	return multiplicity, real(Poly(p).Eval(complex(root, 0))), false
+}
+
+func deflateRealRoot(poly []float64, root float64) ([]float64, float64) {
+	q := make([]float64, len(poly)-1)
+	q[0] = poly[0]
+	for i := 1; i < len(q); i++ {
+		q[i] = poly[i] + root*q[i-1]
+	}
+	rem := poly[len(poly)-1] + root*q[len(q)-1]
+	return q, rem
+}
+
+func trimLeadingNearZero(poly []float64, tol float64) []float64 {
+	start := 0
+	for start < len(poly) && math.Abs(poly[start]) <= tol {
+		start++
+	}
+	return poly[start:]
+}
+
+func dcGainPolyTol(poly []float64) float64 {
+	scale := 1.0
+	for _, v := range poly {
+		if a := math.Abs(v); a > scale {
+			scale = a
+		}
+	}
+	return 100 * eps() * scale
+}
+
+func signInt(v float64) int {
+	if math.Signbit(v) {
+		return -1
+	}
+	return 1
 }
 
 func Damp(sys *System) ([]DampInfo, error) {

@@ -200,6 +200,10 @@ _Avoid_: sample time
 The MIMO input-output response matrix evaluated at one frequency.
 _Avoid_: frequency-response data when referring to one frequency value
 
+**DC gain**:
+The zero-frequency transfer-matrix limit for each input-output channel of a model.
+_Avoid_: steady-state value when model stability or step-response convergence is meant
+
 **Static-gain model**:
 A model with direct input-to-output gain and no dynamic state.
 _Avoid_: gain system unless matching established API names, zero-state system
