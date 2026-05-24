@@ -368,6 +368,7 @@ func (sys *System) dcGainByDecoupledSingularModes() (*mat.Dense, bool) {
 		gain.Add(gain, &finite)
 	}
 
+	residue := mat.NewDense(p, m, nil)
 	for k := 0; k < n; k++ {
 		if !singular[k] {
 			continue
@@ -380,8 +381,16 @@ func (sys *System) dcGainByDecoupledSingularModes() (*mat.Dense, bool) {
 			for j := 0; j < m; j++ {
 				coeff := c * sys.B.At(k, j)
 				if math.Abs(coeff) > tol {
-					gain.Set(i, j, math.Inf(signInt(coeff)))
+					residue.Set(i, j, residue.At(i, j)+coeff)
 				}
+			}
+		}
+	}
+	for i := 0; i < p; i++ {
+		for j := 0; j < m; j++ {
+			coeff := residue.At(i, j)
+			if math.Abs(coeff) > tol {
+				gain.Set(i, j, math.Inf(signInt(coeff)))
 			}
 		}
 	}

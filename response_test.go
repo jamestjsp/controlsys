@@ -178,6 +178,29 @@ func TestDCGain_MIMOIntegratorHiddenFromOutput(t *testing.T) {
 	}
 }
 
+func TestDCGain_DecoupledIntegratorResiduesCancel(t *testing.T) {
+	sys, _ := New(
+		mat.NewDense(2, 2, []float64{
+			0, 0,
+			0, 0,
+		}),
+		mat.NewDense(2, 1, []float64{1, 1}),
+		mat.NewDense(1, 2, []float64{1, -1}),
+		mat.NewDense(1, 1, nil),
+		0,
+	)
+	g, err := sys.DCGain()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if math.IsInf(g.At(0, 0), 0) || math.IsNaN(g.At(0, 0)) {
+		t.Fatalf("DCGain = %v, want finite cancellation", g.At(0, 0))
+	}
+	if math.Abs(g.At(0, 0)) > 1e-12 {
+		t.Fatalf("DCGain = %v, want 0", g.At(0, 0))
+	}
+}
+
 func TestDamp_ContinuousUnderdamped(t *testing.T) {
 	wn := 10.0
 	zeta := 0.3
