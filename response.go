@@ -250,7 +250,7 @@ func (sys *System) DCGain() (*mat.Dense, error) {
 		var X mat.Dense
 		err := X.Solve(sys.A, sys.B)
 		if err != nil {
-			return nil, fmt.Errorf("DCGain: A singular, DC gain undefined: %w", ErrSingularTransform)
+			return sys.dcGainByTransferFunctionLimit()
 		}
 		gain := mat.NewDense(p, m, nil)
 		gain.Mul(sys.C, &X)
@@ -275,7 +275,7 @@ func (sys *System) DCGain() (*mat.Dense, error) {
 	var X mat.Dense
 	err := X.Solve(ImA, sys.B)
 	if err != nil {
-		return nil, fmt.Errorf("DCGain: (I-A) singular, DC gain undefined: %w", ErrSingularTransform)
+		return sys.dcGainByTransferFunctionLimit()
 	}
 	gain := mat.NewDense(p, m, nil)
 	gain.Mul(sys.C, &X)
@@ -283,6 +283,103 @@ func (sys *System) DCGain() (*mat.Dense, error) {
 		gain.Add(gain, sys.D)
 	}
 	return gain, nil
+}
+
+func (sys *System) dcGainByTransferFunctionLimit() (*mat.Dense, error) {
+	res, err := sys.TransferFunction(nil)
+	if err != nil {
+		return nil, fmt.Errorf("DCGain: %w", err)
+	}
+	return dcGainFromTransferFunction(res.TF), nil
+}
+
+func dcGainFromTransferFunction(tf *TransferFunc) *mat.Dense {
+	p, m := tf.Dims()
+	point := 0.0
+	if tf.Dt > 0 {
+		point = 1.0
+	}
+	gain := mat.NewDense(p, m, nil)
+	for i := 0; i < p; i++ {
+		for j := 0; j < m; j++ {
+			gain.Set(i, j, rationalLimitAtReal(tf.Num[i][j], tf.Den[i], point))
+		}
+	}
+	return gain
+}
+
+func rationalLimitAtReal(num, den []float64, point float64) float64 {
+	numMult, numValue, numZero := polynomialRootMultiplicityValue(num, point)
+	if numZero {
+		return 0
+	}
+	denMult, denValue, denZero := polynomialRootMultiplicityValue(den, point)
+	if denZero {
+		return math.NaN()
+	}
+	if denMult > numMult {
+		return math.Inf(signInt(numValue / denValue))
+	}
+	if denMult < numMult {
+		return 0
+	}
+	return numValue / denValue
+}
+
+func polynomialRootMultiplicityValue(poly []float64, root float64) (multiplicity int, value float64, zero bool) {
+	p := trimLeadingNearZero(poly, dcGainPolyTol(poly))
+	if len(p) == 0 {
+		return 0, 0, true
+	}
+	tol := dcGainPolyTol(p)
+	for len(p) > 1 {
+		q, rem := deflateRealRoot(p, root)
+		if math.Abs(rem) > tol {
+			break
+		}
+		multiplicity++
+		p = trimLeadingNearZero(q, tol)
+		if len(p) == 0 {
+			return multiplicity, 0, true
+		}
+		tol = dcGainPolyTol(p)
+	}
+	return multiplicity, real(Poly(p).Eval(complex(root, 0))), false
+}
+
+func deflateRealRoot(poly []float64, root float64) ([]float64, float64) {
+	q := make([]float64, len(poly)-1)
+	q[0] = poly[0]
+	for i := 1; i < len(q); i++ {
+		q[i] = poly[i] + root*q[i-1]
+	}
+	rem := poly[len(poly)-1] + root*q[len(q)-1]
+	return q, rem
+}
+
+func trimLeadingNearZero(poly []float64, tol float64) []float64 {
+	start := 0
+	for start < len(poly) && math.Abs(poly[start]) <= tol {
+		start++
+	}
+	return poly[start:]
+}
+
+func dcGainPolyTol(poly []float64) float64 {
+	scale := 1.0
+	for _, v := range poly {
+		if a := math.Abs(v); a > scale {
+			scale = a
+		}
+	}
+	return 100 * eps() * scale
+}
+
+func signInt(v float64) int {
+	if math.Signbit(v) {
+		return -1
+	}
+	return 1
 }
 
 func Damp(sys *System) ([]DampInfo, error) {

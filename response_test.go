@@ -75,7 +75,7 @@ func TestDCGain_PureGain(t *testing.T) {
 	}
 }
 
-func TestDCGain_Integrator_Error(t *testing.T) {
+func TestDCGain_Integrator_Infinite(t *testing.T) {
 	sys, _ := New(
 		mat.NewDense(1, 1, []float64{0}),
 		mat.NewDense(1, 1, []float64{1}),
@@ -83,13 +83,33 @@ func TestDCGain_Integrator_Error(t *testing.T) {
 		mat.NewDense(1, 1, []float64{0}),
 		0,
 	)
-	_, err := sys.DCGain()
-	if err == nil {
-		t.Fatal("expected error for integrator (singular A)")
+	g, err := sys.DCGain()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !math.IsInf(g.At(0, 0), 1) {
+		t.Fatalf("DCGain = %v, want +Inf", g.At(0, 0))
 	}
 }
 
-func TestDCGain_Discrete_PoleAtOne_Error(t *testing.T) {
+func TestDCGain_NegativeIntegrator_NegativeInfinite(t *testing.T) {
+	sys, _ := New(
+		mat.NewDense(1, 1, []float64{0}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{-1}),
+		mat.NewDense(1, 1, []float64{0}),
+		0,
+	)
+	g, err := sys.DCGain()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !math.IsInf(g.At(0, 0), -1) {
+		t.Fatalf("DCGain = %v, want -Inf", g.At(0, 0))
+	}
+}
+
+func TestDCGain_DiscretePoleAtOne_Infinite(t *testing.T) {
 	sys, _ := New(
 		mat.NewDense(1, 1, []float64{1}),
 		mat.NewDense(1, 1, []float64{1}),
@@ -97,9 +117,64 @@ func TestDCGain_Discrete_PoleAtOne_Error(t *testing.T) {
 		mat.NewDense(1, 1, []float64{0}),
 		0.1,
 	)
-	_, err := sys.DCGain()
-	if err == nil {
-		t.Fatal("expected error for discrete pole at z=1")
+	g, err := sys.DCGain()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !math.IsInf(g.At(0, 0), 1) {
+		t.Fatalf("DCGain = %v, want +Inf", g.At(0, 0))
+	}
+}
+
+func TestDCGain_MIMOIntegratorChannelwise(t *testing.T) {
+	sys, _ := New(
+		mat.NewDense(2, 2, []float64{
+			0, 0,
+			0, -2,
+		}),
+		mat.NewDense(2, 2, []float64{
+			1, 0,
+			0, 1,
+		}),
+		mat.NewDense(2, 2, []float64{
+			1, 0,
+			0, 1,
+		}),
+		mat.NewDense(2, 2, nil),
+		0,
+	)
+	g, err := sys.DCGain()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !math.IsInf(g.At(0, 0), 1) {
+		t.Fatalf("DCGain[0,0] = %v, want +Inf", g.At(0, 0))
+	}
+	if g.At(0, 1) != 0 || g.At(1, 0) != 0 {
+		t.Fatalf("off-diagonal DCGain = [%v %v], want zeros", g.At(0, 1), g.At(1, 0))
+	}
+	if math.Abs(g.At(1, 1)-0.5) > 1e-12 {
+		t.Fatalf("DCGain[1,1] = %v, want 0.5", g.At(1, 1))
+	}
+}
+
+func TestDCGain_MIMOIntegratorHiddenFromOutput(t *testing.T) {
+	sys, _ := New(
+		mat.NewDense(1, 1, []float64{0}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(2, 1, []float64{1, 0}),
+		mat.NewDense(2, 1, nil),
+		0,
+	)
+	g, err := sys.DCGain()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !math.IsInf(g.At(0, 0), 1) {
+		t.Fatalf("DCGain[0,0] = %v, want +Inf", g.At(0, 0))
+	}
+	if g.At(1, 0) != 0 {
+		t.Fatalf("DCGain[1,0] = %v, want 0", g.At(1, 0))
 	}
 }
 
