@@ -201,6 +201,26 @@ func TestDCGain_DecoupledIntegratorResiduesCancel(t *testing.T) {
 	}
 }
 
+func TestDCGain_CoupledSingularBlockFallsBackToTransferLimit(t *testing.T) {
+	sys, _ := New(
+		mat.NewDense(2, 2, []float64{
+			0, 1,
+			0, 0,
+		}),
+		mat.NewDense(2, 1, []float64{0, 1}),
+		mat.NewDense(1, 2, []float64{1, 0}),
+		mat.NewDense(1, 1, nil),
+		0,
+	)
+	g, err := sys.DCGain()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !math.IsInf(g.At(0, 0), 1) {
+		t.Fatalf("DCGain = %v, want +Inf", g.At(0, 0))
+	}
+}
+
 func TestDamp_ContinuousUnderdamped(t *testing.T) {
 	wn := 10.0
 	zeta := 0.3
