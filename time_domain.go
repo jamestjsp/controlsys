@@ -70,8 +70,8 @@ func (td timeDomain) convertDelayMatrixToDiscrete(delay *mat.Dense) (*mat.Dense,
 	out := mat.NewDense(r, c, nil)
 	inRaw := delay.RawMatrix()
 	outRaw := out.RawMatrix()
-	for i := 0; i < r; i++ {
-		for j := 0; j < c; j++ {
+	for i := range r {
+		for j := range c {
 			tau := inRaw.Data[i*inRaw.Stride+j]
 			samples, err := td.discreteDelaySamples(tau)
 			if err != nil {
@@ -89,8 +89,8 @@ func (td timeDomain) convertDelayMatrixToContinuous(delay *mat.Dense) *mat.Dense
 	out := mat.NewDense(r, c, nil)
 	inRaw := delay.RawMatrix()
 	outRaw := out.RawMatrix()
-	for i := 0; i < r; i++ {
-		for j := 0; j < c; j++ {
+	for i := range r {
+		for j := range c {
 			outRaw.Data[i*outRaw.Stride+j] = td.continuousDelay(inRaw.Data[i*inRaw.Stride+j])
 		}
 	}

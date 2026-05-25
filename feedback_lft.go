@@ -322,7 +322,7 @@ func feedbackWithLFT(plant, controller *System, sign float64) (*System, error) {
 
 func eyeDense(n int) *mat.Dense {
 	data := make([]float64, n*n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		data[i*(n+1)] = 1
 	}
 	return mat.NewDense(n, n, data)

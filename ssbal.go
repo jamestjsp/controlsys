@@ -37,22 +37,22 @@ func Ssbal(sys *System) (*SsbalResult, error) {
 	// Iterative diagonal balancing
 	const maxIter = 20
 	const beta = 2.0
-	for iter := 0; iter < maxIter; iter++ {
+	for range maxIter {
 		changed := false
-		for i := 0; i < n; i++ {
+		for i := range n {
 			rowNorm := 0.0
 			colNorm := 0.0
 
-			for j := 0; j < n; j++ {
+			for j := range n {
 				rowNorm += math.Abs(aRaw.Data[i*aRaw.Stride+j]) * d[j]
 				colNorm += math.Abs(aRaw.Data[j*aRaw.Stride+i]) * d[j]
 			}
 
-			for j := 0; j < m; j++ {
+			for j := range m {
 				rowNorm += math.Abs(bRaw.Data[i*bRaw.Stride+j])
 			}
 
-			for j := 0; j < p; j++ {
+			for j := range p {
 				colNorm += math.Abs(cRaw.Data[j*cRaw.Stride+i])
 			}
 
@@ -85,22 +85,22 @@ func Ssbal(sys *System) (*SsbalResult, error) {
 	}
 
 	Anew := mat.NewDense(n, n, nil)
-	for i := 0; i < n; i++ {
-		for j := 0; j < n; j++ {
+	for i := range n {
+		for j := range n {
 			Anew.Set(i, j, (d[i]/d[j])*aRaw.Data[i*aRaw.Stride+j])
 		}
 	}
 
 	Bnew := mat.NewDense(n, m, nil)
-	for i := 0; i < n; i++ {
-		for j := 0; j < m; j++ {
+	for i := range n {
+		for j := range m {
 			Bnew.Set(i, j, d[i]*bRaw.Data[i*bRaw.Stride+j])
 		}
 	}
 
 	Cnew := mat.NewDense(p, n, nil)
-	for i := 0; i < p; i++ {
-		for j := 0; j < n; j++ {
+	for i := range p {
+		for j := range n {
 			Cnew.Set(i, j, cRaw.Data[i*cRaw.Stride+j]/d[j])
 		}
 	}
@@ -108,7 +108,7 @@ func Ssbal(sys *System) (*SsbalResult, error) {
 	Dnew := denseCopy(sys.D)
 
 	T := mat.NewDense(n, n, nil)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		T.Set(i, i, d[i])
 	}
 

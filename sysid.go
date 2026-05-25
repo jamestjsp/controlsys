@@ -31,19 +31,19 @@ func ERA(markov []*mat.Dense, order int, dt float64) (*ERAResult, error) {
 	h0Data := make([]float64, h0Rows*h0Cols)
 	h1Data := make([]float64, h0Rows*h0Cols)
 
-	for i := 0; i < r; i++ {
-		for j := 0; j < r; j++ {
+	for i := range r {
+		for j := range r {
 			idx0 := i + j + 1
 			idx1 := i + j + 2
 			mk0 := markov[idx0].RawMatrix()
-			for bi := 0; bi < p; bi++ {
+			for bi := range p {
 				srcOff := bi * mk0.Stride
 				dstOff := (i*p+bi)*h0Cols + j*m
 				copy(h0Data[dstOff:dstOff+m], mk0.Data[srcOff:srcOff+m])
 			}
 			if idx1 < len(markov) {
 				mk1 := markov[idx1].RawMatrix()
-				for bi := 0; bi < p; bi++ {
+				for bi := range p {
 					srcOff := bi * mk1.Stride
 					dstOff := (i*p+bi)*h0Cols + j*m
 					copy(h1Data[dstOff:dstOff+m], mk1.Data[srcOff:srcOff+m])
@@ -78,7 +78,7 @@ func ERA(markov []*mat.Dense, order int, dt float64) (*ERAResult, error) {
 
 	snHalfInvData := make([]float64, order)
 	snHalfData := make([]float64, order)
-	for i := 0; i < order; i++ {
+	for i := range order {
 		s := allSigma[i]
 		sq := math.Sqrt(s)
 		snHalfData[i] = sq
@@ -93,8 +93,8 @@ func ERA(markov []*mat.Dense, order int, dt float64) (*ERAResult, error) {
 
 	aData := make([]float64, order*order)
 	utH1VRaw := utH1V.RawMatrix()
-	for i := 0; i < order; i++ {
-		for j := 0; j < order; j++ {
+	for i := range order {
+		for j := range order {
 			aData[i*order+j] = snHalfInvData[i] * utH1VRaw.Data[i*utH1VRaw.Stride+j] * snHalfInvData[j]
 		}
 	}
@@ -103,8 +103,8 @@ func ERA(markov []*mat.Dense, order int, dt float64) (*ERAResult, error) {
 	// B = first m columns of Sn^{1/2} * Vn'
 	bData := make([]float64, order*m)
 	vnRaw := vn.RawMatrix()
-	for i := 0; i < order; i++ {
-		for j := 0; j < m; j++ {
+	for i := range order {
+		for j := range m {
 			bData[i*m+j] = snHalfData[i] * vnRaw.Data[j*vnRaw.Stride+i]
 		}
 	}
@@ -113,8 +113,8 @@ func ERA(markov []*mat.Dense, order int, dt float64) (*ERAResult, error) {
 	// C = first p rows of Un * Sn^{1/2}
 	cData := make([]float64, p*order)
 	unRaw := un.RawMatrix()
-	for i := 0; i < p; i++ {
-		for j := 0; j < order; j++ {
+	for i := range p {
+		for j := range order {
 			cData[i*order+j] = unRaw.Data[i*unRaw.Stride+j] * snHalfData[j]
 		}
 	}

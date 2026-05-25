@@ -93,14 +93,14 @@ func TestFRD_MIMOFromSystem(t *testing.T) {
 		{complex(0, 1) + 3, 1},
 		{-2, complex(0, 1)},
 	}
-	for i := 0; i < 2; i++ {
-		for j := 0; j < 2; j++ {
+	for i := range 2 {
+		for j := range 2 {
 			want[i][j] /= det
 		}
 	}
 
-	for i := 0; i < 2; i++ {
-		for j := 0; j < 2; j++ {
+	for i := range 2 {
+		for j := range 2 {
 			got := frd.At(0, i, j)
 			if cmplx.Abs(got-want[i][j]) > 1e-10 {
 				t.Errorf("H[%d][%d] = %v, want %v", i, j, got, want[i][j])
@@ -385,8 +385,8 @@ func TestFRD_CrossValidateWithFreqResponse(t *testing.T) {
 
 	_, m, p := sys.Dims()
 	for k := range omega {
-		for i := 0; i < p; i++ {
-			for j := 0; j < m; j++ {
+		for i := range p {
+			for j := range m {
 				got := frd.At(k, i, j)
 				want := resp.At(k, i, j)
 				if cmplx.Abs(got-want) > 1e-10 {
@@ -461,8 +461,8 @@ func TestFRD_CrossValidateMIMO(t *testing.T) {
 
 	_, m, p := sys.Dims()
 	for k := range omega {
-		for i := 0; i < p; i++ {
-			for j := 0; j < m; j++ {
+		for i := range p {
+			for j := range m {
 				got := frd.At(k, i, j)
 				want := resp.At(k, i, j)
 				if cmplx.Abs(got-want) > 1e-10 {
@@ -563,8 +563,8 @@ func TestFRDSeries_MIMO(t *testing.T) {
 			f2.At(0, 1, 0)*f1.At(0, 0, 1) + f2.At(0, 1, 1)*f1.At(0, 1, 1),
 		},
 	}
-	for i := 0; i < 2; i++ {
-		for j := 0; j < 2; j++ {
+	for i := range 2 {
+		for j := range 2 {
 			if cmplx.Abs(got.At(0, i, j)-want[i][j]) > 1e-12 {
 				t.Fatalf("series[%d,%d] = %v, want %v", i, j, got.At(0, i, j), want[i][j])
 			}
@@ -646,8 +646,8 @@ func TestFRDParallel_MIMO(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for i := 0; i < 2; i++ {
-		for j := 0; j < 2; j++ {
+	for i := range 2 {
+		for j := range 2 {
 			want := f1.At(0, i, j) + f2.At(0, i, j)
 			if cmplx.Abs(got.At(0, i, j)-want) > 1e-12 {
 				t.Fatalf("parallel[%d,%d] = %v, want %v", i, j, got.At(0, i, j), want)
@@ -677,8 +677,8 @@ func TestFRDFeedback_MIMO(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for k := 0; k < 2; k++ {
-		for i := 0; i < 2; i++ {
+	for k := range 2 {
+		for i := range 2 {
 			g := plant.At(k, i, i)
 			c := controller.At(k, i, i)
 			want := g / (1 + c*g)

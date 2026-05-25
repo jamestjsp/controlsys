@@ -112,13 +112,7 @@ func TestThiranDelayInvalidOrder(t *testing.T) {
 func TestThiranDelayStability(t *testing.T) {
 	dt := 1.0
 	for _, D := range []float64{0.6, 1.5, 2.7, 3.7, 5.1} {
-		order := int(math.Floor(D))
-		if order < 1 {
-			order = 1
-		}
-		if order > 10 {
-			order = 10
-		}
+		order := min(max(int(math.Floor(D)), 1), 10)
 		sys, err := ThiranDelay(D*dt, order, dt)
 		if err != nil {
 			t.Fatalf("D=%v order=%d: %v", D, order, err)

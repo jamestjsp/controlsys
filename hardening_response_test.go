@@ -24,7 +24,7 @@ func TestStep_Integrator(t *testing.T) {
 	}
 
 	_, steps := resp.Y.Dims()
-	for k := 0; k < steps; k++ {
+	for k := range steps {
 		tk := resp.T[k]
 		got := resp.Y.At(0, k)
 		if math.Abs(got-tk) > 0.05 {
@@ -288,7 +288,7 @@ func TestStep_NonMinimumPhase(t *testing.T) {
 	_, steps := resp.Y.Dims()
 
 	foundUndershoot := false
-	for k := 0; k < steps; k++ {
+	for k := range steps {
 		if resp.Y.At(0, k) < -0.01 {
 			foundUndershoot = true
 			break

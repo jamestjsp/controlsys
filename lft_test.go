@@ -205,7 +205,7 @@ func TestLFT_DeltaNil(t *testing.T) {
 		s := complex(0, omega)
 		hM := evalMIMOTF(M, s)
 		hR := evalMIMOTF(result, s)
-		for j := 0; j < 2; j++ {
+		for j := range 2 {
 			if cmplx.Abs(hR[0][j]-hM[0][j]) > 1e-10 {
 				t.Errorf("s=%v col %d: got %v, want %v", s, j, hR[0][j], hM[0][j])
 			}
@@ -442,8 +442,8 @@ func TestLFT_MIMO_2x2(t *testing.T) {
 		// M11 = hM[:2][:2], M12 = hM[:2][2:], M21 = hM[2:][:2], M22 = hM[2:][2:]
 		// F_l = M11 + M12*Delta*(I - M22*Delta)^-1*M21  (all 2x2)
 		var m11, m12, m21, m22 [2][2]complex128
-		for i := 0; i < 2; i++ {
-			for j := 0; j < 2; j++ {
+		for i := range 2 {
+			for j := range 2 {
 				m11[i][j] = hM[i][j]
 				m12[i][j] = hM[i][j+2]
 				m21[i][j] = hM[i+2][j]
@@ -453,16 +453,16 @@ func TestLFT_MIMO_2x2(t *testing.T) {
 
 		// I - M22*Delta
 		var m22d [2][2]complex128
-		for i := 0; i < 2; i++ {
-			for j := 0; j < 2; j++ {
-				for k := 0; k < 2; k++ {
+		for i := range 2 {
+			for j := range 2 {
+				for k := range 2 {
 					m22d[i][j] += m22[i][k] * hD[k][j]
 				}
 			}
 		}
 		var imd [2][2]complex128
-		for i := 0; i < 2; i++ {
-			for j := 0; j < 2; j++ {
+		for i := range 2 {
+			for j := range 2 {
 				imd[i][j] = -m22d[i][j]
 			}
 			imd[i][i] += 1
@@ -478,17 +478,17 @@ func TestLFT_MIMO_2x2(t *testing.T) {
 
 		// Delta * inv * M21
 		var di [2][2]complex128
-		for i := 0; i < 2; i++ {
-			for j := 0; j < 2; j++ {
-				for k := 0; k < 2; k++ {
+		for i := range 2 {
+			for j := range 2 {
+				for k := range 2 {
 					di[i][j] += hD[i][k] * inv[k][j]
 				}
 			}
 		}
 		var dim21 [2][2]complex128
-		for i := 0; i < 2; i++ {
-			for j := 0; j < 2; j++ {
-				for k := 0; k < 2; k++ {
+		for i := range 2 {
+			for j := range 2 {
+				for k := range 2 {
 					dim21[i][j] += di[i][k] * m21[k][j]
 				}
 			}
@@ -496,17 +496,17 @@ func TestLFT_MIMO_2x2(t *testing.T) {
 
 		// M12 * dim21
 		var m12dim21 [2][2]complex128
-		for i := 0; i < 2; i++ {
-			for j := 0; j < 2; j++ {
-				for k := 0; k < 2; k++ {
+		for i := range 2 {
+			for j := range 2 {
+				for k := range 2 {
 					m12dim21[i][j] += m12[i][k] * dim21[k][j]
 				}
 			}
 		}
 
 		got := evalMIMOTF(result, s)
-		for i := 0; i < 2; i++ {
-			for j := 0; j < 2; j++ {
+		for i := range 2 {
+			for j := range 2 {
 				want := m11[i][j] + m12dim21[i][j]
 				if cmplx.Abs(got[i][j]-want) > 1e-10 {
 					t.Errorf("s=%v [%d][%d]: got %v, want %v (diff=%v)", s, i, j, got[i][j], want, cmplx.Abs(got[i][j]-want))
@@ -532,8 +532,8 @@ func TestLFT_DeltaNil_GainOnly(t *testing.T) {
 	if n != 0 || m != 2 || p != 2 {
 		t.Fatalf("dims = (%d,%d,%d), want (0,2,2)", n, m, p)
 	}
-	for i := 0; i < 2; i++ {
-		for j := 0; j < 2; j++ {
+	for i := range 2 {
+		for j := range 2 {
 			got := result.D.At(i, j)
 			want := M.D.At(i, j)
 			if got != want {

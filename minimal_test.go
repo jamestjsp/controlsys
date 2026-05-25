@@ -16,8 +16,8 @@ func markovParams(sys *System, k int) []float64 {
 			return nil
 		}
 		data := make([]float64, p*m)
-		for i := 0; i < p; i++ {
-			for j := 0; j < m; j++ {
+		for i := range p {
+			for j := range m {
 				data[i*m+j] = sys.D.At(i, j)
 			}
 		}
@@ -28,7 +28,7 @@ func markovParams(sys *System, k int) []float64 {
 	}
 	// C * A^(k-1) * B
 	pow := mat.NewDense(n, n, nil)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		pow.Set(i, i, 1)
 	}
 	for i := 0; i < k-1; i++ {
@@ -42,8 +42,8 @@ func markovParams(sys *System, k int) []float64 {
 	cab.Mul(&tmp2, sys.B)
 	r, c := cab.Dims()
 	data := make([]float64, r*c)
-	for i := 0; i < r; i++ {
-		for j := 0; j < c; j++ {
+	for i := range r {
+		for j := range c {
 			data[i*c+j] = cab.At(i, j)
 		}
 	}
@@ -493,8 +493,8 @@ func TestEqualizeIssue26SystemFinite(t *testing.T) {
 func assertAllFinite(t *testing.T, name string, m *mat.Dense) {
 	t.Helper()
 	r, c := m.Dims()
-	for i := 0; i < r; i++ {
-		for j := 0; j < c; j++ {
+	for i := range r {
+		for j := range c {
 			v := m.At(i, j)
 			if math.IsNaN(v) || math.IsInf(v, 0) {
 				t.Errorf("%s[%d,%d] = %v (non-finite)", name, i, j, v)
@@ -525,19 +525,19 @@ func normRatio(A, B, C *mat.Dense) float64 {
 	p, _ := C.Dims()
 	maxNorm := 0.0
 	minNorm := math.Inf(1)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		r, c := 0.0, 0.0
-		for j := 0; j < n; j++ {
+		for j := range n {
 			if j == i {
 				continue
 			}
 			r += math.Abs(A.At(i, j))
 			c += math.Abs(A.At(j, i))
 		}
-		for j := 0; j < m; j++ {
+		for j := range m {
 			r += math.Abs(B.At(i, j))
 		}
-		for j := 0; j < p; j++ {
+		for j := range p {
 			c += math.Abs(C.At(j, i))
 		}
 		if r > maxNorm {

@@ -2,6 +2,7 @@ package controlsys
 
 import (
 	"fmt"
+	"maps"
 	"math"
 )
 
@@ -159,8 +160,6 @@ func parameterGrid(param *TunableReal, points int) []float64 {
 
 func copyStringFloatMap(src map[string]float64) map[string]float64 {
 	out := make(map[string]float64, len(src))
-	for k, v := range src {
-		out[k] = v
-	}
+	maps.Copy(out, src)
 	return out
 }

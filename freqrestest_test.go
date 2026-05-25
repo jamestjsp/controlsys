@@ -304,8 +304,8 @@ func TestFreqRespEstResultFRD(t *testing.T) {
 		t.Fatalf("FRD dims = (%d,%d), want (%d,%d)", p, m, est.H.P, est.H.M)
 	}
 	for k := range est.Omega {
-		for i := 0; i < p; i++ {
-			for j := 0; j < m; j++ {
+		for i := range p {
+			for j := range m {
 				if frd.At(k, i, j) != est.H.At(k, i, j) {
 					t.Fatalf("FRD[%d,%d,%d] = %v, want %v", k, i, j, frd.At(k, i, j), est.H.At(k, i, j))
 				}

@@ -13,17 +13,17 @@ func Augstate(sys *System) (*System, error) {
 	cNew := mat.NewDense(pNew, n, nil)
 	cRaw := cNew.RawMatrix()
 	origC := sys.C.RawMatrix()
-	for i := 0; i < p; i++ {
+	for i := range p {
 		copy(cRaw.Data[i*cRaw.Stride:i*cRaw.Stride+n], origC.Data[i*origC.Stride:i*origC.Stride+n])
 	}
-	for i := 0; i < n; i++ {
+	for i := range n {
 		cRaw.Data[(p+i)*cRaw.Stride+i] = 1
 	}
 
 	dNew := mat.NewDense(pNew, m, nil)
 	dRaw := dNew.RawMatrix()
 	origD := sys.D.RawMatrix()
-	for i := 0; i < p; i++ {
+	for i := range p {
 		copy(dRaw.Data[i*dRaw.Stride:i*dRaw.Stride+m], origD.Data[i*origD.Stride:i*origD.Stride+m])
 	}
 

@@ -14,8 +14,8 @@ func assertMatClose(t *testing.T, name string, got, want *mat.Dense, tol float64
 	if r1 != r2 || c1 != c2 {
 		t.Fatalf("%s: dim mismatch got %dx%d want %dx%d", name, r1, c1, r2, c2)
 	}
-	for i := 0; i < r1; i++ {
-		for j := 0; j < c1; j++ {
+	for i := range r1 {
+		for j := range c1 {
 			if diff := math.Abs(got.At(i, j) - want.At(i, j)); diff > tol {
 				t.Errorf("%s[%d,%d] = %v, want %v (diff %v)", name, i, j, got.At(i, j), want.At(i, j), diff)
 			}
@@ -51,8 +51,8 @@ func matEqual(a, b *mat.Dense, tol float64) bool {
 	if ra != rb || ca != cb {
 		return false
 	}
-	for i := 0; i < ra; i++ {
-		for j := 0; j < ca; j++ {
+	for i := range ra {
+		for j := range ca {
 			if math.Abs(a.At(i, j)-b.At(i, j)) > tol {
 				return false
 			}

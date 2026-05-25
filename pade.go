@@ -28,7 +28,7 @@ func (sys *System) Pade(order int) (*System, error) {
 	n, m, p := lft.Dims()
 
 	var delayBank *System
-	for j := 0; j < N; j++ {
+	for j := range N {
 		pd, err := PadeDelay(lft.LFT.Tau[j], order)
 		if err != nil {
 			return nil, fmt.Errorf("Pade: delay %d (tau=%v): %w", j, lft.LFT.Tau[j], err)

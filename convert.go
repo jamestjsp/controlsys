@@ -80,7 +80,7 @@ func bilinear(sys *System, palpha, pbeta, alpha, beta float64) (*System, error) 
 	C := denseCopy(sys.C)
 
 	aRaw := A.RawMatrix()
-	for i := 0; i < n; i++ {
+	for i := range n {
 		aRaw.Data[i*aRaw.Stride+i] += palpha
 	}
 
@@ -119,7 +119,7 @@ func bilinear(sys *System, palpha, pbeta, alpha, beta float64) (*System, error) 
 	Ainv := mat.NewDense(n, n, nil)
 	eye := mat.NewDense(n, n, nil)
 	eyeRaw := eye.RawMatrix()
-	for i := 0; i < n; i++ {
+	for i := range n {
 		eyeRaw.Data[i*eyeRaw.Stride+i] = 1
 	}
 	err := lu.SolveTo(Ainv, false, eye)
@@ -133,7 +133,7 @@ func bilinear(sys *System, palpha, pbeta, alpha, beta float64) (*System, error) 
 	}
 	Ainv.Scale(-twoAB, Ainv)
 	ainvRaw := Ainv.RawMatrix()
-	for i := 0; i < n; i++ {
+	for i := range n {
 		ainvRaw.Data[i*ainvRaw.Stride+i] += pbeta
 	}
 
@@ -224,15 +224,15 @@ func discretizeDelaysAsInternal(disc *System, contInputDelay, contOutputDelay []
 	dRaw := disc.D.RawMatrix()
 
 	newBData := make([]float64, n*m)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		copy(newBData[i*m:i*m+m], bRaw.Data[i*bRaw.Stride:i*bRaw.Stride+m])
 	}
 	newCData := make([]float64, p*n)
-	for i := 0; i < p; i++ {
+	for i := range p {
 		copy(newCData[i*n:i*n+n], cRaw.Data[i*cRaw.Stride:i*cRaw.Stride+n])
 	}
 	newDData := make([]float64, p*m)
-	for i := 0; i < p; i++ {
+	for i := range p {
 		copy(newDData[i*m:i*m+m], dRaw.Data[i*dRaw.Stride:i*dRaw.Stride+m])
 	}
 
@@ -241,21 +241,21 @@ func discretizeDelaysAsInternal(disc *System, contInputDelay, contOutputDelay []
 		if f.isInput {
 			j := f.idx
 			d21Data[k*m+j] = 1
-			for i := 0; i < n; i++ {
+			for i := range n {
 				b2Data[i*N+k] = newBData[i*m+j]
 				newBData[i*m+j] = 0
 			}
-			for i := 0; i < p; i++ {
+			for i := range p {
 				d12Data[i*N+k] = newDData[i*m+j]
 				newDData[i*m+j] = 0
 			}
 		} else {
 			i := f.idx
-			for col := 0; col < n; col++ {
+			for col := range n {
 				c2Data[k*n+col] = newCData[i*n+col]
 				newCData[i*n+col] = 0
 			}
-			for col := 0; col < m; col++ {
+			for col := range m {
 				d21Data[k*m+col] = newDData[i*m+col]
 				newDData[i*m+col] = 0
 			}
@@ -424,7 +424,7 @@ func (sys *System) DiscretizeZOH(dt float64) (*System, error) {
 	mRaw := M.RawMatrix()
 	aRaw := sys.A.RawMatrix()
 	bRaw := sys.B.RawMatrix()
-	for i := 0; i < n; i++ {
+	for i := range n {
 		mRow := mRaw.Data[i*mRaw.Stride:]
 		aRow := aRaw.Data[i*aRaw.Stride : i*aRaw.Stride+n]
 		for j, v := range aRow {
@@ -442,7 +442,7 @@ func (sys *System) DiscretizeZOH(dt float64) (*System, error) {
 	emRaw := eM.RawMatrix()
 	adData := make([]float64, n*n)
 	bdData := make([]float64, n*m)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		copy(adData[i*n:], emRaw.Data[i*emRaw.Stride:i*emRaw.Stride+n])
 		copy(bdData[i*m:], emRaw.Data[i*emRaw.Stride+n:i*emRaw.Stride+n+m])
 	}
@@ -554,18 +554,18 @@ func discretizeZOHAugmented(sys *System, dt float64) (*System, *mat.Dense, error
 		b2RawZ = sys.LFT.B2.RawMatrix()
 	}
 
-	for i := 0; i < n; i++ {
+	for i := range n {
 		row := mRaw.Data[i*mRaw.Stride:]
-		for j := 0; j < n; j++ {
+		for j := range n {
 			row[j] = aRaw.Data[i*aRaw.Stride+j] * dt
 		}
 		if m > 0 {
-			for j := 0; j < m; j++ {
+			for j := range m {
 				row[n+j] = bRawZ.Data[i*bRawZ.Stride+j] * dt
 			}
 		}
 		if N > 0 {
-			for j := 0; j < N; j++ {
+			for j := range N {
 				row[n+m+j] = b2RawZ.Data[i*b2RawZ.Stride+j] * dt
 			}
 		}
@@ -578,7 +578,7 @@ func discretizeZOHAugmented(sys *System, dt float64) (*System, *mat.Dense, error
 	adData := make([]float64, n*n)
 	bdData := make([]float64, n*m)
 	bd2Data := make([]float64, n*N)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		copy(adData[i*n:i*n+n], emRaw.Data[i*emRaw.Stride:i*emRaw.Stride+n])
 		if m > 0 {
 			copy(bdData[i*m:i*m+m], emRaw.Data[i*emRaw.Stride+n:i*emRaw.Stride+n+m])
@@ -630,7 +630,7 @@ func discretizeTustinAugmented(sys *System, dt float64) (*System, *mat.Dense, er
 	A := mat.NewDense(n, n, nil)
 	A.Copy(sys.A)
 	aRaw := A.RawMatrix()
-	for i := 0; i < n; i++ {
+	for i := range n {
 		aRaw.Data[i*aRaw.Stride+i] += palpha
 	}
 
@@ -658,10 +658,7 @@ func isStrictlyUpperTriangular(m *mat.Dense) bool {
 	}
 	raw := m.RawMatrix()
 	for i := 0; i < raw.Rows; i++ {
-		bound := i
-		if raw.Cols-1 < bound {
-			bound = raw.Cols - 1
-		}
+		bound := min(raw.Cols-1, i)
 		row := raw.Data[i*raw.Stride:]
 		for j := 0; j <= bound; j++ {
 			if row[j] != 0 {
@@ -799,16 +796,16 @@ func (sys *System) DiscretizeFOH(dt float64) (*System, error) {
 	aRaw := sys.A.RawMatrix()
 	bRaw := sys.B.RawMatrix()
 
-	for i := 0; i < n; i++ {
+	for i := range n {
 		row := mRaw.Data[i*mRaw.Stride:]
-		for j := 0; j < n; j++ {
+		for j := range n {
 			row[j] = aRaw.Data[i*aRaw.Stride+j] * dt
 		}
-		for j := 0; j < m; j++ {
+		for j := range m {
 			row[n+j] = bRaw.Data[i*bRaw.Stride+j] * dt
 		}
 	}
-	for i := 0; i < m; i++ {
+	for i := range m {
 		mRaw.Data[(n+i)*mRaw.Stride+n+m+i] = 1
 	}
 
@@ -819,7 +816,7 @@ func (sys *System) DiscretizeFOH(dt float64) (*System, error) {
 	adData := make([]float64, n*n)
 	g0Data := make([]float64, n*m)
 	g1Data := make([]float64, n*m)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		copy(adData[i*n:i*n+n], emRaw.Data[i*emRaw.Stride:i*emRaw.Stride+n])
 		copy(g0Data[i*m:i*m+m], emRaw.Data[i*emRaw.Stride+n:i*emRaw.Stride+n+m])
 		copy(g1Data[i*m:i*m+m], emRaw.Data[i*emRaw.Stride+n+m:i*emRaw.Stride+n+2*m])
@@ -832,13 +829,13 @@ func fohPureGain(sys *System, m, p int, dt float64) (*System, error) {
 	nNew := m
 	aData := make([]float64, nNew*nNew)
 	bData := make([]float64, nNew*m)
-	for j := 0; j < m; j++ {
+	for j := range m {
 		bData[j*m+j] = 1
 	}
 	cData := make([]float64, p*nNew)
 	if sys.D != nil {
 		dRaw := sys.D.RawMatrix()
-		for i := 0; i < p; i++ {
+		for i := range p {
 			copy(cData[i*nNew:i*nNew+m], dRaw.Data[i*dRaw.Stride:i*dRaw.Stride+m])
 		}
 	}
@@ -869,29 +866,29 @@ func buildFOHSystem(sys *System, n, m, p int, dt float64, adData, g0Data, g1Data
 
 	nNew := n + m
 	aFoh := make([]float64, nNew*nNew)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		copy(aFoh[i*nNew:i*nNew+n], adData[i*n:i*n+n])
 		copy(aFoh[i*nNew+n:i*nNew+n+m], b0Data[i*m:i*m+m])
 	}
 
 	bFoh := make([]float64, nNew*m)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		copy(bFoh[i*m:i*m+m], g1Data[i*m:i*m+m])
 	}
-	for j := 0; j < m; j++ {
+	for j := range m {
 		bFoh[(n+j)*m+j] = 1
 	}
 
 	cFoh := make([]float64, p*nNew)
 	if sys.C != nil {
 		cRaw := sys.C.RawMatrix()
-		for i := 0; i < p; i++ {
+		for i := range p {
 			copy(cFoh[i*nNew:i*nNew+n], cRaw.Data[i*cRaw.Stride:i*cRaw.Stride+n])
 		}
 	}
 	if sys.D != nil {
 		dRaw := sys.D.RawMatrix()
-		for i := 0; i < p; i++ {
+		for i := range p {
 			copy(cFoh[i*nNew+n:i*nNew+n+m], dRaw.Data[i*dRaw.Stride:i*dRaw.Stride+m])
 		}
 	}
@@ -957,23 +954,23 @@ func discretizeFOHAugmented(sys *System, dt float64) (*System, *mat.Dense, error
 		b2Raw = sys.LFT.B2.RawMatrix()
 	}
 
-	for i := 0; i < n; i++ {
+	for i := range n {
 		row := mRaw.Data[i*mRaw.Stride:]
-		for j := 0; j < n; j++ {
+		for j := range n {
 			row[j] = aRaw.Data[i*aRaw.Stride+j] * dt
 		}
 		if m > 0 {
-			for j := 0; j < m; j++ {
+			for j := range m {
 				row[n+j] = bRaw.Data[i*bRaw.Stride+j] * dt
 			}
 		}
 		if N > 0 {
-			for j := 0; j < N; j++ {
+			for j := range N {
 				row[n+m+j] = b2Raw.Data[i*b2Raw.Stride+j] * dt
 			}
 		}
 	}
-	for i := 0; i < mTotal; i++ {
+	for i := range mTotal {
 		mRaw.Data[(n+i)*mRaw.Stride+n+mTotal+i] = 1
 	}
 
@@ -985,7 +982,7 @@ func discretizeFOHAugmented(sys *System, dt float64) (*System, *mat.Dense, error
 	g0BData := make([]float64, n*m)
 	g1BData := make([]float64, n*m)
 	g0B2Data := make([]float64, n*N)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		copy(adData[i*n:i*n+n], emRaw.Data[i*emRaw.Stride:i*emRaw.Stride+n])
 		if m > 0 {
 			copy(g0BData[i*m:i*m+m], emRaw.Data[i*emRaw.Stride+n:i*emRaw.Stride+n+m])
@@ -1058,7 +1055,7 @@ func (sys *System) DiscretizeMatched(dt float64) (*System, error) {
 		discZeros[i] = cmplx.Exp(z * complex(dt, 0))
 	}
 	excess := len(contPoles) - len(contZeros)
-	for i := 0; i < excess; i++ {
+	for range excess {
 		discZeros = append(discZeros, complex(-1, 0))
 	}
 
@@ -1180,7 +1177,7 @@ func (sys *System) d2cZOH() (*System, error) {
 		AminusI := mat.NewDense(n, n, nil)
 		AminusI.Copy(sys.A)
 		raw := AminusI.RawMatrix()
-		for i := 0; i < n; i++ {
+		for i := range n {
 			raw.Data[i*raw.Stride+i] -= 1
 		}
 		var lu mat.LU

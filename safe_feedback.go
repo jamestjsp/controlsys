@@ -134,7 +134,7 @@ func buildDiagWithPade(channel, size int, pade *System) (*System, error) {
 	B := mat.NewDense(n, size, nil)
 	C := mat.NewDense(size, n, nil)
 	dData := make([]float64, size*size)
-	for i := 0; i < size; i++ {
+	for i := range size {
 		dData[i*size+i] = 1
 	}
 	D := mat.NewDense(size, size, dData)
@@ -143,12 +143,12 @@ func buildDiagWithPade(channel, size int, pade *System) (*System, error) {
 		setBlock(A, 0, 0, pade.A)
 
 		padeB := pade.B.RawMatrix()
-		for i := 0; i < np; i++ {
+		for i := range np {
 			B.Set(i, channel, padeB.Data[i*padeB.Stride])
 		}
 
 		padeC := pade.C.RawMatrix()
-		for j := 0; j < np; j++ {
+		for j := range np {
 			C.Set(channel, j, padeC.Data[j])
 		}
 	}

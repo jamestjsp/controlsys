@@ -262,8 +262,8 @@ func (sys *System) DCGain() (*mat.Dense, error) {
 	}
 
 	ImA := mat.NewDense(n, n, nil)
-	for i := 0; i < n; i++ {
-		for j := 0; j < n; j++ {
+	for i := range n {
+		for j := range n {
 			v := -sys.A.At(i, j)
 			if i == j {
 				v += 1
@@ -305,7 +305,7 @@ func (sys *System) dcGainByDecoupledSingularModes() (*mat.Dense, bool) {
 	tol := dcGainMatrixTol(sys.A)
 	singular := make([]bool, n)
 	regularCount := 0
-	for k := 0; k < n; k++ {
+	for k := range n {
 		if math.Abs(sys.A.At(k, k)-target) <= tol && rowColDecoupledAt(sys.A, k, tol) {
 			singular[k] = true
 			continue
@@ -317,7 +317,7 @@ func (sys *System) dcGainByDecoupledSingularModes() (*mat.Dense, bool) {
 	}
 
 	regular := make([]int, 0, regularCount)
-	for k := 0; k < n; k++ {
+	for k := range n {
 		if !singular[k] {
 			regular = append(regular, k)
 		}
@@ -332,10 +332,10 @@ func (sys *System) dcGainByDecoupledSingularModes() (*mat.Dense, bool) {
 			for ci, srcCol := range regular {
 				Areg.Set(ri, ci, sys.A.At(srcRow, srcCol))
 			}
-			for j := 0; j < m; j++ {
+			for j := range m {
 				Breg.Set(ri, j, sys.B.At(srcRow, j))
 			}
-			for i := 0; i < p; i++ {
+			for i := range p {
 				Creg.Set(i, ri, sys.C.At(i, srcRow))
 			}
 		}
@@ -369,16 +369,16 @@ func (sys *System) dcGainByDecoupledSingularModes() (*mat.Dense, bool) {
 	}
 
 	residue := mat.NewDense(p, m, nil)
-	for k := 0; k < n; k++ {
+	for k := range n {
 		if !singular[k] {
 			continue
 		}
-		for i := 0; i < p; i++ {
+		for i := range p {
 			c := sys.C.At(i, k)
 			if math.Abs(c) <= tol {
 				continue
 			}
-			for j := 0; j < m; j++ {
+			for j := range m {
 				coeff := c * sys.B.At(k, j)
 				if math.Abs(coeff) > tol {
 					residue.Set(i, j, residue.At(i, j)+coeff)
@@ -386,8 +386,8 @@ func (sys *System) dcGainByDecoupledSingularModes() (*mat.Dense, bool) {
 			}
 		}
 	}
-	for i := 0; i < p; i++ {
-		for j := 0; j < m; j++ {
+	for i := range p {
+		for j := range m {
 			coeff := residue.At(i, j)
 			if math.Abs(coeff) > tol {
 				gain.Set(i, j, math.Inf(signInt(coeff)))
@@ -399,7 +399,7 @@ func (sys *System) dcGainByDecoupledSingularModes() (*mat.Dense, bool) {
 
 func rowColDecoupledAt(a *mat.Dense, k int, tol float64) bool {
 	n, _ := a.Dims()
-	for i := 0; i < n; i++ {
+	for i := range n {
 		if i == k {
 			continue
 		}
@@ -421,8 +421,8 @@ func dcGainFromTransferFunction(tf *TransferFunc) *mat.Dense {
 		point = 1.0
 	}
 	gain := mat.NewDense(p, m, nil)
-	for i := 0; i < p; i++ {
-		for j := 0; j < m; j++ {
+	for i := range p {
+		for j := range m {
 			gain.Set(i, j, rationalLimitAtReal(tf.Num[i][j], tf.Den[i], point))
 		}
 	}
@@ -549,7 +549,7 @@ func Step(sys *System, tFinal float64) (*TimeResponse, error) {
 	rows := p * m
 	Y := mat.NewDense(rows, plan.steps, nil)
 
-	for j := 0; j < m; j++ {
+	for j := range m {
 		u := mat.NewDense(m, plan.steps, nil)
 		for k := 0; k < plan.steps; k++ {
 			u.Set(j, k, 1)
@@ -559,7 +559,7 @@ func Step(sys *System, tFinal float64) (*TimeResponse, error) {
 			return nil, fmt.Errorf("Step: input %d: %w", j, err)
 		}
 		if resp.Y != nil {
-			for i := 0; i < p; i++ {
+			for i := range p {
 				for k := 0; k < plan.steps; k++ {
 					Y.Set(j*p+i, k, resp.Y.At(i, k))
 				}
@@ -585,7 +585,7 @@ func Impulse(sys *System, tFinal float64) (*TimeResponse, error) {
 		amp = 1.0 / plan.dt
 	}
 
-	for j := 0; j < m; j++ {
+	for j := range m {
 		u := mat.NewDense(m, plan.steps, nil)
 		u.Set(j, 0, amp)
 		resp, err := plan.sim.Simulate(u, nil, nil)
@@ -593,7 +593,7 @@ func Impulse(sys *System, tFinal float64) (*TimeResponse, error) {
 			return nil, fmt.Errorf("Impulse: input %d: %w", j, err)
 		}
 		if resp.Y != nil {
-			for i := 0; i < p; i++ {
+			for i := range p {
 				for k := 0; k < plan.steps; k++ {
 					Y.Set(j*p+i, k, resp.Y.At(i, k))
 				}

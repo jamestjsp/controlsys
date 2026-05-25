@@ -75,8 +75,8 @@ func isIdentityDescriptor(E *mat.Dense) bool {
 		return false
 	}
 	raw := E.RawMatrix()
-	for i := 0; i < r; i++ {
-		for j := 0; j < c; j++ {
+	for i := range r {
+		for j := range c {
 			want := 0.0
 			if i == j {
 				want = 1

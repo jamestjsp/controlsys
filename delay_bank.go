@@ -27,7 +27,7 @@ type delayBankSpec struct {
 
 func buildContinuousDelayBank(contDelay []float64, channels int, dt float64, thiranOrder int) (*System, error) {
 	sampleDelay := make([]float64, channels)
-	for i := 0; i < channels; i++ {
+	for i := range channels {
 		sampleDelay[i] = contDelay[i] / dt
 	}
 	return buildDelayBank(delayBankSpec{

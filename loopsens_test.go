@@ -113,8 +113,8 @@ func TestLoopsens_MIMO_SiNotEqualSo(t *testing.T) {
 	toResp, _ := res.To.EvalFr(s)
 	tiResp, _ := res.Ti.EvalFr(s)
 	n := len(soResp)
-	for i := 0; i < n; i++ {
-		for j := 0; j < n; j++ {
+	for i := range n {
+		for j := range n {
 			eye := complex(0, 0)
 			if i == j {
 				eye = 1

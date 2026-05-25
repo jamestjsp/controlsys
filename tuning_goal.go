@@ -212,8 +212,8 @@ func maxDCErrorFromOne(dc interface {
 }) float64 {
 	r, c := dc.Dims()
 	maxErr := 0.0
-	for i := 0; i < r; i++ {
-		for j := 0; j < c; j++ {
+	for i := range r {
+		for j := range c {
 			want := 0.0
 			if i == j {
 				want = 1

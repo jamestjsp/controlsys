@@ -21,7 +21,7 @@ func setBlock(dst *mat.Dense, r0, c0 int, src *mat.Dense) {
 	}
 	dRaw := dst.RawMatrix()
 	sRaw := src.RawMatrix()
-	for i := 0; i < sr; i++ {
+	for i := range sr {
 		copy(dRaw.Data[(r0+i)*dRaw.Stride+c0:], sRaw.Data[i*sRaw.Stride:i*sRaw.Stride+sc])
 	}
 }
@@ -136,8 +136,8 @@ func seriesDelay(sys1, sys2 *System) *mat.Dense {
 	d2 := ioDelayOrZero(sys2.Delay, p2, p1)
 
 	result := mat.NewDense(p2, m1, nil)
-	for i := 0; i < p2; i++ {
-		for j := 0; j < m1; j++ {
+	for i := range p2 {
+		for j := range m1 {
 			ref := d1.At(0, j) + d2.At(i, 0)
 			for k := 1; k < p1; k++ {
 				if math.Abs(d1.At(k, j)+d2.At(i, k)-ref) > 1e-12 {
@@ -158,7 +158,7 @@ func seriesInputOutputDelay(sys1, sys2 *System, p, m int, ioDelay *mat.Dense) (i
 
 	intermediate := make([]float64, p1)
 	hasIntermediate := false
-	for k := 0; k < p1; k++ {
+	for k := range p1 {
 		var od, id float64
 		if sys1.OutputDelay != nil {
 			od = sys1.OutputDelay[k]
@@ -188,8 +188,8 @@ func seriesInputOutputDelay(sys1, sys2 *System, p, m int, ioDelay *mat.Dense) (i
 	}
 
 	raw := ioDelay.RawMatrix()
-	for i := 0; i < p; i++ {
-		for j := 0; j < m; j++ {
+	for i := range p {
+		for j := range m {
 			raw.Data[i*raw.Stride+j] += minIntermediate
 		}
 	}
@@ -328,8 +328,8 @@ func parallelInputOutputDelay(sys1, sys2 *System, m, p int, ioDelay *mat.Dense) 
 	residual2 := mat.NewDense(p, m, nil)
 	r1Raw := residual1.RawMatrix()
 	r2Raw := residual2.RawMatrix()
-	for i := 0; i < p; i++ {
-		for j := 0; j < m; j++ {
+	for i := range p {
+		for j := range m {
 			v1 := (in1[j] - commonIn[j]) + (out1[i] - commonOut[i])
 			v2 := (in2[j] - commonIn[j]) + (out2[i] - commonOut[i])
 			r1Raw.Data[i*r1Raw.Stride+j] = v1
@@ -363,7 +363,7 @@ func mergeParallelDelay(d1, d2 []float64, n int) []float64 {
 	s2 := sliceOrZeros(d2, n)
 	out := make([]float64, n)
 	allZero := true
-	for i := 0; i < n; i++ {
+	for i := range n {
 		out[i] = math.Min(s1[i], s2[i])
 		if out[i] != 0 {
 			allZero = false
@@ -392,7 +392,7 @@ func Feedback(plant, controller *System, sign float64) (*System, error) {
 			return nil, fmt.Errorf("feedback: plant must be square (m=p) when controller is nil, got %dx%d", m, p)
 		}
 		eyeData := make([]float64, m*m)
-		for i := 0; i < m; i++ {
+		for i := range m {
 			eyeData[i*(m+1)] = 1
 		}
 		var err error
@@ -431,7 +431,7 @@ func Feedback(plant, controller *System, sign float64) (*System, error) {
 	}
 
 	e12Data := make([]float64, m1*m1)
-	for i := 0; i < m1; i++ {
+	for i := range m1 {
 		e12Data[i*(m1+1)] = 1
 	}
 	E12 := mat.NewDense(m1, m1, e12Data)
@@ -538,10 +538,10 @@ func subBlock(dst *mat.Dense, r0, c0 int, src *mat.Dense) {
 	}
 	dRaw := dst.RawMatrix()
 	sRaw := src.RawMatrix()
-	for i := 0; i < sr; i++ {
+	for i := range sr {
 		dRow := dRaw.Data[(r0+i)*dRaw.Stride+c0:]
 		sRow := sRaw.Data[i*sRaw.Stride:]
-		for j := 0; j < sc; j++ {
+		for j := range sc {
 			dRow[j] -= sRow[j]
 		}
 	}
@@ -661,7 +661,7 @@ func resizeDense(src *mat.Dense, r, c int) *mat.Dense {
 	minC := min(sc, c)
 	sRaw := src.RawMatrix()
 	dRaw := dst.RawMatrix()
-	for i := 0; i < minR; i++ {
+	for i := range minR {
 		copy(dRaw.Data[i*dRaw.Stride:i*dRaw.Stride+minC], sRaw.Data[i*sRaw.Stride:i*sRaw.Stride+minC])
 	}
 	return dst
@@ -820,8 +820,8 @@ func seriesLFT(sys1, sys2 *System) (*System, error) {
 		if n2 > 0 {
 			c2sub := mulDense(s2.LFT.D21, s1.C)
 			r, c := c2sub.Dims()
-			for i := 0; i < r; i++ {
-				for j := 0; j < c; j++ {
+			for i := range r {
+				for j := range c {
 					c2.Set(N1+i, j, c2.At(N1+i, j)+c2sub.At(i, j))
 				}
 			}
@@ -874,7 +874,7 @@ func parallelLFT(sys1, sys2 *System) (*System, error) {
 		if s2Stripped.InputDelay == nil {
 			s2Stripped.InputDelay = make([]float64, m1)
 		}
-		for j := 0; j < m1; j++ {
+		for j := range m1 {
 			s1Stripped.InputDelay[j] -= commonIn[j]
 			s2Stripped.InputDelay[j] -= commonIn[j]
 		}
@@ -886,7 +886,7 @@ func parallelLFT(sys1, sys2 *System) (*System, error) {
 		if s2Stripped.OutputDelay == nil {
 			s2Stripped.OutputDelay = make([]float64, p1)
 		}
-		for i := 0; i < p1; i++ {
+		for i := range p1 {
 			s1Stripped.OutputDelay[i] -= commonOut[i]
 			s2Stripped.OutputDelay[i] -= commonOut[i]
 		}
@@ -1413,7 +1413,7 @@ func connectWithDelay(sys *System, Q *mat.Dense, inputs, outputs []int) (*System
 		Bfull.Mul(Bcore, E)
 		bfRaw := Bfull.RawMatrix()
 		for k, j := range inputs {
-			for i := 0; i < nH; i++ {
+			for i := range nH {
 				Bcl.Set(i, k, bfRaw.Data[i*bfRaw.Stride+j])
 			}
 		}
@@ -1464,7 +1464,7 @@ func connectWithDelay(sys *System, Q *mat.Dense, inputs, outputs []int) (*System
 		ErDout.Mul(Er, Dout)
 		erRaw := ErDout.RawMatrix()
 		for ki, oi := range outputs {
-			for j := 0; j < N; j++ {
+			for j := range N {
 				Dcl.Set(ki, mExt+j, erRaw.Data[oi*erRaw.Stride+j])
 			}
 		}
@@ -1472,7 +1472,7 @@ func connectWithDelay(sys *System, Q *mat.Dense, inputs, outputs []int) (*System
 		DinE := mat.NewDense(N, m, nil)
 		DinE.Mul(Din, E)
 		deRaw := DinE.RawMatrix()
-		for i := 0; i < N; i++ {
+		for i := range N {
 			for kj, ij := range inputs {
 				Dcl.Set(pExt+i, kj, deRaw.Data[i*deRaw.Stride+ij])
 			}
@@ -1576,7 +1576,7 @@ func connectSimple(sys *System, Q *mat.Dense, inputs, outputs []int, n, m, p int
 	bfRaw := Bfull.RawMatrix()
 	bcRaw := Bcl.RawMatrix()
 	for k, j := range inputs {
-		for i := 0; i < n; i++ {
+		for i := range n {
 			bcRaw.Data[i*bcRaw.Stride+k] = bfRaw.Data[i*bfRaw.Stride+j]
 		}
 	}

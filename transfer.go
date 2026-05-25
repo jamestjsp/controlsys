@@ -37,10 +37,10 @@ func (tf *TransferFunc) validateShape() (p, m int, err error) {
 func (tf *TransferFunc) Eval(s complex128) [][]complex128 {
 	p, m := tf.Dims()
 	result := make([][]complex128, p)
-	for i := 0; i < p; i++ {
+	for i := range p {
 		result[i] = make([]complex128, m)
 		dv := Poly(tf.Den[i]).Eval(s)
-		for j := 0; j < m; j++ {
+		for j := range m {
 			nv := Poly(tf.Num[i][j]).Eval(s)
 			h := nv / dv
 			if tf.Delay != nil && tf.Delay[i][j] != 0 {
@@ -49,7 +49,7 @@ func (tf *TransferFunc) Eval(s complex128) [][]complex128 {
 					h *= cmplx.Exp(-s * complex(tau, 0))
 				} else {
 					d := int(math.Round(tau))
-					for k := 0; k < d; k++ {
+					for range d {
 						h /= s
 					}
 				}
@@ -62,9 +62,9 @@ func (tf *TransferFunc) Eval(s complex128) [][]complex128 {
 
 func (tf *TransferFunc) evalInto(s complex128, dst []complex128) {
 	p, m := tf.Dims()
-	for i := 0; i < p; i++ {
+	for i := range p {
 		dv := Poly(tf.Den[i]).Eval(s)
-		for j := 0; j < m; j++ {
+		for j := range m {
 			h := Poly(tf.Num[i][j]).Eval(s) / dv
 			if tf.Delay != nil && tf.Delay[i][j] != 0 {
 				tau := tf.Delay[i][j]
@@ -72,7 +72,7 @@ func (tf *TransferFunc) evalInto(s complex128, dst []complex128) {
 					h *= cmplx.Exp(-s * complex(tau, 0))
 				} else {
 					d := int(math.Round(tau))
-					for k := 0; k < d; k++ {
+					for range d {
 						h /= s
 					}
 				}
@@ -255,8 +255,8 @@ func newTFWorkspace(n, m int) *tfWorkspace {
 func formDualSIMO(Ac, Bc, Cc *mat.Dense, row, n, m int, ws *tfWorkspace) {
 	aData := ws.aData
 	acRaw := Ac.RawMatrix()
-	for i := 0; i < n; i++ {
-		for j := 0; j < n; j++ {
+	for i := range n {
+		for j := range n {
 			aData[i*n+j] = acRaw.Data[j*acRaw.Stride+i]
 		}
 	}
@@ -264,8 +264,8 @@ func formDualSIMO(Ac, Bc, Cc *mat.Dense, row, n, m int, ws *tfWorkspace) {
 	copy(ws.bsimo, ccRaw.Data[row*ccRaw.Stride:row*ccRaw.Stride+n])
 	cData := ws.cData
 	bcRaw := Bc.RawMatrix()
-	for i := 0; i < m; i++ {
-		for j := 0; j < n; j++ {
+	for i := range m {
+		for j := range n {
 			cData[i*n+j] = bcRaw.Data[j*bcRaw.Stride+i]
 		}
 	}
@@ -359,7 +359,7 @@ func observabilityReduction(n, m int, ws *tfWorkspace, obsTol float64) (nobs int
 		impl.Dormhr(blas.Right, blas.NoTrans, m, n, 0, n-1, aData, n, tauHrd, cData, n, ws.workOrm, len(ws.workOrm))
 	}
 
-	for j := 0; j < n; j++ {
+	for j := range n {
 		for i := j + 2; i < n; i++ {
 			aData[i*n+j] = 0
 		}
@@ -427,9 +427,9 @@ func computeNumerators(cData []float64, n, nobs, m int, scale []float64, wPolys 
 	nums := make([][]float64, m)
 	scaleBuf := make(Poly, 0, nobs+1)
 	addBuf := make(Poly, 0, nobs+2)
-	for j := 0; j < m; j++ {
+	for j := range m {
 		var num Poly
-		for k := 0; k < nobs; k++ {
+		for k := range nobs {
 			coeff := cData[j*n+k] * scale[k]
 			if coeff != 0 {
 				scaleBuf = wPolys[nobs-1-k].ScaleTo(scaleBuf, coeff)
@@ -454,7 +454,7 @@ func ssToTFRow(Ac, Bc, Cc *mat.Dense, row, ncont, m int, obsTol float64, ws *tfW
 	zeroReturn := func() (int, []float64, [][]float64) {
 		den := []float64{1}
 		nums := make([][]float64, m)
-		for j := 0; j < m; j++ {
+		for j := range m {
 			nums[j] = []float64{0}
 		}
 		return 0, den, nums
@@ -482,7 +482,7 @@ func ssToTFRow(Ac, Bc, Cc *mat.Dense, row, ncont, m int, obsTol float64, ws *tfW
 	}
 
 	// Scale upper triangle so V-poly recurrence works on monic form
-	for i := 0; i < nobs; i++ {
+	for i := range nobs {
 		for j := i + 1; j < nobs; j++ {
 			aData[i*n+j] *= scale[j] / scale[i]
 		}
@@ -524,7 +524,7 @@ func (tf *TransferFunc) StateSpace(opts *StateSpaceOpts) (*StateSpaceResult, err
 
 	degrees := make([]int, p)
 	totalN := 0
-	for i := 0; i < p; i++ {
+	for i := range p {
 		degrees[i] = len(tf.Den[i]) - 1
 		totalN += degrees[i]
 	}
@@ -532,9 +532,9 @@ func (tf *TransferFunc) StateSpace(opts *StateSpaceOpts) (*StateSpaceResult, err
 	if totalN == 0 {
 		D := mat.NewDense(p, m, nil)
 		dRaw := D.RawMatrix()
-		for i := 0; i < p; i++ {
+		for i := range p {
 			scale := 1.0 / tf.Den[i][0]
-			for j := 0; j < m; j++ {
+			for j := range m {
 				dRaw.Data[i*dRaw.Stride+j] = scale * tf.Num[i][j][0]
 			}
 		}
@@ -558,11 +558,11 @@ func (tf *TransferFunc) StateSpace(opts *StateSpaceOpts) (*StateSpaceResult, err
 	dRaw := D.RawMatrix()
 
 	ja := 0
-	for i := 0; i < p; i++ {
+	for i := range p {
 		di := degrees[i]
 		if di == 0 {
 			scale := 1.0 / tf.Den[i][0]
-			for j := 0; j < m; j++ {
+			for j := range m {
 				dRaw.Data[i*dRaw.Stride+j] = scale * tf.Num[i][j][0]
 			}
 			continue
@@ -575,7 +575,7 @@ func (tf *TransferFunc) StateSpace(opts *StateSpaceOpts) (*StateSpaceResult, err
 		}
 
 		umax := 0.0
-		for j := 0; j < m; j++ {
+		for j := range m {
 			if v := math.Abs(tf.Num[i][j][0]); v > umax {
 				umax = v
 			}
@@ -611,22 +611,22 @@ func (tf *TransferFunc) StateSpace(opts *StateSpaceOpts) (*StateSpaceResult, err
 
 		// Pad numerator to di+1 coefficients (left-pad with zeros)
 		padNum := make([][]float64, m)
-		for j := 0; j < m; j++ {
+		for j := range m {
 			padNum[j] = make([]float64, di+1)
 			nj := len(tf.Num[i][j])
 			off := di + 1 - nj
-			for idx := 0; idx < nj; idx++ {
+			for idx := range nj {
 				if off+idx >= 0 {
 					padNum[j][off+idx] = tf.Num[i][j][idx]
 				}
 			}
 		}
 
-		for k := 0; k < di; k++ {
+		for k := range di {
 			row := ja + di - 1 - k
 			temp := -scale * tf.Den[i][k+1]
 			aRaw.Data[row*aRaw.Stride+(ja+di-1)] = temp
-			for j := 0; j < m; j++ {
+			for j := range m {
 				bRaw.Data[row*bRaw.Stride+j] = padNum[j][k+1] + temp*padNum[j][0]
 			}
 		}
@@ -635,7 +635,7 @@ func (tf *TransferFunc) StateSpace(opts *StateSpaceOpts) (*StateSpaceResult, err
 			aRaw.Data[(ja+di)*aRaw.Stride+(ja+di-1)] = 0
 		}
 
-		for j := 0; j < m; j++ {
+		for j := range m {
 			dRaw.Data[i*dRaw.Stride+j] = scale * padNum[j][0]
 		}
 
@@ -669,9 +669,9 @@ func (sys *System) Isproper() bool {
 
 func (tf *TransferFunc) Isproper() bool {
 	p, m := tf.Dims()
-	for i := 0; i < p; i++ {
+	for i := range p {
 		denDeg := len(tf.Den[i]) - 1
-		for j := 0; j < m; j++ {
+		for j := range m {
 			numDeg := len(tf.Num[i][j]) - 1
 			if numDeg > denDeg {
 				return false

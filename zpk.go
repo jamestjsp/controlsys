@@ -47,7 +47,7 @@ func NewZPKMIMO(zeros, poles [][][]complex128, gain [][]float64, dt float64) (*Z
 	if len(zeros) != p || len(poles) != p {
 		return nil, ErrDimensionMismatch
 	}
-	for i := 0; i < p; i++ {
+	for i := range p {
 		if len(gain[i]) != m || len(zeros[i]) != m || len(poles[i]) != m {
 			return nil, ErrDimensionMismatch
 		}
@@ -56,12 +56,12 @@ func NewZPKMIMO(zeros, poles [][][]complex128, gain [][]float64, dt float64) (*Z
 	zCopy := make([][][]complex128, p)
 	pCopy := make([][][]complex128, p)
 	gCopy := make([][]float64, p)
-	for i := 0; i < p; i++ {
+	for i := range p {
 		zCopy[i] = make([][]complex128, m)
 		pCopy[i] = make([][]complex128, m)
 		gCopy[i] = make([]float64, m)
 		copy(gCopy[i], gain[i])
-		for j := 0; j < m; j++ {
+		for j := range m {
 			if err := validatePoles(zeros[i][j]); err != nil {
 				return nil, err
 			}
@@ -93,9 +93,9 @@ func (z *ZPK) IsDiscrete() bool   { return z.Dt > 0 }
 func (z *ZPK) Eval(s complex128) [][]complex128 {
 	p, m := z.Dims()
 	result := make([][]complex128, p)
-	for i := 0; i < p; i++ {
+	for i := range p {
 		result[i] = make([]complex128, m)
-		for j := 0; j < m; j++ {
+		for j := range m {
 			result[i][j] = zpkEvalChannel(s, z.Zeros[i][j], z.Poles[i][j], z.Gain[i][j])
 		}
 	}
@@ -122,8 +122,8 @@ func (z *ZPK) FreqResponse(omega []float64) (*FreqResponseMatrix, error) {
 			s = cmplx.Exp(complex(0, w*dt))
 		}
 		off := k * p * m
-		for i := 0; i < p; i++ {
-			for j := 0; j < m; j++ {
+		for i := range p {
+			for j := range m {
 				data[off+i*m+j] = zpkEvalChannel(s, z.Zeros[i][j], z.Poles[i][j], z.Gain[i][j])
 			}
 		}
@@ -142,11 +142,11 @@ func (z *ZPK) TransferFunction() (*TransferFunc, error) {
 		Dt:  z.Dt,
 	}
 
-	for i := 0; i < p; i++ {
+	for i := range p {
 		commonPoles := commonDenomPoles(z.Poles[i])
 		tf.Den[i] = []float64(polyFromComplexRoots(sortConjugatePairs(commonPoles)))
 		tf.Num[i] = make([][]float64, m)
-		for j := 0; j < m; j++ {
+		for j := range m {
 			ch := newRationalChannel(z.Zeros[i][j], z.Poles[i][j], z.Gain[i][j])
 			tf.Num[i][j] = ch.numeratorForCommonPoles(commonPoles)
 		}
@@ -168,11 +168,11 @@ func (tf *TransferFunc) ZPK() (*ZPK, error) {
 		Dt:    tf.Dt,
 	}
 
-	for i := 0; i < p; i++ {
+	for i := range p {
 		z.Zeros[i] = make([][]complex128, m)
 		z.Poles[i] = make([][]complex128, m)
 		z.Gain[i] = make([]float64, m)
-		for j := 0; j < m; j++ {
+		for j := range m {
 			ch, err := rationalChannelFromPolynomials(tf.Num[i][j], tf.Den[i])
 			if err != nil {
 				return nil, err

@@ -47,7 +47,7 @@ func StepInfo(resp *TimeResponse, opts *StepInfoOptions) (*StepInfoResult, error
 		return nil, fmt.Errorf("StepInfo: steady-state values length %d does not match response rows %d: %w", len(cfg.SteadyStateValue), rows, ErrDimensionMismatch)
 	}
 	metrics := make([]StepMetric, rows)
-	for row := 0; row < rows; row++ {
+	for row := range rows {
 		metrics[row] = stepMetricForRow(resp, row, cfg)
 	}
 	return &StepInfoResult{Metrics: metrics, OutputName: copyStringSlice(resp.OutputName)}, nil
@@ -182,7 +182,7 @@ func crossingTime(resp *TimeResponse, row int, level, direction float64) float64
 func settlingTime(resp *TimeResponse, row int, final, band float64) (float64, bool) {
 	_, cols := resp.Y.Dims()
 	lastOutside := -1
-	for k := 0; k < cols; k++ {
+	for k := range cols {
 		if math.Abs(resp.Y.At(row, k)-final) > band {
 			lastOutside = k
 		}
@@ -199,7 +199,7 @@ func settlingTime(resp *TimeResponse, row int, final, band float64) (float64, bo
 func rowUndershoot(resp *TimeResponse, row int, initial, direction, scale float64) float64 {
 	_, cols := resp.Y.Dims()
 	worst := 0.0
-	for k := 0; k < cols; k++ {
+	for k := range cols {
 		opposite := direction * (initial - resp.Y.At(row, k))
 		if opposite > worst {
 			worst = opposite

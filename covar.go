@@ -24,7 +24,7 @@ func Covar(sys *System, W *mat.Dense) (*mat.Dense, error) {
 
 	// symmetrize Q for Lyapunov solver
 	qRaw := Q.RawMatrix()
-	for i := 0; i < n; i++ {
+	for i := range n {
 		for j := i + 1; j < n; j++ {
 			avg := (qRaw.Data[i*qRaw.Stride+j] + qRaw.Data[j*qRaw.Stride+i]) / 2
 			qRaw.Data[i*qRaw.Stride+j] = avg

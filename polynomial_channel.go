@@ -41,7 +41,7 @@ func (ch rationalChannel) eval(s complex128) complex128 {
 	h := complex(ch.gain, 0)
 
 	shared := min(nz, np)
-	for k := 0; k < shared; k++ {
+	for k := range shared {
 		h *= (s - ch.zeros[k]) / (s - ch.poles[k])
 	}
 	for k := shared; k < nz; k++ {

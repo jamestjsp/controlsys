@@ -221,8 +221,8 @@ func checkDense(t *testing.T, name string, got, want *mat.Dense, tol float64) {
 		t.Errorf("%s dims = (%d,%d), want (%d,%d)", name, gr, gc, r, c)
 		return
 	}
-	for i := 0; i < r; i++ {
-		for j := 0; j < c; j++ {
+	for i := range r {
+		for j := range c {
 			if math.Abs(got.At(i, j)-want.At(i, j)) > tol {
 				t.Errorf("%s(%d,%d) = %v, want %v", name, i, j, got.At(i, j), want.At(i, j))
 			}

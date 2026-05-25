@@ -32,7 +32,7 @@ func TestRss_Basic(t *testing.T) {
 }
 
 func TestRss_StrictStability(t *testing.T) {
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		sys, err := Rss(8, 1, 1)
 		if err != nil {
 			t.Fatal(err)
@@ -83,7 +83,7 @@ func TestDrss_Basic(t *testing.T) {
 }
 
 func TestDrss_StrictStability(t *testing.T) {
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		sys, err := Drss(6, 2, 2, 0.05)
 		if err != nil {
 			t.Fatal(err)

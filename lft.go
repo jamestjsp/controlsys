@@ -95,7 +95,7 @@ func lftSimple(M, Delta *System, nu, ny int) (*System, error) {
 	gRaw := make([]float64, z*z)
 	G := mat.NewDense(z, z, gRaw)
 	G.Mul(Phi, D22)
-	for i := 0; i < z; i++ {
+	for i := range z {
 		gRaw[i*z+i] += 1
 	}
 
@@ -215,7 +215,7 @@ func lftWithDelay(M, Delta *System, nu, ny int) (*System, error) {
 	gRaw := make([]float64, z*z)
 	G := mat.NewDense(z, z, gRaw)
 	G.Mul(Phi, D22p)
-	for i := 0; i < z; i++ {
+	for i := range z {
 		gRaw[i*z+i] += 1
 	}
 

@@ -218,9 +218,9 @@ func (sys *System) String() string {
 		}
 		b.WriteString("\n")
 		raw := mat.RawMatrix()
-		for i := 0; i < r; i++ {
+		for i := range r {
 			fmt.Fprintf(&b, "  %*s", rowW, rowLabels[i])
-			for j := 0; j < c; j++ {
+			for j := range c {
 				fmt.Fprintf(&b, "%*g", colW+1, raw.Data[i*raw.Stride+j])
 			}
 			b.WriteString("\n")
@@ -264,7 +264,7 @@ func (sys *System) SelectByIndex(inputs, outputs []int) (*System, error) {
 		bRaw := sys.B.RawMatrix()
 		bsRaw := Bsel.RawMatrix()
 		for k, j := range inputs {
-			for i := 0; i < n; i++ {
+			for i := range n {
 				bsRaw.Data[i*bsRaw.Stride+k] = bRaw.Data[i*bRaw.Stride+j]
 			}
 		}

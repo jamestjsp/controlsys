@@ -103,7 +103,7 @@ func mimoZeros(sys *System) (*ZerosResult, error) {
 
 	betaTol := float64(nu) * eps()
 	var zeros []complex128
-	for j := 0; j < nu; j++ {
+	for j := range nu {
 		if math.Abs(beta[j]) <= betaTol {
 			continue
 		}
@@ -182,8 +182,8 @@ func zerosStaircase(A, B, C, D *mat.Dense, n, m, p int) (afOut, bfOut []float64,
 		afStride = 1
 	}
 	af := make([]float64, mnu*afStride)
-	for r := 0; r < mnu; r++ {
-		for c := 0; c < numu; c++ {
+	for r := range mnu {
+		for c := range numu {
 			af[r*afStride+c] = bf[(numu-1-c)*stride+(mnu-1-r)]
 		}
 	}
@@ -346,7 +346,7 @@ func zerosStaircasePass(n, m, p, ro, sigma int, svlmax float64, abcd []float64, 
 					abcd[0:], stride, work)
 
 				// Zero out
-				for r := 0; r < rank2; r++ {
+				for r := range rank2 {
 					for c := 0; c < nu-rank2; c++ {
 						abcd[(irow2+r)*stride+mm1+c] = 0
 					}

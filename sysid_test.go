@@ -15,7 +15,7 @@ func impulseMarkov(t *testing.T, sys *System, steps int) []*mat.Dense {
 	_, m, p := sys.Dims()
 	markov := make([]*mat.Dense, steps)
 
-	for ch := 0; ch < m; ch++ {
+	for ch := range m {
 		uData := make([]float64, m*steps)
 		uData[ch*steps] = 1.0
 		u := mat.NewDense(m, steps, uData)
@@ -24,12 +24,12 @@ func impulseMarkov(t *testing.T, sys *System, steps int) []*mat.Dense {
 			t.Fatal(err)
 		}
 		yRaw := resp.Y.RawMatrix()
-		for k := 0; k < steps; k++ {
+		for k := range steps {
 			if markov[k] == nil {
 				markov[k] = mat.NewDense(p, m, nil)
 			}
 			raw := markov[k].RawMatrix()
-			for i := 0; i < p; i++ {
+			for i := range p {
 				raw.Data[i*raw.Stride+ch] = yRaw.Data[i*yRaw.Stride+k]
 			}
 		}
@@ -182,7 +182,7 @@ func TestERA_OrderSelection(t *testing.T) {
 
 	uTest := mat.NewDense(1, 50, nil)
 	uRaw := uTest.RawMatrix()
-	for k := 0; k < 50; k++ {
+	for k := range 50 {
 		uRaw.Data[k] = math.Sin(float64(k) * 0.2)
 	}
 
@@ -204,17 +204,11 @@ func TestERA_OrderSelection(t *testing.T) {
 func matDiffNorm(a, b *mat.Dense) float64 {
 	ra, ca := a.Dims()
 	rb, cb := b.Dims()
-	rows := ra
-	if rb < rows {
-		rows = rb
-	}
-	cols := ca
-	if cb < cols {
-		cols = cb
-	}
+	rows := min(rb, ra)
+	cols := min(cb, ca)
 	sum := 0.0
-	for i := 0; i < rows; i++ {
-		for j := 0; j < cols; j++ {
+	for i := range rows {
+		for j := range cols {
 			d := a.At(i, j) - b.At(i, j)
 			sum += d * d
 		}

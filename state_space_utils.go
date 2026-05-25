@@ -91,7 +91,7 @@ func (sys *System) FixedInputReduction(fixed map[int]float64, offsetName string)
 		}
 		fixedSeen[idx] = true
 	}
-	for j := 0; j < m; j++ {
+	for j := range m {
 		if !fixedSeen[j] {
 			keep = append(keep, j)
 		}
@@ -105,19 +105,19 @@ func (sys *System) FixedInputReduction(fixed map[int]float64, offsetName string)
 	srcBRaw := sys.B.RawMatrix()
 	srcDRaw := sys.D.RawMatrix()
 	for outCol, inCol := range keep {
-		for i := 0; i < n; i++ {
+		for i := range n {
 			bRaw.Data[i*bRaw.Stride+outCol] = srcBRaw.Data[i*srcBRaw.Stride+inCol]
 		}
-		for i := 0; i < p; i++ {
+		for i := range p {
 			dRaw.Data[i*dRaw.Stride+outCol] = srcDRaw.Data[i*srcDRaw.Stride+inCol]
 		}
 	}
 	offsetCol := len(keep)
 	for inCol, value := range fixed {
-		for i := 0; i < n; i++ {
+		for i := range n {
 			bRaw.Data[i*bRaw.Stride+offsetCol] += srcBRaw.Data[i*srcBRaw.Stride+inCol] * value
 		}
-		for i := 0; i < p; i++ {
+		for i := range p {
 			dRaw.Data[i*dRaw.Stride+offsetCol] += srcDRaw.Data[i*srcDRaw.Stride+inCol] * value
 		}
 	}
@@ -192,7 +192,7 @@ func selectInputDelayWithOffset(delay *mat.Dense, inputs []int, p, mNew int) *ma
 		return nil
 	}
 	out := mat.NewDense(p, mNew, nil)
-	for i := 0; i < p; i++ {
+	for i := range p {
 		for j, idx := range inputs {
 			out.Set(i, j, delay.At(i, idx))
 		}
@@ -206,7 +206,7 @@ func selectLFTD12Columns(D12 *mat.Dense, inputs []int) *mat.Dense {
 	}
 	r, _ := D12.Dims()
 	out := mat.NewDense(r, len(inputs)+1, nil)
-	for i := 0; i < r; i++ {
+	for i := range r {
 		for j, idx := range inputs {
 			out.Set(i, j, D12.At(i, idx))
 		}

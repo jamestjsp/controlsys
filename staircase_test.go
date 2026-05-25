@@ -138,7 +138,7 @@ func TestStaircaseOrthogonalSimilarity(t *testing.T) {
 
 	_, bCols := res.B.Dims()
 	for i := res.NCont; i < 3; i++ {
-		for j := 0; j < bCols; j++ {
+		for j := range bCols {
 			if v := math.Abs(res.B.At(i, j)); v > 1e-10 {
 				t.Errorf("B[%d,%d] = %g, expected ~0 in uncontrollable rows", i, j, res.B.At(i, j))
 			}

@@ -17,7 +17,7 @@ func BenchmarkSimulateWithDelay_SISO(b *testing.B) {
 
 	steps := 100
 	u := mat.NewDense(1, steps, nil)
-	for k := 0; k < steps; k++ {
+	for k := range steps {
 		u.Set(0, k, 1)
 	}
 	x0 := mat.NewVecDense(2, []float64{1, -0.5})
@@ -31,7 +31,7 @@ func BenchmarkSimulateWithDelay_SISO(b *testing.B) {
 func BenchmarkSimulateWithDelay_MIMO(b *testing.B) {
 	n, m, p := 10, 4, 6
 	A := mat.NewDense(n, n, nil)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		A.Set(i, i, 0.9-float64(i)*0.05)
 		if i > 0 {
 			A.Set(i, i-1, 0.1)
@@ -48,8 +48,8 @@ func BenchmarkSimulateWithDelay_MIMO(b *testing.B) {
 	D := mat.NewDense(p, m, nil)
 
 	delay := mat.NewDense(p, m, nil)
-	for i := 0; i < p; i++ {
-		for j := 0; j < m; j++ {
+	for i := range p {
+		for j := range m {
 			delay.Set(i, j, float64(2+i+j))
 		}
 	}
@@ -57,13 +57,13 @@ func BenchmarkSimulateWithDelay_MIMO(b *testing.B) {
 
 	steps := 200
 	u := mat.NewDense(m, steps, nil)
-	for j := 0; j < m; j++ {
-		for k := 0; k < steps; k++ {
+	for j := range m {
+		for k := range steps {
 			u.Set(j, k, math.Sin(float64(k)*0.1+float64(j)))
 		}
 	}
 	x0 := mat.NewVecDense(n, nil)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		x0.SetVec(i, float64(i+1)*0.1)
 	}
 
@@ -76,14 +76,14 @@ func BenchmarkSimulateWithDelay_MIMO(b *testing.B) {
 func BenchmarkBilinearDiscretize(b *testing.B) {
 	n := 20
 	A := mat.NewDense(n, n, nil)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		A.Set(i, i, -float64(i+1)*0.5)
 		if i > 0 {
 			A.Set(i, i-1, 1)
 		}
 	}
 	B := mat.NewDense(n, 3, nil)
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		B.Set(i, i, 1)
 	}
 	C := mat.NewDense(2, n, nil)
@@ -101,7 +101,7 @@ func BenchmarkBilinearDiscretize(b *testing.B) {
 func BenchmarkTransferFunction_MIMO(b *testing.B) {
 	n := 15
 	A := mat.NewDense(n, n, nil)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		A.Set(i, i, -float64(i+1)*0.3)
 		if i > 0 {
 			A.Set(i, i-1, 1)
@@ -112,11 +112,11 @@ func BenchmarkTransferFunction_MIMO(b *testing.B) {
 	}
 	m, p := 3, 4
 	B := mat.NewDense(n, m, nil)
-	for i := 0; i < m; i++ {
+	for i := range m {
 		B.Set(i, i, 1)
 	}
 	C := mat.NewDense(p, n, nil)
-	for i := 0; i < p; i++ {
+	for i := range p {
 		C.Set(i, i%n, 1)
 	}
 	D := mat.NewDense(p, m, nil)
@@ -131,7 +131,7 @@ func BenchmarkTransferFunction_MIMO(b *testing.B) {
 func BenchmarkReduce(b *testing.B) {
 	n := 20
 	A := mat.NewDense(n, n, nil)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		A.Set(i, i, -float64(i+1)*0.2)
 		if i > 0 {
 			A.Set(i, i-1, 1)
@@ -154,14 +154,14 @@ func BenchmarkReduce(b *testing.B) {
 
 func BenchmarkAbsorbDelay(b *testing.B) {
 	A := mat.NewDense(5, 5, nil)
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		A.Set(i, i, 0.8-float64(i)*0.05)
 		if i > 0 {
 			A.Set(i, i-1, 0.1)
 		}
 	}
 	B := mat.NewDense(5, 3, nil)
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		B.Set(i, i, 1)
 	}
 	C := mat.NewDense(2, 5, nil)
@@ -180,7 +180,7 @@ func BenchmarkAbsorbDelay(b *testing.B) {
 func BenchmarkDiscretizeZOH(b *testing.B) {
 	n := 20
 	A := mat.NewDense(n, n, nil)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		A.Set(i, i, -float64(i+1)*0.5)
 		if i > 0 {
 			A.Set(i, i-1, 1)
@@ -188,7 +188,7 @@ func BenchmarkDiscretizeZOH(b *testing.B) {
 	}
 	m := 5
 	B := mat.NewDense(n, m, nil)
-	for i := 0; i < m; i++ {
+	for i := range m {
 		B.Set(i, i, 1)
 	}
 	C := mat.NewDense(3, n, nil)
@@ -206,8 +206,8 @@ func BenchmarkDiscretizeZOH(b *testing.B) {
 
 func BenchmarkDenseNorm(b *testing.B) {
 	m := mat.NewDense(50, 50, nil)
-	for i := 0; i < 50; i++ {
-		for j := 0; j < 50; j++ {
+	for i := range 50 {
+		for j := range 50 {
 			m.Set(i, j, float64(i*50+j)*0.01)
 		}
 	}
@@ -283,7 +283,7 @@ func BenchmarkBode(b *testing.B) {
 
 func BenchmarkZeros_SISO(b *testing.B) {
 	A := mat.NewDense(5, 5, nil)
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		A.Set(i, i, -float64(i+1)*0.5)
 		if i > 0 {
 			A.Set(i, i-1, 1)
@@ -310,7 +310,7 @@ func BenchmarkZeros_MIMO(b *testing.B) {
 func BenchmarkZeros_NonSquare(b *testing.B) {
 	n, m, p := 15, 5, 8
 	A := mat.NewDense(n, n, nil)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		A.Set(i, i, -float64(i+1)*0.3)
 		if i > 0 {
 			A.Set(i, i-1, 1)
@@ -320,11 +320,11 @@ func BenchmarkZeros_NonSquare(b *testing.B) {
 		}
 	}
 	B := mat.NewDense(n, m, nil)
-	for i := 0; i < m; i++ {
+	for i := range m {
 		B.Set(i, i, 1)
 	}
 	C := mat.NewDense(p, n, nil)
-	for i := 0; i < p; i++ {
+	for i := range p {
 		C.Set(i, i%n, 1)
 	}
 	D := mat.NewDense(p, m, nil)
@@ -338,7 +338,7 @@ func BenchmarkZeros_NonSquare(b *testing.B) {
 func BenchmarkControllabilityStaircase(b *testing.B) {
 	n := 20
 	A := mat.NewDense(n, n, nil)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		A.Set(i, i, -float64(i+1)*0.2)
 		if i > 0 {
 			A.Set(i, i-1, 1)
@@ -362,13 +362,13 @@ func BenchmarkSimulateNoDelay(b *testing.B) {
 	sys.Dt = 0.01
 	steps := 500
 	u := mat.NewDense(3, steps, nil)
-	for j := 0; j < 3; j++ {
-		for k := 0; k < steps; k++ {
+	for j := range 3 {
+		for k := range steps {
 			u.Set(j, k, math.Sin(float64(k)*0.1+float64(j)))
 		}
 	}
 	x0 := mat.NewVecDense(20, nil)
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		x0.SetVec(i, float64(i)*0.05)
 	}
 	b.ResetTimer()
@@ -437,7 +437,7 @@ func BenchmarkSetDelayModel(b *testing.B) {
 
 func BenchmarkAbsorbInternalDelay(b *testing.B) {
 	A := mat.NewDense(5, 5, nil)
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		A.Set(i, i, 0.8-float64(i)*0.05)
 		if i > 0 {
 			A.Set(i, i-1, 0.1)
@@ -519,7 +519,7 @@ func BenchmarkSimulateInternalDelay(b *testing.B) {
 
 	steps := 200
 	u := mat.NewDense(1, steps, nil)
-	for k := 0; k < steps; k++ {
+	for k := range steps {
 		u.Set(0, k, math.Sin(float64(k)*0.1))
 	}
 	x0 := mat.NewVecDense(3, []float64{1, 0, 0})
@@ -569,7 +569,7 @@ func BenchmarkZeroDelayApprox(b *testing.B) {
 func BenchmarkIsStrictlyUpperTriangular(b *testing.B) {
 	n := 20
 	m := mat.NewDense(n, n, nil)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		for j := i + 1; j < n; j++ {
 			m.Set(i, j, float64(i*n+j)*0.01)
 		}
@@ -609,7 +609,7 @@ func BenchmarkSimulate_DCMotor(b *testing.B) {
 	disc, _ := sys.DiscretizeZOH(0.001)
 	steps := 1000
 	u := mat.NewDense(1, steps, nil)
-	for k := 0; k < steps; k++ {
+	for k := range steps {
 		u.Set(0, k, 1)
 	}
 	b.ResetTimer()
@@ -668,7 +668,7 @@ func BenchmarkSimulate_MassSpringDamper(b *testing.B) {
 	disc, _ := sys.DiscretizeZOH(0.01)
 	steps := 500
 	u := mat.NewDense(1, steps, nil)
-	for k := 0; k < steps; k++ {
+	for k := range steps {
 		u.Set(0, k, math.Sin(float64(k)*0.05))
 	}
 	b.ResetTimer()
@@ -700,7 +700,7 @@ func BenchmarkDiscretizeAndSimulate_B747Longitudinal(b *testing.B) {
 	disc, _ := sys.DiscretizeZOH(0.05)
 	steps := 200
 	u := mat.NewDense(2, steps, nil)
-	for k := 0; k < steps; k++ {
+	for k := range steps {
 		if k < 50 {
 			u.Set(0, k, -0.01)
 		}
@@ -719,8 +719,8 @@ func BenchmarkSimulate_Large(b *testing.B) {
 	sys.Dt = 0.01
 	steps := 1000
 	u := mat.NewDense(m, steps, nil)
-	for j := 0; j < m; j++ {
-		for k := 0; k < steps; k++ {
+	for j := range m {
+		for k := range steps {
 			u.Set(j, k, math.Sin(float64(k)*0.02+float64(j)))
 		}
 	}
@@ -762,7 +762,7 @@ func BenchmarkFeedbackAndSimulate(b *testing.B) {
 	disc, _ := cl.DiscretizeZOH(0.05)
 	steps := 200
 	u := mat.NewDense(2, steps, nil)
-	for k := 0; k < 50; k++ {
+	for k := range 50 {
 		u.Set(0, k, 1)
 	}
 	b.ResetTimer()
@@ -1273,7 +1273,7 @@ func BenchmarkFreqRespEst_MIMO(b *testing.B) {
 
 func benchSys(n, m, p int) *System {
 	A := mat.NewDense(n, n, nil)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		A.Set(i, i, -float64(i+1)*0.3)
 		if i > 0 {
 			A.Set(i, i-1, 1)
@@ -1342,7 +1342,7 @@ func BenchmarkLFT_Large(b *testing.B) {
 
 func benchD2CSystem(n, m int, dt float64) *System {
 	A := mat.NewDense(n, n, nil)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		A.Set(i, i, -float64(i+1)*0.5)
 		if i > 0 {
 			A.Set(i, i-1, 0.3)

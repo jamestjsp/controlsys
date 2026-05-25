@@ -199,10 +199,7 @@ func autoNyquistFreqs(sys *System, poles []complex128, imagPoles []imagAxisPole,
 		}
 	}
 
-	baseN := nPoints * 7 / 10
-	if baseN < 50 {
-		baseN = 50
-	}
+	baseN := max(nPoints*7/10, 50)
 	omega := logspace(math.Log10(wMin), math.Log10(wMax), baseN)
 
 	for _, ip := range imagPoles {
@@ -347,7 +344,7 @@ func indentContour(sys *System, w0 float64, nArc int) ([]complex128, error) {
 	epsR := 1e-4 * math.Max(1, w0)
 	arc := make([]complex128, nArc)
 
-	for i := 0; i < nArc; i++ {
+	for i := range nArc {
 		theta := math.Pi/2 - float64(i)*math.Pi/float64(nArc-1)
 
 		var s complex128
@@ -394,7 +391,7 @@ func windingNumber(contour []complex128, point complex128) int {
 
 	totalAngle := 0.0
 	n := len(contour)
-	for k := 0; k < n; k++ {
+	for k := range n {
 		z1 := contour[k] - point
 		z2 := contour[(k+1)%n] - point
 

@@ -97,7 +97,7 @@ func TestPRD125FreqRespEstUsesStridedSampledSignals(t *testing.T) {
 	output := baseOutput.Slice(0, 2, 1, steps+1).(*mat.Dense)
 
 	rng := rand.New(rand.NewSource(125))
-	for k := 0; k < steps; k++ {
+	for k := range steps {
 		u0 := rng.NormFloat64()
 		u1 := rng.NormFloat64()
 		input.Set(0, k, u0)

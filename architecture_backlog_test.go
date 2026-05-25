@@ -158,8 +158,8 @@ func TestTransferFunctionPreservesRowRealizationBehavior(t *testing.T) {
 	if !stringSlicesEqual(res.TF.OutputName, sys.OutputName) {
 		t.Fatalf("OutputName = %v, want %v", res.TF.OutputName, sys.OutputName)
 	}
-	for i := 0; i < 2; i++ {
-		for j := 0; j < 2; j++ {
+	for i := range 2 {
+		for j := range 2 {
 			if res.TF.Delay[i][j] != sys.Delay.At(i, j) {
 				t.Fatalf("Delay[%d][%d] = %v, want %v", i, j, res.TF.Delay[i][j], sys.Delay.At(i, j))
 			}
@@ -173,8 +173,8 @@ func TestTransferFunctionPreservesRowRealizationBehavior(t *testing.T) {
 	}
 	for k, w := range omega {
 		tfEval := res.TF.Eval(complex(0, w))
-		for i := 0; i < 2; i++ {
-			for j := 0; j < 2; j++ {
+		for i := range 2 {
+			for j := range 2 {
 				assertComplexApprox(t, tfEval[i][j], resp.At(k, i, j), 1e-8)
 			}
 		}
@@ -327,8 +327,8 @@ func assertDenseApprox(t *testing.T, got, want *mat.Dense, tol float64) {
 	if gr != wr || gc != wc {
 		t.Fatalf("dims = %dx%d, want %dx%d", gr, gc, wr, wc)
 	}
-	for i := 0; i < gr; i++ {
-		for j := 0; j < gc; j++ {
+	for i := range gr {
+		for j := range gc {
 			if math.Abs(got.At(i, j)-want.At(i, j)) > tol {
 				t.Fatalf("(%d,%d) = %v, want %v", i, j, got.At(i, j), want.At(i, j))
 			}

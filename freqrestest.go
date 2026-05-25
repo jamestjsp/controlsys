@@ -176,20 +176,20 @@ func welchSISO(fft *fourier.FFT, seg []float64, _ []complex128, win []float64,
 	uCoeff := make([]complex128, nFreq)
 	yCoeff := make([]complex128, nFreq)
 
-	for s := 0; s < nSeg; s++ {
+	for s := range nSeg {
 		start := s * hop
 
-		for k := 0; k < nfft; k++ {
+		for k := range nfft {
 			seg[k] = uData[start+k] * win[k]
 		}
 		fft.Coefficients(uCoeff, seg)
 
-		for k := 0; k < nfft; k++ {
+		for k := range nfft {
 			seg[k] = yData[start+k] * win[k]
 		}
 		fft.Coefficients(yCoeff, seg)
 
-		for f := 0; f < nFreq; f++ {
+		for f := range nFreq {
 			Suu[f] += real(uCoeff[f])*real(uCoeff[f]) + imag(uCoeff[f])*imag(uCoeff[f])
 			Syy[f] += real(yCoeff[f])*real(yCoeff[f]) + imag(yCoeff[f])*imag(yCoeff[f])
 			Syu[f] += cmplx.Conj(uCoeff[f]) * yCoeff[f]

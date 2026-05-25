@@ -54,7 +54,7 @@ func TestSsbal_AlreadyBalanced(t *testing.T) {
 	}
 
 	n, _, _ := sys.Dims()
-	for i := 0; i < n; i++ {
+	for i := range n {
 		d := res.T.At(i, i)
 		if math.Abs(d-1) > 1 {
 			t.Errorf("T[%d,%d] = %g, expected near 1 for already balanced system", i, i, d)
@@ -101,8 +101,8 @@ func TestSsbal_TransformIsDiagonal(t *testing.T) {
 	}
 
 	n, _, _ := sys.Dims()
-	for i := 0; i < n; i++ {
-		for j := 0; j < n; j++ {
+	for i := range n {
+		for j := range n {
 			if i != j && res.T.At(i, j) != 0 {
 				t.Errorf("T[%d,%d] = %g, want 0 (T should be diagonal)", i, j, res.T.At(i, j))
 			}
