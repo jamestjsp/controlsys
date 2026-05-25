@@ -9,6 +9,11 @@ For domain terminology, modeling assumptions, and project language, read
 go test -v -count=1
 ```
 
+## Go Modernization
+
+- When updating to a newer Go toolchain, start from a clean git state and run `go fix ./...`; repeat until it reaches a fixed point before reviewing the mechanical diff.
+- Keep generated rewrites only after the normal test and benchmark gates stay clean; roll back hot-path rewrites that regress performance.
+
 ## Key Conventions
 
 - gonum LAPACK uses **row-major** flat arrays (`a[row*n+col]`), not column-major like Fortran
