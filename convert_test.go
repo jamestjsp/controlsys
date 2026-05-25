@@ -1266,12 +1266,12 @@ func TestImpulse_ImpulseResponseMatch(t *testing.T) {
 	eA.Exp(Adt)
 
 	AkT := mat.NewDense(n, n, nil)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		AkT.Set(i, i, 1)
 	}
 
 	AdPow := mat.NewDense(n, n, nil)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		AdPow.Set(i, i, 1)
 	}
 
@@ -1384,21 +1384,21 @@ func TestFOH_PureGain(t *testing.T) {
 	if n != 3 || m != 3 || p != 2 {
 		t.Fatalf("dims = %d,%d,%d, want 3,3,2", n, m, p)
 	}
-	for i := 0; i < n; i++ {
-		for j := 0; j < n; j++ {
+	for i := range n {
+		for j := range n {
 			if disc.A.At(i, j) != 0 {
 				t.Errorf("A[%d,%d] = %v, want 0", i, j, disc.A.At(i, j))
 			}
 		}
 	}
-	for j := 0; j < m; j++ {
+	for j := range m {
 		if disc.B.At(j, j) != 1 {
 			t.Errorf("B[%d,%d] = %v, want 1", j, j, disc.B.At(j, j))
 		}
 	}
 	assertMatClose(t, "C", disc.C, D, 1e-14)
-	for i := 0; i < p; i++ {
-		for j := 0; j < m; j++ {
+	for i := range p {
+		for j := range m {
 			if disc.D.At(i, j) != 0 {
 				t.Errorf("D[%d,%d] = %v, want 0", i, j, disc.D.At(i, j))
 			}

@@ -79,7 +79,7 @@ func canonModalEig(sys *System, policy realizationTransformPolicy) (*CanonResult
 
 	blocks := make([]eigBlock, 0, n)
 	used := make([]bool, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		if used[i] {
 			continue
 		}
@@ -124,12 +124,12 @@ func canonModalEig(sys *System, policy realizationTransformPolicy) (*CanonResult
 	col := 0
 	for _, blk := range blocks {
 		if blk.imag1 == 0 {
-			for row := 0; row < n; row++ {
+			for row := range n {
 				tData[row*n+col] = real(vecs.At(row, blk.idx))
 			}
 			col++
 		} else {
-			for row := 0; row < n; row++ {
+			for row := range n {
 				v := vecs.At(row, blk.idx)
 				tData[row*n+col] = real(v)
 				tData[row*n+col+1] = imag(v)
@@ -296,7 +296,7 @@ func canonCompanion(sys *System) (*CanonResult, error) {
 	for i := 0; i < n-1; i++ {
 		Ac.Set(i, i+1, 1)
 	}
-	for j := 0; j < n; j++ {
+	for j := range n {
 		Ac.Set(n-1, j, -charPoly[j])
 	}
 

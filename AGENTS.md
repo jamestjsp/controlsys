@@ -3,6 +3,15 @@
 For domain terminology, modeling assumptions, and project language, read
 `CONTEXT.md` before making design, documentation, or behavior changes.
 
+## Static Checks
+
+Run `go fix` the same way you run `go vet`:
+
+```bash
+go fix ./...
+go vet ./...
+```
+
 ## Build & Test
 
 ```bash

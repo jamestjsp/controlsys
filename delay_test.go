@@ -166,7 +166,7 @@ func TestSimulateSISOWithDelay(t *testing.T) {
 
 	steps := 10
 	u := mat.NewDense(1, steps, nil)
-	for k := 0; k < steps; k++ {
+	for k := range steps {
 		u.Set(0, k, 1)
 	}
 
@@ -179,7 +179,7 @@ func TestSimulateSISOWithDelay(t *testing.T) {
 	noDelayResp, _ := noDelaySys.Simulate(u, nil, nil)
 
 	// First 3 steps: output = autonomous only (x0=0 → all zero)
-	for k := 0; k < 3; k++ {
+	for k := range 3 {
 		if math.Abs(resp.Y.At(0, k)) > 1e-12 {
 			t.Errorf("step %d: expected 0 (delayed), got %v", k, resp.Y.At(0, k))
 		}
@@ -209,7 +209,7 @@ func TestSimulateMIMOWithDelay(t *testing.T) {
 
 	steps := 8
 	u := mat.NewDense(2, steps, nil)
-	for k := 0; k < steps; k++ {
+	for k := range steps {
 		u.Set(0, k, 1)
 		u.Set(1, k, 1)
 	}
@@ -239,7 +239,7 @@ func TestSimulateDelayMatchesAbsorb(t *testing.T) {
 
 	steps := 15
 	u := mat.NewDense(1, steps, nil)
-	for k := 0; k < steps; k++ {
+	for k := range steps {
 		u.Set(0, k, float64(k+1))
 	}
 
@@ -289,7 +289,7 @@ func TestSimulateDelayMatchesAbsorbNonSymA(t *testing.T) {
 
 	steps := 20
 	u := mat.NewDense(2, steps, nil)
-	for k := 0; k < steps; k++ {
+	for k := range steps {
 		u.Set(0, k, math.Sin(float64(k)*0.3))
 		u.Set(1, k, math.Cos(float64(k)*0.5))
 	}
@@ -425,7 +425,7 @@ func TestAbsorbDelayNonUniform(t *testing.T) {
 
 	steps := 15
 	u := mat.NewDense(1, steps, nil)
-	for k := 0; k < steps; k++ {
+	for k := range steps {
 		u.Set(0, k, 1)
 	}
 	origResp, _ := sys.Simulate(u, nil, nil)
@@ -736,7 +736,7 @@ func TestSimulateNoDelayBackwardCompat(t *testing.T) {
 	x := []float64{0.5, -0.3}
 	uu := []float64{1, 2, 3}
 	wantY := make([]float64, 3)
-	for k := 0; k < 3; k++ {
+	for k := range 3 {
 		wantY[k] = 1*x[0] + 0*x[1] + 0.5*uu[k]
 		nx0 := 0.9*x[0] + 0.1*x[1] + 1*uu[k]
 		nx1 := 0.0*x[0] + 0.8*x[1] + 0*uu[k]
@@ -765,7 +765,7 @@ func TestSimulatePureFeedthroughWithDelay(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for k := 0; k < 3; k++ {
+	for k := range 3 {
 		if math.Abs(resp.Y.At(0, k)) > 1e-12 {
 			t.Errorf("step %d: expected 0, got %v", k, resp.Y.At(0, k))
 		}
@@ -789,7 +789,7 @@ func TestSimulateWithDelayAndX0(t *testing.T) {
 
 	steps := 6
 	u := mat.NewDense(1, steps, nil)
-	for k := 0; k < steps; k++ {
+	for k := range steps {
 		u.Set(0, k, 1)
 	}
 
@@ -803,12 +803,12 @@ func TestSimulateWithDelayAndX0(t *testing.T) {
 	// No-delay SIMO response with x0=0, u=1: y_nd[k]
 	noDelaySys, _ := New(A, B, C, D, 1.0)
 	uForced := mat.NewDense(1, steps, nil)
-	for k := 0; k < steps; k++ {
+	for k := range steps {
 		uForced.Set(0, k, 1)
 	}
 	ndResp, _ := noDelaySys.Simulate(uForced, nil, nil)
 
-	for k := 0; k < steps; k++ {
+	for k := range steps {
 		autoY := 5 * math.Pow(0.9, float64(k))
 		forcedY := 0.0
 		if k >= 2 {
@@ -835,13 +835,13 @@ func TestMATLABSISOInputDelay(t *testing.T) {
 
 	steps := 12
 	u := mat.NewDense(1, steps, nil)
-	for k := 0; k < steps; k++ {
+	for k := range steps {
 		u.Set(0, k, 1)
 	}
 
 	resp, _ := sys.Simulate(u, nil, nil)
 
-	for k := 0; k < 5; k++ {
+	for k := range 5 {
 		if math.Abs(resp.Y.At(0, k)) > 1e-12 {
 			t.Errorf("step %d: expected 0 during delay, got %v", k, resp.Y.At(0, k))
 		}
@@ -880,7 +880,7 @@ func TestMATLABMIMOIODelay(t *testing.T) {
 	}
 
 	// Channel (0,0) has delay=2: D feedthrough appears at k=2
-	for k := 0; k < 2; k++ {
+	for k := range 2 {
 		if math.Abs(resp.Y.At(0, k)) > 1e-12 {
 			t.Errorf("y(0,%d): expected 0, got %v", k, resp.Y.At(0, k))
 		}
@@ -890,7 +890,7 @@ func TestMATLABMIMOIODelay(t *testing.T) {
 	}
 
 	// Channel (1,0) has delay=1, D[1,0]=0: first nonzero at k=2
-	for k := 0; k < 2; k++ {
+	for k := range 2 {
 		if math.Abs(resp.Y.At(1, k)) > 1e-12 {
 			t.Errorf("y(1,%d): expected 0, got %v", k, resp.Y.At(1, k))
 		}
@@ -976,7 +976,7 @@ func TestMATLABAbsorbDelayStepResponse(t *testing.T) {
 
 	steps := 20
 	u := mat.NewDense(1, steps, nil)
-	for k := 0; k < steps; k++ {
+	for k := range steps {
 		u.Set(0, k, 1)
 	}
 
@@ -991,7 +991,7 @@ func TestMATLABAbsorbDelayStepResponse(t *testing.T) {
 
 	if !matEqual(delayResp.Y, augResp.Y, 1e-12) {
 		t.Error("absorbDelay step response mismatch")
-		for k := 0; k < steps; k++ {
+		for k := range steps {
 			t.Logf("  k=%d: delay=%v aug=%v", k, delayResp.Y.At(0, k), augResp.Y.At(0, k))
 		}
 	}
@@ -1010,7 +1010,7 @@ func TestMATLABMultiInputDelay(t *testing.T) {
 
 	steps := 15
 	u := mat.NewDense(2, steps, nil)
-	for k := 0; k < steps; k++ {
+	for k := range steps {
 		u.Set(0, k, 1)
 		u.Set(1, k, 1)
 	}
@@ -1047,7 +1047,7 @@ func TestSimulateSIMOWithDelay(t *testing.T) {
 
 	steps := 15
 	u := mat.NewDense(1, steps, nil)
-	for k := 0; k < steps; k++ {
+	for k := range steps {
 		u.Set(0, k, float64(k+1)*0.5)
 	}
 
@@ -1059,9 +1059,9 @@ func TestSimulateSIMOWithDelay(t *testing.T) {
 	noDelaySys, _ := New(A, B, C, D, 1.0)
 	ndResp, _ := noDelaySys.Simulate(u, nil, nil)
 
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		d := int(delay.At(i, 0))
-		for k := 0; k < d; k++ {
+		for k := range d {
 			if math.Abs(resp.Y.At(i, k)) > 1e-12 {
 				t.Errorf("output %d step %d: expected 0 during delay, got %v", i, k, resp.Y.At(i, k))
 			}
@@ -1092,9 +1092,9 @@ func TestSimulateSIMOWithDelay(t *testing.T) {
 		simoSys, _ := New(A, B, C, D, 1.0)
 		forcedResp, _ := simoSys.Simulate(u, nil, nil)
 
-		for i := 0; i < 2; i++ {
+		for i := range 2 {
 			d := int(delay.At(i, 0))
-			for k := 0; k < steps; k++ {
+			for k := range steps {
 				want := autoResp.Y.At(i, k)
 				if k >= d {
 					want += forcedResp.Y.At(i, k-d)
@@ -1122,7 +1122,7 @@ func TestSimulateMISOWithDelay(t *testing.T) {
 
 	steps := 15
 	u := mat.NewDense(2, steps, nil)
-	for k := 0; k < steps; k++ {
+	for k := range steps {
 		u.Set(0, k, math.Sin(float64(k)*0.4)+1)
 		u.Set(1, k, math.Cos(float64(k)*0.3))
 	}
@@ -1134,7 +1134,7 @@ func TestSimulateMISOWithDelay(t *testing.T) {
 
 	u0 := mat.NewDense(1, steps, nil)
 	u1 := mat.NewDense(1, steps, nil)
-	for k := 0; k < steps; k++ {
+	for k := range steps {
 		u0.Set(0, k, u.At(0, k))
 		u1.Set(0, k, u.At(1, k))
 	}
@@ -1149,7 +1149,7 @@ func TestSimulateMISOWithDelay(t *testing.T) {
 	sys1, _ := New(A, B1, C, D1, 1.0)
 	resp1, _ := sys1.Simulate(u1, nil, nil)
 
-	for k := 0; k < steps; k++ {
+	for k := range steps {
 		want := 0.0
 		if k >= 2 {
 			want += resp0.Y.At(0, k-2)
@@ -1384,8 +1384,8 @@ func TestTotalDelay(t *testing.T) {
 		if r != 2 || c != 3 {
 			t.Fatalf("dims = %d×%d, want 2×3", r, c)
 		}
-		for i := 0; i < 2; i++ {
-			for j := 0; j < 3; j++ {
+		for i := range 2 {
+			for j := range 3 {
 				want := s.InputDelay[j]
 				if td.At(i, j) != want {
 					t.Errorf("td[%d,%d] = %v, want %v", i, j, td.At(i, j), want)
@@ -1401,8 +1401,8 @@ func TestTotalDelay(t *testing.T) {
 		if td == nil {
 			t.Fatal("expected non-nil")
 		}
-		for i := 0; i < 2; i++ {
-			for j := 0; j < 3; j++ {
+		for i := range 2 {
+			for j := range 3 {
 				want := s.OutputDelay[i]
 				if td.At(i, j) != want {
 					t.Errorf("td[%d,%d] = %v, want %v", i, j, td.At(i, j), want)
@@ -1419,8 +1419,8 @@ func TestTotalDelay(t *testing.T) {
 		if td == nil {
 			t.Fatal("expected non-nil")
 		}
-		for i := 0; i < 2; i++ {
-			for j := 0; j < 3; j++ {
+		for i := range 2 {
+			for j := range 3 {
 				if td.At(i, j) != ioDelay.At(i, j) {
 					t.Errorf("td[%d,%d] = %v, want %v", i, j, td.At(i, j), ioDelay.At(i, j))
 				}
@@ -1439,8 +1439,8 @@ func TestTotalDelay(t *testing.T) {
 			t.Fatal("expected non-nil")
 		}
 		want := mat.NewDense(2, 3, []float64{1, 1, 2, 6, 3, 6})
-		for i := 0; i < 2; i++ {
-			for j := 0; j < 3; j++ {
+		for i := range 2 {
+			for j := range 3 {
 				if td.At(i, j) != want.At(i, j) {
 					t.Errorf("td[%d,%d] = %v, want %v", i, j, td.At(i, j), want.At(i, j))
 				}
@@ -1520,25 +1520,25 @@ func TestDecomposeIODelay(t *testing.T) {
 
 			gotInput, gotOutput, gotResid := DecomposeIODelay(ioMat)
 
-			for j := 0; j < m; j++ {
+			for j := range m {
 				if math.Abs(gotInput[j]-tt.wantInput[j]) > 1e-14 {
 					t.Errorf("inputDelay[%d] = %g, want %g", j, gotInput[j], tt.wantInput[j])
 				}
 			}
-			for i := 0; i < p; i++ {
+			for i := range p {
 				if math.Abs(gotOutput[i]-tt.wantOutput[i]) > 1e-14 {
 					t.Errorf("outputDelay[%d] = %g, want %g", i, gotOutput[i], tt.wantOutput[i])
 				}
 			}
-			for i := 0; i < p; i++ {
-				for j := 0; j < m; j++ {
+			for i := range p {
+				for j := range m {
 					if math.Abs(gotResid.At(i, j)-tt.wantResid[i][j]) > 1e-14 {
 						t.Errorf("residual[%d,%d] = %g, want %g", i, j, gotResid.At(i, j), tt.wantResid[i][j])
 					}
 				}
 			}
-			for i := 0; i < p; i++ {
-				for j := 0; j < m; j++ {
+			for i := range p {
+				for j := range m {
 					got := gotInput[j] + gotOutput[i] + gotResid.At(i, j)
 					want := tt.ioDelay[i][j]
 					if math.Abs(got-want) > 1e-14 {
@@ -1558,7 +1558,7 @@ func simulateWithOutputDelay(sys *System, u *mat.Dense, x0 *mat.VecDense) *mat.D
 	ndResp, _ := noDelaySys.Simulate(u, x0, nil)
 
 	Y := mat.NewDense(p, steps, nil)
-	for i := 0; i < p; i++ {
+	for i := range p {
 		d := 0
 		if sys.OutputDelay != nil && i < len(sys.OutputDelay) {
 			d = int(sys.OutputDelay[i])
@@ -1596,7 +1596,7 @@ func TestAbsorbOutputDelay_SISO(t *testing.T) {
 
 	steps := 15
 	u := mat.NewDense(1, steps, nil)
-	for k := 0; k < steps; k++ {
+	for k := range steps {
 		u.Set(0, k, 1)
 	}
 
@@ -1631,7 +1631,7 @@ func TestAbsorbOutputDelay_MIMO(t *testing.T) {
 
 	steps := 20
 	u := mat.NewDense(1, steps, nil)
-	for k := 0; k < steps; k++ {
+	for k := range steps {
 		u.Set(0, k, math.Sin(float64(k)*0.3)+1)
 	}
 
@@ -1639,7 +1639,7 @@ func TestAbsorbOutputDelay_MIMO(t *testing.T) {
 	augResp, _ := aug.Simulate(u, nil, nil)
 	if !matEqual(wantY, augResp.Y, 1e-10) {
 		t.Error("MIMO simulation mismatch")
-		for k := 0; k < steps; k++ {
+		for k := range steps {
 			t.Logf("  k=%d: want=[%v,%v] got=[%v,%v]", k,
 				wantY.At(0, k), wantY.At(1, k),
 				augResp.Y.At(0, k), augResp.Y.At(1, k))
@@ -1708,7 +1708,7 @@ func TestAbsorbOutputDelay_MixedDelays(t *testing.T) {
 
 	steps := 15
 	u := mat.NewDense(1, steps, nil)
-	for k := 0; k < steps; k++ {
+	for k := range steps {
 		u.Set(0, k, float64(k+1)*0.5)
 	}
 	wantY := simulateWithOutputDelay(sys, u, nil)
@@ -1734,7 +1734,7 @@ func TestAbsorbOutputDelay_GainSystem(t *testing.T) {
 
 	steps := 8
 	u := mat.NewDense(1, steps, nil)
-	for k := 0; k < steps; k++ {
+	for k := range steps {
 		u.Set(0, k, 1)
 	}
 	wantY := simulateWithOutputDelay(sys, u, nil)
@@ -1798,7 +1798,7 @@ func TestAbsorbOutputDelay_NonSymA(t *testing.T) {
 
 	steps := 20
 	u := mat.NewDense(2, steps, nil)
-	for k := 0; k < steps; k++ {
+	for k := range steps {
 		u.Set(0, k, math.Sin(float64(k)*0.3))
 		u.Set(1, k, math.Cos(float64(k)*0.5))
 	}
@@ -1883,8 +1883,8 @@ func TestAbsorbScope_IODecompose(t *testing.T) {
 	if aug.Delay != nil {
 		hasNonzero := false
 		r, c := aug.Delay.Dims()
-		for i := 0; i < r; i++ {
-			for j := 0; j < c; j++ {
+		for i := range r {
+			for j := range c {
 				if aug.Delay.At(i, j) != 0 {
 					hasNonzero = true
 				}
@@ -1923,7 +1923,7 @@ func TestAbsorbScope_All_Default(t *testing.T) {
 
 	steps := 20
 	u := mat.NewDense(2, steps, nil)
-	for k := 0; k < steps; k++ {
+	for k := range steps {
 		u.Set(0, k, math.Sin(float64(k)*0.3)+1)
 		u.Set(1, k, math.Cos(float64(k)*0.5))
 	}
@@ -1976,7 +1976,7 @@ func TestAbsorbScope_InputOnly_Simulation(t *testing.T) {
 
 	steps := 15
 	u := mat.NewDense(1, steps, nil)
-	for k := 0; k < steps; k++ {
+	for k := range steps {
 		u.Set(0, k, 1)
 	}
 
@@ -2003,7 +2003,7 @@ func TestAbsorbScope_OutputOnly_Simulation(t *testing.T) {
 
 	steps := 15
 	u := mat.NewDense(1, steps, nil)
-	for k := 0; k < steps; k++ {
+	for k := range steps {
 		u.Set(0, k, 1)
 	}
 
@@ -2075,7 +2075,7 @@ func TestAbsorbScope_BackwardCompat(t *testing.T) {
 
 	steps := 15
 	u := mat.NewDense(1, steps, nil)
-	for k := 0; k < steps; k++ {
+	for k := range steps {
 		u.Set(0, k, float64(k+1))
 	}
 
@@ -2110,8 +2110,8 @@ func TestAbsorbScope_IOWithResidual(t *testing.T) {
 	hasResidual := false
 	if aug.Delay != nil {
 		r, c := aug.Delay.Dims()
-		for i := 0; i < r; i++ {
-			for j := 0; j < c; j++ {
+		for i := range r {
+			for j := range c {
 				if aug.Delay.At(i, j) != 0 {
 					hasResidual = true
 				}
@@ -2124,7 +2124,7 @@ func TestAbsorbScope_IOWithResidual(t *testing.T) {
 
 	steps := 20
 	u := mat.NewDense(2, steps, nil)
-	for k := 0; k < steps; k++ {
+	for k := range steps {
 		u.Set(0, k, math.Sin(float64(k)*0.3)+1)
 		u.Set(1, k, math.Cos(float64(k)*0.5))
 	}
@@ -2711,7 +2711,7 @@ func TestAbsorbInternalDelay_FrequencyResponse(t *testing.T) {
 	// DC gain of absorbed system: C*(I-A)^{-1}*B + D
 	n, _, _ := absorbed.Dims()
 	ImA := mat.NewDense(n, n, nil)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		ImA.Set(i, i, 1)
 	}
 	ImA.Sub(ImA, absorbed.A)
@@ -2719,7 +2719,7 @@ func TestAbsorbInternalDelay_FrequencyResponse(t *testing.T) {
 	luDC.Factorize(ImA)
 	invImA := mat.NewDense(n, n, nil)
 	eyeN := mat.NewDense(n, n, nil)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		eyeN.Set(i, i, 1)
 	}
 	_ = luDC.SolveTo(invImA, false, eyeN)
@@ -2825,7 +2825,7 @@ func TestSimulateMIMOWithDelayValues(t *testing.T) {
 
 	steps := 15
 
-	for jin := 0; jin < 2; jin++ {
+	for jin := range 2 {
 		t.Run(fmt.Sprintf("impulse_input_%d", jin), func(t *testing.T) {
 			u := mat.NewDense(2, steps, nil)
 			u.Set(jin, 0, 1)
@@ -2836,11 +2836,11 @@ func TestSimulateMIMOWithDelayValues(t *testing.T) {
 			}
 
 			Bj := mat.NewDense(3, 1, nil)
-			for i := 0; i < 3; i++ {
+			for i := range 3 {
 				Bj.Set(i, 0, B.At(i, jin))
 			}
 			Dj := mat.NewDense(2, 1, nil)
-			for i := 0; i < 2; i++ {
+			for i := range 2 {
 				Dj.Set(i, 0, D.At(i, jin))
 			}
 			uj := mat.NewDense(1, steps, nil)
@@ -2848,9 +2848,9 @@ func TestSimulateMIMOWithDelayValues(t *testing.T) {
 			ndSys, _ := New(A, Bj, C, Dj, 1.0)
 			ndResp, _ := ndSys.Simulate(uj, nil, nil)
 
-			for i := 0; i < 2; i++ {
+			for i := range 2 {
 				d := int(delay.At(i, jin))
-				for k := 0; k < d; k++ {
+				for k := range d {
 					if math.Abs(resp.Y.At(i, k)) > 1e-12 {
 						t.Errorf("output %d step %d: expected 0 during delay %d, got %v", i, k, d, resp.Y.At(i, k))
 					}
@@ -2987,7 +2987,7 @@ func TestPullDelaysToLFT_D22Simulation(t *testing.T) {
 
 	steps := 20
 	u := mat.NewDense(1, steps, nil)
-	for k := 0; k < steps; k++ {
+	for k := range steps {
 		u.Set(0, k, 1)
 	}
 
@@ -3000,7 +3000,7 @@ func TestPullDelaysToLFT_D22Simulation(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for k := 0; k < steps; k++ {
+	for k := range steps {
 		got := respSys.Y.At(0, k)
 		want := respRef.Y.At(0, k)
 		if math.Abs(got-want) > 1e-10 {
@@ -3095,7 +3095,7 @@ func TestPullDelaysToLFT_D22Absorption(t *testing.T) {
 
 	steps := 20
 	u := mat.NewDense(1, steps, nil)
-	for k := 0; k < steps; k++ {
+	for k := range steps {
 		u.Set(0, k, 1)
 	}
 
@@ -3108,7 +3108,7 @@ func TestPullDelaysToLFT_D22Absorption(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for k := 0; k < steps; k++ {
+	for k := range steps {
 		got := respAbs.Y.At(0, k)
 		want := respRef.Y.At(0, k)
 		if math.Abs(got-want) > 1e-10 {
@@ -3551,7 +3551,7 @@ func TestMixedDelaySimulate(t *testing.T) {
 
 	steps := 20
 	u := mat.NewDense(1, steps, nil)
-	for k := 0; k < steps; k++ {
+	for k := range steps {
 		u.Set(0, k, 1)
 	}
 
@@ -3593,7 +3593,7 @@ func TestMixedDelaySimulate_WithX0(t *testing.T) {
 
 	steps := 15
 	u := mat.NewDense(1, steps, nil)
-	for k := 0; k < steps; k++ {
+	for k := range steps {
 		u.Set(0, k, math.Sin(float64(k)*0.3))
 	}
 	x0 := mat.NewVecDense(2, []float64{1, -0.5})
@@ -3631,7 +3631,7 @@ func TestMixedDelaySimulate_MIMO(t *testing.T) {
 
 	steps := 20
 	u := mat.NewDense(2, steps, nil)
-	for k := 0; k < steps; k++ {
+	for k := range steps {
 		u.Set(0, k, math.Sin(float64(k)*0.3))
 		u.Set(1, k, math.Cos(float64(k)*0.5))
 	}
@@ -3685,7 +3685,7 @@ func TestSimulateWithDelay_MIMOManualReference(t *testing.T) {
 
 	steps := 18
 	u := mat.NewDense(3, steps, nil)
-	for k := 0; k < steps; k++ {
+	for k := range steps {
 		u.Set(0, k, math.Sin(0.2*float64(k))+0.1)
 		u.Set(1, k, math.Cos(0.15*float64(k))-0.2)
 		u.Set(2, k, 0.05*float64(k)-0.3)
@@ -3710,17 +3710,17 @@ func TestSimulateWithDelay_MIMOManualReference(t *testing.T) {
 	wantX := mat.NewVecDense(4, nil)
 	wantX.CopyVec(autoResp.XFinal)
 
-	for j := 0; j < 3; j++ {
+	for j := range 3 {
 		Bj := mat.NewDense(4, 1, nil)
 		Dj := mat.NewDense(3, 1, nil)
 		uj := mat.NewDense(1, steps, nil)
-		for i := 0; i < 4; i++ {
+		for i := range 4 {
 			Bj.Set(i, 0, B.At(i, j))
 		}
-		for i := 0; i < 3; i++ {
+		for i := range 3 {
 			Dj.Set(i, 0, D.At(i, j))
 		}
-		for k := 0; k < steps; k++ {
+		for k := range steps {
 			uj.Set(0, k, u.At(j, k))
 		}
 
@@ -3733,7 +3733,7 @@ func TestSimulateWithDelay_MIMOManualReference(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		for i := 0; i < 3; i++ {
+		for i := range 3 {
 			d := int(delay.At(i, j))
 			for k := d; k < steps; k++ {
 				wantY.Set(i, k, wantY.At(i, k)+simoResp.Y.At(i, k-d))
@@ -4023,7 +4023,7 @@ func TestSimulateDelay_AllDelaysExceedSteps(t *testing.T) {
 
 	steps := 5
 	u := mat.NewDense(1, steps, nil)
-	for k := 0; k < steps; k++ {
+	for k := range steps {
 		u.Set(0, k, 1)
 	}
 	x0 := mat.NewVecDense(2, []float64{3, 1})

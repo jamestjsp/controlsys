@@ -57,7 +57,7 @@ func TestSimulateManualPropagation(t *testing.T) {
 	wantY := make([]float64, 3)
 	wantX := make([]float64, 2)
 
-	for k := 0; k < 3; k++ {
+	for k := range 3 {
 		wantY[k] = 1*x[0] + 0*x[1] + 0.5*uu[k]
 		nx0 := 0.9*x[0] + 0.1*x[1] + 1*uu[k]
 		nx1 := 0.0*x[0] + 0.8*x[1] + 0*uu[k]
@@ -106,13 +106,13 @@ func TestSimulateChaining(t *testing.T) {
 	}
 
 	// r1.Y columns 0..2 should match rAll.Y columns 0..2
-	for k := 0; k < 3; k++ {
+	for k := range 3 {
 		if math.Abs(r1.Y.At(0, k)-rAll.Y.At(0, k)) > 1e-12 {
 			t.Errorf("chaining mismatch at step %d: r1=%f rAll=%f", k, r1.Y.At(0, k), rAll.Y.At(0, k))
 		}
 	}
 	// r2.Y columns 0..1 should match rAll.Y columns 3..4
-	for k := 0; k < 2; k++ {
+	for k := range 2 {
 		if math.Abs(r2.Y.At(0, k)-rAll.Y.At(0, k+3)) > 1e-12 {
 			t.Errorf("chaining mismatch at step %d: r2=%f rAll=%f", k+3, r2.Y.At(0, k), rAll.Y.At(0, k+3))
 		}
@@ -442,7 +442,7 @@ func TestSimulate_WithInputDelay(t *testing.T) {
 	ref.Delay = mat.NewDense(1, 1, []float64{3})
 
 	u := mat.NewDense(1, 10, nil)
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		u.Set(0, i, 1)
 	}
 
@@ -479,7 +479,7 @@ func TestSimulate_WithOutputDelay(t *testing.T) {
 	ref.Delay = mat.NewDense(1, 1, []float64{3})
 
 	u := mat.NewDense(1, 10, nil)
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		u.Set(0, i, 1)
 	}
 
@@ -517,7 +517,7 @@ func TestSimulate_WithCombinedDelays(t *testing.T) {
 	ref.Delay = mat.NewDense(1, 1, []float64{3})
 
 	u := mat.NewDense(1, 10, nil)
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		u.Set(0, i, 1)
 	}
 
@@ -554,7 +554,7 @@ func TestSimulate_WithMIMOInputDelay(t *testing.T) {
 	ref.Delay = mat.NewDense(2, 2, []float64{1, 3, 1, 3})
 
 	u := mat.NewDense(2, 8, nil)
-	for j := 0; j < 8; j++ {
+	for j := range 8 {
 		u.Set(0, j, 1)
 		u.Set(1, j, 0.5)
 	}
@@ -592,7 +592,7 @@ func TestSimulate_WithMIMOOutputDelay(t *testing.T) {
 	ref.Delay = mat.NewDense(2, 2, []float64{2, 2, 0, 0})
 
 	u := mat.NewDense(2, 8, nil)
-	for j := 0; j < 8; j++ {
+	for j := range 8 {
 		u.Set(0, j, 1)
 		u.Set(1, j, 0.5)
 	}
@@ -632,7 +632,7 @@ func TestSimulate_WithAllDelayTypes(t *testing.T) {
 	ref.Delay = mat.NewDense(2, 2, []float64{1, 1, 4, 2})
 
 	u := mat.NewDense(2, 10, nil)
-	for j := 0; j < 10; j++ {
+	for j := range 10 {
 		u.Set(0, j, 1)
 		u.Set(1, j, 0.5)
 	}
@@ -676,7 +676,7 @@ func TestSimulate_InternalDelay_SISO(t *testing.T) {
 	}
 
 	u := mat.NewDense(1, 15, nil)
-	for i := 0; i < 15; i++ {
+	for i := range 15 {
 		u.Set(0, i, float64(i+1)*0.1)
 	}
 
@@ -721,7 +721,7 @@ func TestSimulate_InternalDelay_MultipleDelays(t *testing.T) {
 	}
 
 	u := mat.NewDense(2, 12, nil)
-	for j := 0; j < 12; j++ {
+	for j := range 12 {
 		u.Set(0, j, 1.0)
 		u.Set(1, j, 0.5)
 	}
@@ -767,7 +767,7 @@ func TestSimulate_InternalDelay_WithX0(t *testing.T) {
 
 	x0 := mat.NewVecDense(2, []float64{1.0, -0.5})
 	u := mat.NewDense(1, 10, nil)
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		u.Set(0, i, 1.0)
 	}
 
@@ -803,7 +803,7 @@ func TestSimulate_InternalDelay_D22Nonzero(t *testing.T) {
 	}
 
 	u := mat.NewDense(1, 8, nil)
-	for i := 0; i < 8; i++ {
+	for i := range 8 {
 		u.Set(0, i, 1.0)
 	}
 
@@ -816,7 +816,7 @@ func TestSimulate_InternalDelay_D22Nonzero(t *testing.T) {
 	wantY := make([]float64, 8)
 	zHist := make([]float64, 8)
 
-	for k := 0; k < 8; k++ {
+	for k := range 8 {
 		wk := 0.0
 		if k >= 2 {
 			wk = zHist[k-2]
@@ -860,7 +860,7 @@ func TestSimulate_InternalDelay_NonUnitDt(t *testing.T) {
 	}
 
 	u := mat.NewDense(1, 10, nil)
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		u.Set(0, i, 1.0)
 	}
 

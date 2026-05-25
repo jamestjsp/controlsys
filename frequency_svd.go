@@ -58,15 +58,15 @@ func (ws *complexSVDWorkspace) fillBlock(at func(i, j int) complex128, p, m int)
 		ws.block[i] = 0
 	}
 
-	for a := 0; a < n; a++ {
-		for b := 0; b < n; b++ {
+	for a := range n {
+		for b := range n {
 			var g complex128
 			if ws.useCol {
-				for row := 0; row < p; row++ {
+				for row := range p {
 					g += cmplx.Conj(at(row, a)) * at(row, b)
 				}
 			} else {
-				for col := 0; col < m; col++ {
+				for col := range m {
 					g += at(a, col) * cmplx.Conj(at(b, col))
 				}
 			}

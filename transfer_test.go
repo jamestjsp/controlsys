@@ -149,8 +149,8 @@ func TestTransferFunctionRoundtrip(t *testing.T) {
 	freqs := []complex128{1i, 0.5i, complex(1, 2)}
 	for _, s := range freqs {
 		tfMat := res.TF.Eval(s)
-		for i := 0; i < 2; i++ {
-			for j := 0; j < 2; j++ {
+		for i := range 2 {
+			for j := range 2 {
 				ssVal := evalSSij(sys, s, i, j)
 				if cmplx.Abs(tfMat[i][j]-ssVal) > 1e-6 {
 					t.Errorf("at s=%v [%d][%d]: TF=%v, SS=%v", s, i, j, tfMat[i][j], ssVal)
@@ -173,11 +173,11 @@ func TestTransferFunctionPureGain(t *testing.T) {
 	if res.MinimalOrder != 0 {
 		t.Fatalf("MinimalOrder = %d, want 0", res.MinimalOrder)
 	}
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		if len(res.TF.Den[i]) != 1 || res.TF.Den[i][0] != 1 {
 			t.Errorf("Den[%d] = %v, want [1]", i, res.TF.Den[i])
 		}
-		for j := 0; j < 2; j++ {
+		for j := range 2 {
 			want := D.At(i, j)
 			if len(res.TF.Num[i][j]) != 1 || math.Abs(res.TF.Num[i][j][0]-want) > 1e-15 {
 				t.Errorf("Num[%d][%d] = %v, want [%v]", i, j, res.TF.Num[i][j], want)
@@ -373,7 +373,7 @@ func TestTransferFunctionNonSymmetricSIMO(t *testing.T) {
 	freqs := []complex128{1i, 2i, complex(0.5, 1)}
 	for _, s := range freqs {
 		tfMat := res.TF.Eval(s)
-		for i := 0; i < 2; i++ {
+		for i := range 2 {
 			ssVal := evalSSij(sys, s, i, 0)
 			if cmplx.Abs(tfMat[i][0]-ssVal) > 1e-8 {
 				t.Errorf("at s=%v [%d][0]: TF=%v, SS=%v", s, i, tfMat[i][0], ssVal)
@@ -409,7 +409,7 @@ func TestTransferFunctionNonSymmetricMISO(t *testing.T) {
 	freqs := []complex128{1i, 2i, complex(0.5, 1)}
 	for _, s := range freqs {
 		tfMat := res.TF.Eval(s)
-		for j := 0; j < 2; j++ {
+		for j := range 2 {
 			ssVal := evalSSij(sys, s, 0, j)
 			if cmplx.Abs(tfMat[0][j]-ssVal) > 1e-8 {
 				t.Errorf("at s=%v [0][%d]: TF=%v, SS=%v", s, j, tfMat[0][j], ssVal)
@@ -451,8 +451,8 @@ func TestTransferFunctionNonSymmetricMIMO(t *testing.T) {
 	freqs := []complex128{1i, 2i, complex(0.5, 1)}
 	for _, s := range freqs {
 		tfMat := res.TF.Eval(s)
-		for i := 0; i < 2; i++ {
-			for j := 0; j < 2; j++ {
+		for i := range 2 {
+			for j := range 2 {
 				ssVal := evalSSij(sys, s, i, j)
 				if cmplx.Abs(tfMat[i][j]-ssVal) > 1e-8 {
 					t.Errorf("at s=%v [%d][%d]: TF=%v, SS=%v", s, i, j, tfMat[i][j], ssVal)
@@ -471,8 +471,8 @@ func evalSS(sys *System, s complex128) complex128 {
 
 	// Build sI - A as complex matrix, solve
 	sIA := make([]complex128, n*n)
-	for i := 0; i < n; i++ {
-		for j := 0; j < n; j++ {
+	for i := range n {
+		for j := range n {
 			sIA[i*n+j] = -complex(sys.A.At(i, j), 0)
 		}
 		sIA[i*n+i] += s
@@ -480,14 +480,14 @@ func evalSS(sys *System, s complex128) complex128 {
 
 	// Solve (sI - A) * x = B for x, then y = C*x + D
 	bVec := make([]complex128, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		bVec[i] = complex(sys.B.At(i, 0), 0)
 	}
 
 	x := complexSolve(sIA, bVec, n)
 
 	result := complex(sys.D.At(0, 0), 0)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		result += complex(sys.C.At(0, i), 0) * x[i]
 	}
 	return result
@@ -501,8 +501,8 @@ func evalSSij(sys *System, s complex128, oi, ij int) complex128 {
 	}
 
 	sIA := make([]complex128, n*n)
-	for i := 0; i < n; i++ {
-		for j := 0; j < n; j++ {
+	for i := range n {
+		for j := range n {
 			sIA[i*n+j] = -complex(sys.A.At(i, j), 0)
 		}
 		sIA[i*n+i] += s
@@ -510,13 +510,13 @@ func evalSSij(sys *System, s complex128, oi, ij int) complex128 {
 
 	// Solve for column ij of B
 	bVec := make([]complex128, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		bVec[i] = complex(sys.B.At(i, ij), 0)
 	}
 	x := complexSolve(sIA, bVec, n)
 
 	result := complex(sys.D.At(oi, ij), 0)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		result += complex(sys.C.At(oi, i), 0) * x[i]
 	}
 	return result
@@ -529,7 +529,7 @@ func complexSolve(A []complex128, b []complex128, n int) []complex128 {
 	x := make([]complex128, n)
 	copy(x, b)
 
-	for k := 0; k < n; k++ {
+	for k := range n {
 		// Partial pivoting
 		maxVal := cmplx.Abs(a[k*n+k])
 		maxRow := k
@@ -540,7 +540,7 @@ func complexSolve(A []complex128, b []complex128, n int) []complex128 {
 			}
 		}
 		if maxRow != k {
-			for j := 0; j < n; j++ {
+			for j := range n {
 				a[k*n+j], a[maxRow*n+j] = a[maxRow*n+j], a[k*n+j]
 			}
 			x[k], x[maxRow] = x[maxRow], x[k]

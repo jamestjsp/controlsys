@@ -79,8 +79,8 @@ func assertMatNear(t *testing.T, label string, got, want *mat.Dense, tol float64
 	if gr != wr || gc != wc {
 		t.Fatalf("%s: dims (%d,%d), want (%d,%d)", label, gr, gc, wr, wc)
 	}
-	for i := 0; i < gr; i++ {
-		for j := 0; j < gc; j++ {
+	for i := range gr {
+		for j := range gc {
 			if math.Abs(got.At(i, j)-want.At(i, j)) > tol {
 				t.Errorf("%s: [%d,%d] = %g, want %g", label, i, j, got.At(i, j), want.At(i, j))
 			}
@@ -242,8 +242,8 @@ func TestCrossval_Tustin_Reference(t *testing.T) {
 	}
 
 	adTruth := 5.0 / 3.0
-	for i := 0; i < 2; i++ {
-		for j := 0; j < 2; j++ {
+	for i := range 2 {
+		for j := range 2 {
 			want := 0.0
 			if i == j {
 				want = adTruth
@@ -256,7 +256,7 @@ func TestCrossval_Tustin_Reference(t *testing.T) {
 
 	sinPi4 := math.Sin(math.Pi / 4)
 	bdTruth := (1.0 / 3.0) / sinPi4
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		if math.Abs(hd.B.At(i, 0)-bdTruth) > 1e-10 {
 			t.Errorf("Bd[%d,0] = %g, want %g", i, hd.B.At(i, 0), bdTruth)
 		}
@@ -268,8 +268,8 @@ func TestCrossval_Tustin_Reference(t *testing.T) {
 		{4.0 / 3.0, 1.0 / 3.0},
 	})
 	cr, cc := cdTruth.Dims()
-	for i := 0; i < cr; i++ {
-		for j := 0; j < cc; j++ {
+	for i := range cr {
+		for j := range cc {
 			cdTruth.Set(i, j, cdTruth.At(i, j)*sinPi4)
 		}
 	}
@@ -747,8 +747,8 @@ func TestCrossval_FreqResp_PythonControl(t *testing.T) {
 	}
 
 	for k, w := range trueOmega {
-		for i := 0; i < 2; i++ {
-			for j := 0; j < 2; j++ {
+		for i := range 2 {
+			for j := range 2 {
 				h := resp.At(k, i, j)
 				gotMag := cmplx.Abs(h)
 				gotPhase := cmplx.Phase(h)
@@ -793,8 +793,8 @@ func TestCrossval_EvalFr_PythonControl(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for i := 0; i < 2; i++ {
-		for j := 0; j < 2; j++ {
+	for i := range 2 {
+		for j := range 2 {
 			if cmplx.Abs(resp[i][j]-wantResp[i][j]) > 1e-3 {
 				t.Errorf("[%d][%d] = %v, want %v", i, j, resp[i][j], wantResp[i][j])
 			}
@@ -885,8 +885,8 @@ func TestCrossval_DCGain_MIMO(t *testing.T) {
 		{21, 14},
 		{33, 22},
 	}
-	for i := 0; i < 3; i++ {
-		for j := 0; j < 2; j++ {
+	for i := range 3 {
+		for j := range 2 {
 			got := real(resp[i][j])
 			if math.Abs(got-expected[i][j]) > 1e-10 {
 				t.Errorf("[%d][%d] DC gain = %g, want %g", i, j, got, expected[i][j])
@@ -1145,8 +1145,8 @@ func TestCrossval_Bilinear_FreqResponseMatch(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		for i := 0; i < 2; i++ {
-			for j := 0; j < 2; j++ {
+		for i := range 2 {
+			for j := range 2 {
 				if cmplx.Abs(hc[i][j]-hd[i][j]) > 1e-8 {
 					t.Errorf("w=%g [%d][%d]: cont=%v, disc=%v", w, i, j, hc[i][j], hd[i][j])
 				}
@@ -1375,7 +1375,7 @@ func TestCrossval_ZOH_StepResponse(t *testing.T) {
 
 	steps := 100
 	u := mat.NewDense(1, steps, nil)
-	for k := 0; k < steps; k++ {
+	for k := range steps {
 		u.Set(0, k, 1.0) // unit step
 	}
 
@@ -1387,7 +1387,7 @@ func TestCrossval_ZOH_StepResponse(t *testing.T) {
 	// Position at time T = n*dt with unit acceleration: y = 0.5*t²
 	// Last sample: t = (steps-1)*dt, but simulation output at step k
 	// corresponds to after k inputs. y[k] ≈ 0.5*(k*dt)²
-	for k := 0; k < steps; k++ {
+	for k := range steps {
 		tK := float64(k) * dt
 		expected := 0.5 * tK * tK
 		got := resp.Y.At(0, k)
@@ -1568,8 +1568,8 @@ func TestCrossval_MinReal_MIMO(t *testing.T) {
 		s := complex(0, w)
 		h1, _ := sys.EvalFr(s)
 		h2, _ := reduced.Sys.EvalFr(s)
-		for i := 0; i < 2; i++ {
-			for j := 0; j < 2; j++ {
+		for i := range 2 {
+			for j := range 2 {
 				if cmplx.Abs(h1[i][j]-h2[i][j]) > 1e-4 {
 					t.Errorf("w=%g [%d][%d]: orig=%v, reduced=%v", w, i, j, h1[i][j], h2[i][j])
 				}

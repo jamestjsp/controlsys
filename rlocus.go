@@ -51,15 +51,15 @@ func RootLocus(sys *System, gains []float64) (*RootLocusResult, error) {
 	bRaw := sys.B.RawMatrix()
 	cRaw := sys.C.RawMatrix()
 	bc := make([]float64, n*n)
-	for i := 0; i < n; i++ {
-		for j := 0; j < n; j++ {
+	for i := range n {
+		for j := range n {
 			bc[i*n+j] = bRaw.Data[i*bRaw.Stride] * cRaw.Data[j]
 		}
 	}
 
 	aRaw := sys.A.RawMatrix()
 	aFlat := make([]float64, n*n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		copy(aFlat[i*n:i*n+n], aRaw.Data[i*aRaw.Stride:i*aRaw.Stride+n])
 	}
 
@@ -91,7 +91,7 @@ func RootLocus(sys *System, gains []float64) (*RootLocusResult, error) {
 	diff := nPoles - nZeros
 	if diff > 0 {
 		asymAngles = make([]float64, diff)
-		for k := 0; k < diff; k++ {
+		for k := range diff {
 			asymAngles[k] = float64(2*k+1) * math.Pi / float64(diff)
 		}
 		sumP := 0.0
@@ -150,7 +150,7 @@ func defaultGains() []float64 {
 	n := 200
 	gains := make([]float64, n+1)
 	gains[0] = 0
-	for i := 0; i < n; i++ {
+	for i := range n {
 		exp := -6.0 + 12.0*float64(i)/float64(n-1)
 		gains[i+1] = math.Pow(10, exp)
 	}
@@ -176,10 +176,10 @@ func makeBranches(allEigs [][]complex128, nStates, nGains int) [][]complex128 {
 			used[i] = false
 		}
 
-		for i := 0; i < nStates; i++ {
+		for i := range nStates {
 			bestJ := -1
 			bestDist := math.Inf(1)
-			for j := 0; j < nStates; j++ {
+			for j := range nStates {
 				if used[j] {
 					continue
 				}
@@ -193,16 +193,16 @@ func makeBranches(allEigs [][]complex128, nStates, nGains int) [][]complex128 {
 			used[bestJ] = true
 		}
 		row := make([]complex128, nStates)
-		for i := 0; i < nStates; i++ {
+		for i := range nStates {
 			row[i] = cur[perm[i]]
 		}
 		ordered[gi] = row
 	}
 
 	branches := make([][]complex128, nStates)
-	for b := 0; b < nStates; b++ {
+	for b := range nStates {
 		branches[b] = make([]complex128, nGains)
-		for gi := 0; gi < nGains; gi++ {
+		for gi := range nGains {
 			branches[b][gi] = ordered[gi][b]
 		}
 	}

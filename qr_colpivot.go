@@ -23,7 +23,7 @@ func colPivotQR(m, n int, a []float64, lda int, rcond, svlmax float64) (rank int
 
 	colBuf := make([]float64, m)
 
-	for j := 0; j < n; j++ {
+	for j := range n {
 		nrm := blas64.Nrm2(blas64.Vector{N: m, Data: a[j:], Inc: lda})
 		cnorm[j] = nrm
 		cnormSave[j] = nrm

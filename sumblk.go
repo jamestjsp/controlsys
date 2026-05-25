@@ -298,11 +298,8 @@ func (p *parsedSumBlock) directMatrix() *mat.Dense {
 		for name, coeff := range merged {
 			col0 := inputColStart[name]
 			wIn := p.widths[name]
-			diag := w
-			if wIn < diag {
-				diag = wIn
-			}
-			for k := 0; k < diag; k++ {
+			diag := min(wIn, w)
+			for k := range diag {
 				D.Set(rowOff+k, col0+k, coeff)
 			}
 		}

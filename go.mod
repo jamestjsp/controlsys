@@ -1,6 +1,6 @@
 module github.com/jamestjsp/controlsys
 
-go 1.25.3
+go 1.26.3
 
 require gonum.org/v1/gonum v0.15.0
 

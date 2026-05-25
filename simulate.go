@@ -171,13 +171,13 @@ func (sys *System) simulateNoDelay(u *mat.Dense, x0 *mat.VecDense, opts *Simulat
 			bGen := sys.B.RawMatrix()
 			uColVec := blas64.Vector{N: m, Inc: 1, Data: uColData}
 
-			for k := 0; k < steps; k++ {
+			for k := range steps {
 				blas64.Gemv(blas.NoTrans, 1, cGen, xVec, 0, ykVec)
-				for i := 0; i < p; i++ {
+				for i := range p {
 					yRaw.Data[i*yRaw.Stride+k] = ykData[i]
 				}
 
-				for j := 0; j < m; j++ {
+				for j := range m {
 					uColData[j] = uRaw.Data[j*uRaw.Stride+k]
 				}
 				blas64.Gemv(blas.NoTrans, 1, aGen, xVec, 0, tmpVec)
@@ -186,9 +186,9 @@ func (sys *System) simulateNoDelay(u *mat.Dense, x0 *mat.VecDense, opts *Simulat
 				xVec, tmpVec = tmpVec, xVec
 			}
 		} else {
-			for k := 0; k < steps; k++ {
+			for k := range steps {
 				blas64.Gemv(blas.NoTrans, 1, cGen, xVec, 0, ykVec)
-				for i := 0; i < p; i++ {
+				for i := range p {
 					yRaw.Data[i*yRaw.Stride+k] = ykData[i]
 				}
 
@@ -240,9 +240,9 @@ func (sys *System) simulateWithDelay(u *mat.Dense, x0 *mat.VecDense, opts *Simul
 		yk := mat.NewVecDense(p, nil)
 		yAutoRaw := Y.RawMatrix()
 		ykRaw := yk.RawVector()
-		for k := 0; k < steps; k++ {
+		for k := range steps {
 			yk.MulVec(sys.C, x)
-			for i := 0; i < p; i++ {
+			for i := range p {
 				yAutoRaw.Data[i*yAutoRaw.Stride+k] = ykRaw.Data[i*ykRaw.Inc]
 			}
 			tmp.MulVec(sys.A, x)
@@ -261,8 +261,8 @@ func (sys *System) simulateWithDelay(u *mat.Dense, x0 *mat.VecDense, opts *Simul
 	yRaw := Y.RawMatrix()
 
 	delayIdx := make([]int, p*m)
-	for i := 0; i < p; i++ {
-		for j := 0; j < m; j++ {
+	for i := range p {
+		for j := range m {
 			d := int(math.Round(delayRaw.Data[i*delayRaw.Stride+j]))
 			if d < 0 {
 				return nil, fmt.Errorf("%w: delay(%d,%d) = %d", ErrNegativeDelay, i, j, d)
@@ -282,7 +282,7 @@ func (sys *System) simulateWithDelay(u *mat.Dense, x0 *mat.VecDense, opts *Simul
 		bRaw = sys.B.RawMatrix()
 	}
 
-	for k := 0; k < steps; k++ {
+	for k := range steps {
 		var nextRaw blas64.General
 		if n > 0 {
 			yForced.Mul(sys.C, xCols)
@@ -292,7 +292,7 @@ func (sys *System) simulateWithDelay(u *mat.Dense, x0 *mat.VecDense, opts *Simul
 			yForced.Zero()
 		}
 
-		for j := 0; j < m; j++ {
+		for j := range m {
 			uk := uRaw.Data[j*uRaw.Stride+k]
 			if n > 0 && uk != 0 {
 				blas64.Axpy(uk,
@@ -300,7 +300,7 @@ func (sys *System) simulateWithDelay(u *mat.Dense, x0 *mat.VecDense, opts *Simul
 					blas64.Vector{N: n, Inc: nextRaw.Stride, Data: nextRaw.Data[j:]},
 				)
 			}
-			for i := 0; i < p; i++ {
+			for i := range p {
 				outIdx := k + delayIdx[i*m+j]
 				if outIdx >= steps {
 					continue
@@ -318,9 +318,9 @@ func (sys *System) simulateWithDelay(u *mat.Dense, x0 *mat.VecDense, opts *Simul
 	if xFinal != nil {
 		xRaw := xCols.RawMatrix()
 		xFinalRaw := xFinal.RawVector()
-		for i := 0; i < n; i++ {
+		for i := range n {
 			sum := xFinalRaw.Data[i*xFinalRaw.Inc]
-			for j := 0; j < m; j++ {
+			for j := range m {
 				sum += xRaw.Data[i*xRaw.Stride+j]
 			}
 			xFinalRaw.Data[i*xFinalRaw.Inc] = sum
@@ -341,7 +341,7 @@ func (sys *System) simulateWithInternalDelay(u *mat.Dense, x0 *mat.VecDense, opt
 
 	delays := make([]int, N)
 	maxDelay := 0
-	for j := 0; j < N; j++ {
+	for j := range N {
 		delays[j] = int(math.Round(sys.LFT.Tau[j]))
 		if delays[j] > maxDelay {
 			maxDelay = delays[j]
@@ -414,8 +414,8 @@ func (sys *System) simulateWithInternalDelay(u *mat.Dense, x0 *mat.VecDense, opt
 	zVec := blas64.Vector{N: N, Inc: 1, Data: zData}
 	uColVec := blas64.Vector{N: m, Inc: 1, Data: uColData}
 
-	for k := 0; k < steps; k++ {
-		for j := 0; j < N; j++ {
+	for k := range steps {
+		for j := range N {
 			dj := delays[j]
 			if dj == 0 {
 				if k == 0 {
@@ -431,7 +431,7 @@ func (sys *System) simulateWithInternalDelay(u *mat.Dense, x0 *mat.VecDense, opt
 		}
 
 		if m > 0 {
-			for i := 0; i < m; i++ {
+			for i := range m {
 				uColData[i] = uData[i*uStride+k]
 			}
 		}
@@ -449,7 +449,7 @@ func (sys *System) simulateWithInternalDelay(u *mat.Dense, x0 *mat.VecDense, opt
 		if N > 0 {
 			blas64.Gemv(blas.NoTrans, 1, d12Gen, wVec, 1, ykVec)
 		}
-		for i := 0; i < p; i++ {
+		for i := range p {
 			yRaw.Data[i*yRaw.Stride+k] = ykData[i]
 		}
 
@@ -467,7 +467,7 @@ func (sys *System) simulateWithInternalDelay(u *mat.Dense, x0 *mat.VecDense, opt
 			blas64.Gemv(blas.NoTrans, 1, d22Gen, wVec, 1, zVec)
 
 			idx := k % (bufSize + 1)
-			for j := 0; j < N; j++ {
+			for j := range N {
 				zBuf[j*(bufSize+1)+idx] = zData[j]
 			}
 		}

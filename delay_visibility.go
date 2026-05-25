@@ -46,7 +46,7 @@ func clearLeadingDelays(delay []float64, n int) []float64 {
 	if delay == nil {
 		return nil
 	}
-	for i := 0; i < n; i++ {
+	for i := range n {
 		delay[i] = 0
 	}
 	if delaySliceHasNonzero(delay) {

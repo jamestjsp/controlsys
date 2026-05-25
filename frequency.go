@@ -68,8 +68,8 @@ func bodeResultFromAccessor(omega []float64, p, m int, inputName, outputName []s
 	phaseResp := newSampledScalarResponse(phase, omega, p, m)
 
 	for k := range omega {
-		for i := 0; i < p; i++ {
-			for j := 0; j < m; j++ {
+		for i := range p {
+			for j := range m {
 				h := at(k, i, j)
 				mag.set(k, i, j, 20*math.Log10(cmplx.Abs(h)))
 				phaseResp.set(k, i, j, cmplx.Phase(h)*180/math.Pi)
@@ -92,8 +92,8 @@ func bodeResultFromAccessor(omega []float64, p, m int, inputName, outputName []s
 
 func unwrapBodePhase(phase []float64, p, m, nw int) {
 	response := newSampledScalarResponse(phase, nil, p, m)
-	for i := 0; i < p; i++ {
-		for j := 0; j < m; j++ {
+	for i := range p {
+		for j := range m {
 			for k := 1; k < nw; k++ {
 				cur := response.layout.offset(k, i, j)
 				prev := response.layout.offset(k-1, i, j)
@@ -323,8 +323,8 @@ func applyIODelayAtS(sys *System, s complex128, data []complex128, p, m int, inc
 
 func applyIODelayMatrixAtS(sys *System, s complex128, data []complex128, p, m int, delay *mat.Dense) {
 	dRaw := delay.RawMatrix()
-	for i := 0; i < p; i++ {
-		for j := 0; j < m; j++ {
+	for i := range p {
+		for j := range m {
 			tau := dRaw.Data[i*dRaw.Stride+j]
 			if tau == 0 {
 				continue
@@ -335,7 +335,7 @@ func applyIODelayMatrixAtS(sys *System, s complex128, data []complex128, p, m in
 				continue
 			}
 			d := int(math.Round(tau))
-			for q := 0; q < d; q++ {
+			for range d {
 				data[off] /= s
 			}
 		}
@@ -384,7 +384,7 @@ func evalFrSSInto(ws *ssEvalWorkspace, sys *System, s complex128, n, p, m int) e
 
 func complexFlatToGrid(data []complex128, p, m int) [][]complex128 {
 	result := make([][]complex128, p)
-	for i := 0; i < p; i++ {
+	for i := range p {
 		result[i] = make([]complex128, m)
 		copy(result[i], data[i*m:(i+1)*m])
 	}
@@ -485,14 +485,14 @@ func evalFrLFTInto(ws *lftWorkspace, sys *System, s complex128, n, N, p, m int) 
 	cComputeHInto(ws.H22, ws.hTemp, ws.resolvent, c2Raw.Data, c2Raw.Stride, b2Raw.Data, b2Raw.Stride, d22Data, d22Stride, n, N, N)
 
 	cont := sys.IsContinuous()
-	for j := 0; j < N; j++ {
+	for j := range N {
 		tau := sys.LFT.Tau[j]
 		if cont {
 			ws.delta[j] = cmplx.Exp(-s * complex(tau, 0))
 		} else {
 			d := int(math.Round(tau))
 			ws.delta[j] = 1
-			for q := 0; q < d; q++ {
+			for range d {
 				ws.delta[j] /= s
 			}
 		}
@@ -503,7 +503,7 @@ func evalFrLFTInto(ws *lftWorkspace, sys *System, s complex128, n, N, p, m int) 
 	for i := 0; i < N*N; i++ {
 		ws.ImH22D[i] = -ws.H22D[i]
 	}
-	for i := 0; i < N; i++ {
+	for i := range N {
 		ws.ImH22D[i*N+i] += 1
 	}
 
@@ -538,10 +538,10 @@ func cResolventInto(dst, sIA, invBuf []complex128, aData []float64, aStride int,
 	if n == 0 {
 		return nil
 	}
-	for i := 0; i < n; i++ {
+	for i := range n {
 		row := i * n
 		aRow := i * aStride
-		for j := 0; j < n; j++ {
+		for j := range n {
 			sIA[row+j] = -complex(aData[aRow+j], 0)
 		}
 		sIA[row+i] += s
@@ -554,19 +554,19 @@ func cComputeHInto(dst, temp, resolvent []complex128, cData []float64, cStride i
 		dst[i] = 0
 	}
 	if n > 0 {
-		for i := 0; i < n; i++ {
-			for j := 0; j < cols; j++ {
+		for i := range n {
+			for j := range cols {
 				var sum complex128
-				for k := 0; k < n; k++ {
+				for k := range n {
 					sum += resolvent[i*n+k] * complex(bData[k*bStride+j], 0)
 				}
 				temp[i*cols+j] = sum
 			}
 		}
-		for i := 0; i < rows; i++ {
-			for j := 0; j < cols; j++ {
+		for i := range rows {
+			for j := range cols {
 				var sum complex128
-				for k := 0; k < n; k++ {
+				for k := range n {
 					sum += complex(cData[i*cStride+k], 0) * temp[k*cols+j]
 				}
 				dst[i*cols+j] = sum
@@ -574,8 +574,8 @@ func cComputeHInto(dst, temp, resolvent []complex128, cData []float64, cStride i
 		}
 	}
 	if dData != nil {
-		for i := 0; i < rows; i++ {
-			for j := 0; j < cols; j++ {
+		for i := range rows {
+			for j := range cols {
 				dst[i*cols+j] += complex(dData[i*dStride+j], 0)
 			}
 		}
@@ -583,10 +583,10 @@ func cComputeHInto(dst, temp, resolvent []complex128, cData []float64, cStride i
 }
 
 func cMulInto(dst, a, b []complex128, ar, ac, bc int) {
-	for i := 0; i < ar; i++ {
-		for j := 0; j < bc; j++ {
+	for i := range ar {
+		for j := range bc {
 			var sum complex128
-			for k := 0; k < ac; k++ {
+			for k := range ac {
 				sum += a[i*ac+k] * b[k*bc+j]
 			}
 			dst[i*bc+j] = sum
@@ -595,10 +595,10 @@ func cMulInto(dst, a, b []complex128, ar, ac, bc int) {
 }
 
 func cAddMul(dst, a, b []complex128, ar, ac, bc int) {
-	for i := 0; i < ar; i++ {
-		for j := 0; j < bc; j++ {
+	for i := range ar {
+		for j := range bc {
 			var sum complex128
-			for k := 0; k < ac; k++ {
+			for k := range ac {
 				sum += a[i*ac+k] * b[k*bc+j]
 			}
 			dst[i*bc+j] += sum
@@ -607,16 +607,16 @@ func cAddMul(dst, a, b []complex128, ar, ac, bc int) {
 }
 
 func cMulDiagRightInto(dst, a, diag []complex128, rows, cols int) {
-	for i := 0; i < rows; i++ {
-		for j := 0; j < cols; j++ {
+	for i := range rows {
+		for j := range cols {
 			dst[i*cols+j] = a[i*cols+j] * diag[j]
 		}
 	}
 }
 
 func cMulDiagLeftInto(dst, diag, a []complex128, rows, cols int) {
-	for i := 0; i < rows; i++ {
-		for j := 0; j < cols; j++ {
+	for i := range rows {
+		for j := range cols {
 			dst[i*cols+j] = diag[i] * a[i*cols+j]
 		}
 	}
@@ -654,11 +654,11 @@ func (sys *System) Nichols(omega []float64, nPoints int) (*NicholsResult, error)
 	nw := len(bode.Omega)
 	phaseResp := newSampledScalarResponse(phase, bode.Omega, p, m)
 
-	for i := 0; i < p; i++ {
-		for j := 0; j < m; j++ {
+	for i := range p {
+		for j := range m {
 			base := phaseResp.at(0, i, j)
 			shift := math.Ceil(base/360) * 360
-			for k := 0; k < nw; k++ {
+			for k := range nw {
 				phaseResp.set(k, i, j, phaseResp.at(k, i, j)-shift)
 			}
 		}
@@ -745,7 +745,7 @@ func cInvertInto(dst, aug, src []complex128, n int) error {
 	}
 
 	w := 2 * n
-	for i := 0; i < n; i++ {
+	for i := range n {
 		row := i * w
 		copy(aug[row:row+n], src[i*n:(i+1)*n])
 		for j := n; j < w; j++ {
@@ -765,7 +765,7 @@ func cInvertInto(dst, aug, src []complex128, n int) error {
 		tol = 1e-15
 	}
 
-	for col := 0; col < n; col++ {
+	for col := range n {
 		pivot := -1
 		best := 0.0
 		for row := col; row < n; row++ {
@@ -779,7 +779,7 @@ func cInvertInto(dst, aug, src []complex128, n int) error {
 			return fmt.Errorf("controlsys: singular complex matrix: %w", ErrSingularTransform)
 		}
 		if pivot != col {
-			for j := 0; j < w; j++ {
+			for j := range w {
 				aug[col*w+j], aug[pivot*w+j] = aug[pivot*w+j], aug[col*w+j]
 			}
 		}
@@ -787,7 +787,7 @@ func cInvertInto(dst, aug, src []complex128, n int) error {
 		for j := col; j < w; j++ {
 			aug[col*w+j] *= inv
 		}
-		for row := 0; row < n; row++ {
+		for row := range n {
 			if row == col {
 				continue
 			}
@@ -801,7 +801,7 @@ func cInvertInto(dst, aug, src []complex128, n int) error {
 		}
 	}
 
-	for i := 0; i < n; i++ {
+	for i := range n {
 		copy(dst[i*n:(i+1)*n], aug[i*w+n:i*w+w])
 	}
 	return nil

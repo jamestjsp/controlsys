@@ -51,10 +51,7 @@ func (p Poly) Add(q Poly) Poly {
 		copy(r, p)
 		return r
 	}
-	size := n
-	if m > size {
-		size = m
-	}
+	size := max(m, n)
 	r := make(Poly, size)
 	for i := range r {
 		var pv, qv float64
@@ -123,10 +120,7 @@ func (p Poly) AddTo(dst Poly, q Poly) Poly {
 	if n == 0 && m == 0 {
 		return dst[:0]
 	}
-	size := n
-	if m > size {
-		size = m
-	}
+	size := max(m, n)
 	if cap(dst) < size {
 		dst = make(Poly, size)
 	} else {
@@ -175,7 +169,7 @@ func (p Poly) Roots() ([]complex128, error) {
 
 	lead := p[0]
 	data := make([]float64, deg*deg)
-	for i := 0; i < deg; i++ {
+	for i := range deg {
 		data[i*deg+deg-1] = -p[deg-i] / lead
 		if i > 0 {
 			data[i*deg+i-1] = 1
@@ -215,10 +209,7 @@ func (p Poly) Sub(q Poly) Poly {
 		copy(r, p)
 		return r
 	}
-	size := n
-	if m > size {
-		size = m
-	}
+	size := max(m, n)
 	r := make(Poly, size)
 	for i := range r {
 		var pv, qv float64
@@ -239,7 +230,7 @@ func (p Poly) Derivative() Poly {
 	}
 	deg := len(p) - 1
 	r := make(Poly, deg)
-	for i := 0; i < deg; i++ {
+	for i := range deg {
 		r[i] = p[i] * float64(deg-i)
 	}
 	return r

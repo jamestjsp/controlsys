@@ -326,10 +326,7 @@ func maxSVD(M *mat.Dense) float64 {
 	mCopy := make([]float64, r*c)
 	copyStrided(mCopy, c, raw.Data, raw.Stride, r, c)
 
-	minDim := r
-	if c < minDim {
-		minDim = c
-	}
+	minDim := min(c, r)
 	s := make([]float64, minDim)
 	ldu := max(1, r)
 	ldvt := max(1, c)

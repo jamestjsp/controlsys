@@ -55,9 +55,9 @@ func matLog(A *mat.Dense) (*mat.Dense, error) {
 	yTaug := mat.NewDense(2*n, n, nil)
 	vaRaw := vTaug.RawMatrix()
 	yaRaw := yTaug.RawMatrix()
-	for i := 0; i < n; i++ {
+	for i := range n {
 		vRow := vRaw.Data[i*vRaw.Stride : i*vRaw.Stride+n]
-		for j := 0; j < n; j++ {
+		for j := range n {
 			v := vRow[j]
 			a := real(v)
 			b := imag(v)
@@ -69,12 +69,12 @@ func matLog(A *mat.Dense) (*mat.Dense, error) {
 		}
 	}
 	// Y^T_aug: for row i of Y^T (complex), value at col j is d_i · V_{j,i}.
-	for i := 0; i < n; i++ {
+	for i := range n {
 		d := logVals[i]
 		dr, di := real(d), imag(d)
 		reRow := yaRaw.Data[i*yaRaw.Stride : i*yaRaw.Stride+n]
 		imRow := yaRaw.Data[(i+n)*yaRaw.Stride : (i+n)*yaRaw.Stride+n]
-		for j := 0; j < n; j++ {
+		for j := range n {
 			v := vRaw.Data[j*vRaw.Stride+i]
 			a := real(v)
 			b := imag(v)
@@ -100,10 +100,10 @@ func matLog(A *mat.Dense) (*mat.Dense, error) {
 	result := mat.NewDense(n, n, nil)
 	resRaw := result.RawMatrix()
 	maxIm, maxRe := 0.0, 0.0
-	for i := 0; i < n; i++ {
+	for i := range n {
 		reRow := xRaw.Data[i*xRaw.Stride : i*xRaw.Stride+n]
 		imRow := xRaw.Data[(i+n)*xRaw.Stride : (i+n)*xRaw.Stride+n]
-		for j := 0; j < n; j++ {
+		for j := range n {
 			re := reRow[j]
 			im := imRow[j]
 			// (L^T)_{i,j} = X_{i,j}  ⇒  L_{j,i} = X_{i,j}; set result[j,i].

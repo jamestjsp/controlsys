@@ -18,8 +18,8 @@ func matClose(a, b *mat.Dense, tol float64) bool {
 	}
 	aRaw := a.RawMatrix()
 	bRaw := b.RawMatrix()
-	for i := 0; i < ar; i++ {
-		for j := 0; j < ac; j++ {
+	for i := range ar {
+		for j := range ac {
 			if math.Abs(aRaw.Data[i*aRaw.Stride+j]-bRaw.Data[i*bRaw.Stride+j]) > tol {
 				return false
 			}

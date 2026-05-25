@@ -197,7 +197,7 @@ func TestPadeDelayOrder2ExactCoeffs(t *testing.T) {
 		// Horner: evaluate descending-order polynomials
 		sn := complex(0, 0)
 		sd := complex(0, 0)
-		for k := 0; k < len(numCoeffs); k++ {
+		for k := range numCoeffs {
 			sn = sn*s + complex(numCoeffs[k], 0)
 			sd = sd*s + complex(denCoeffs[k], 0)
 		}
@@ -209,7 +209,8 @@ func TestPadeDelayOrder2ExactCoeffs(t *testing.T) {
 }
 
 // Julia: for (n, tol) in enumerate([0.05; 1e-3; 1e-5; ...])
-//   evalfr(pade(0.8, n), 1im) ≈ exp(-0.8im) atol=tol
+//
+//	evalfr(pade(0.8, n), 1im) ≈ exp(-0.8im) atol=tol
 func TestPadeDelayAccuracyByOrder(t *testing.T) {
 	tau := 0.8
 	s := complex(0, 1)

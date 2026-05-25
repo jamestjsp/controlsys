@@ -292,7 +292,7 @@ func solveDiscreteSchurLyap(n int, t []float64, ldt int, c []float64, ldc int, w
 					buf[i*dl+jj] = sum
 				}
 			}
-			for i := 0; i < j2; i++ {
+			for i := range j2 {
 				for jj := range dl {
 					sum := 0.0
 					for p := range n {
@@ -307,7 +307,7 @@ func solveDiscreteSchurLyap(n int, t []float64, ldt int, c []float64, ldc int, w
 		// These are Y[p, j1:j2] = Y[j1:j2, p]' for p >= j2, known from symmetry.
 		// C[:j2, j1:j2] -= T[:j2, j2:n] * Y[j2:n, j1:j2] * T_ll'
 		if j2 < n {
-			for i := 0; i < j2; i++ {
+			for i := range j2 {
 				for jj := range dl {
 					sum := 0.0
 					for p := j2; p < n; p++ {
@@ -316,7 +316,7 @@ func solveDiscreteSchurLyap(n int, t []float64, ldt int, c []float64, ldc int, w
 					buf[i*dl+jj] = sum
 				}
 			}
-			for i := 0; i < j2; i++ {
+			for i := range j2 {
 				for jj := range dl {
 					val := 0.0
 					for pp := range dl {

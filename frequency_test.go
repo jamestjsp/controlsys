@@ -430,8 +430,8 @@ func TestFreqResponse_InternalDelay_MIMO(t *testing.T) {
 	}
 
 	for k, w := range freqs {
-		for i := 0; i < 2; i++ {
-			for j := 0; j < 2; j++ {
+		for i := range 2 {
+			for j := range 2 {
 				magLFT := cmplx.Abs(respLFT.At(k, i, j))
 				magAbs := cmplx.Abs(respAbs.At(k, i, j))
 				absErr := math.Abs(magLFT - magAbs)

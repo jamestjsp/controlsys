@@ -89,7 +89,7 @@ func isSymmetric(m *mat.Dense, tol float64) bool {
 		return false
 	}
 	raw := m.RawMatrix()
-	for i := 0; i < r; i++ {
+	for i := range r {
 		for j := i + 1; j < c; j++ {
 			if math.Abs(raw.Data[i*raw.Stride+j]-raw.Data[j*raw.Stride+i]) > tol {
 				return false
@@ -112,14 +112,14 @@ func isPSD(m *mat.Dense) bool {
 	copyStrided(tmp, n, raw.Data, raw.Stride, n, n)
 	symmetrize(tmp, n, n)
 	tol := eps() * denseNorm(m) * float64(n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		tmp[i*n+i] += tol
 	}
 	return impl.Dpotrf(blas.Lower, n, tmp, n)
 }
 
 func symmetrize(data []float64, n, stride int) {
-	for i := 0; i < n; i++ {
+	for i := range n {
 		for j := i + 1; j < n; j++ {
 			avg := 0.5 * (data[i*stride+j] + data[j*stride+i])
 			data[i*stride+j] = avg
@@ -129,7 +129,7 @@ func symmetrize(data []float64, n, stride int) {
 }
 
 func copyStrided(dst []float64, dstStride int, src []float64, srcStride int, rows, cols int) {
-	for i := 0; i < rows; i++ {
+	for i := range rows {
 		copy(dst[i*dstStride:i*dstStride+cols], src[i*srcStride:i*srcStride+cols])
 	}
 }

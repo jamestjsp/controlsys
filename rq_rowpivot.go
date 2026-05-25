@@ -18,7 +18,7 @@ func rowPivotRQ(m, n int, a []float64, lda int, rcond, svlmax float64) (rank int
 	tolz := math.Sqrt(eps())
 
 	norms := make([]float64, 2*m)
-	for i := 0; i < m; i++ {
+	for i := range m {
 		norms[i] = blas64.Nrm2(blas64.Vector{N: n, Data: a[i*lda:], Inc: 1})
 		norms[m+i] = norms[i]
 		jpvt[i] = i
@@ -84,7 +84,7 @@ func rowPivotRQ(m, n int, a []float64, lda int, rcond, svlmax float64) (rank int
 				impl.Dlarf(blas.Right, row, nki, a[row*lda:], 1, tau[tauIdx], a, lda, work[:row])
 				a[row*lda+col] = aii
 
-				for j := 0; j < row; j++ {
+				for j := range row {
 					if norms[j] != 0 {
 						temp := math.Abs(a[j*lda+col]) / norms[j]
 						temp = math.Max((1+temp)*(1-temp), 0)

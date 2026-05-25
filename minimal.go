@@ -169,11 +169,11 @@ func pertransposeSquare(a *mat.Dense, n int) {
 		j := n - 1 - i
 		ri := raw.Data[i*raw.Stride:]
 		rj := raw.Data[j*raw.Stride:]
-		for k := 0; k < n; k++ {
+		for k := range n {
 			ri[k], rj[k] = rj[k], ri[k]
 		}
 	}
-	for k := 0; k < n; k++ {
+	for k := range n {
 		rk := raw.Data[k*raw.Stride:]
 		for i := 0; i < n/2; i++ {
 			j := n - 1 - i
@@ -234,14 +234,14 @@ func equalize(A, B, C *mat.Dense, n, m, p int) {
 
 	for {
 		noconv := false
-		for i := 0; i < n; i++ {
+		for i := range n {
 			c := 0.0
 			r := 0.0
 			ca := 0.0
 			ra := 0.0
 
 			aRow := aRaw.Data[i*aRaw.Stride:]
-			for j := 0; j < n; j++ {
+			for j := range n {
 				if j == i {
 					continue
 				}
@@ -257,14 +257,14 @@ func equalize(A, B, C *mat.Dense, n, m, p int) {
 				}
 			}
 			bRow := bRaw.Data[i*bRaw.Stride:]
-			for j := 0; j < m; j++ {
+			for j := range m {
 				v := math.Abs(bRow[j])
 				r += v
 				if v > ra {
 					ra = v
 				}
 			}
-			for j := 0; j < p; j++ {
+			for j := range p {
 				v := math.Abs(cRaw.Data[j*cRaw.Stride+i])
 				c += v
 				if v > ca {
@@ -313,16 +313,16 @@ func equalize(A, B, C *mat.Dense, n, m, p int) {
 			noconv = true
 
 			fi := 1.0 / f
-			for j := 0; j < n; j++ {
+			for j := range n {
 				aRow[j] *= fi
 			}
-			for j := 0; j < m; j++ {
+			for j := range m {
 				bRow[j] *= fi
 			}
-			for j := 0; j < n; j++ {
+			for j := range n {
 				aRaw.Data[j*aRaw.Stride+i] *= f
 			}
-			for j := 0; j < p; j++ {
+			for j := range p {
 				cRaw.Data[j*cRaw.Stride+i] *= f
 			}
 		}

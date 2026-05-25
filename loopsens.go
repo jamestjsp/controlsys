@@ -66,7 +66,7 @@ func Loopsens(P, C *System) (*LoopsensResult, error) {
 
 func makeIdentityGain(n int, dt float64) *System {
 	data := make([]float64, n*n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		data[i*(n+1)] = 1
 	}
 	sys, _ := NewGain(mat.NewDense(n, n, data), dt)

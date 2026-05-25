@@ -197,7 +197,7 @@ func TestLsim_Step_Continuous(t *testing.T) {
 	steps := 501
 	tVec := make([]float64, steps)
 	uMat := mat.NewDense(steps, 1, nil)
-	for i := 0; i < steps; i++ {
+	for i := range steps {
 		tVec[i] = float64(i) * 0.01
 		uMat.Set(i, 0, 1.0)
 	}
@@ -225,7 +225,7 @@ func TestLsim_InitialCondition_Continuous(t *testing.T) {
 	steps := 201
 	tVec := make([]float64, steps)
 	uMat := mat.NewDense(steps, 1, nil)
-	for i := 0; i < steps; i++ {
+	for i := range steps {
 		tVec[i] = float64(i) * 0.01
 	}
 	x0 := mat.NewVecDense(1, []float64{5})
@@ -253,7 +253,7 @@ func TestLsim_Discrete(t *testing.T) {
 	steps := 10
 	tVec := make([]float64, steps)
 	uMat := mat.NewDense(steps, 1, nil)
-	for i := 0; i < steps; i++ {
+	for i := range steps {
 		tVec[i] = float64(i) * 0.1
 		uMat.Set(i, 0, 1.0)
 	}

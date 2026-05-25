@@ -85,8 +85,8 @@ func SpectralFactor(sys *System) (*System, error) {
 		return nil, fmt.Errorf("SpectralFactor: model must be square, got %dx%d: %w", p, m, ErrDimensionMismatch)
 	}
 	D := newDense(p, m)
-	for i := 0; i < p; i++ {
-		for j := 0; j < m; j++ {
+	for i := range p {
+		for j := range m {
 			if i != j && sys.D.At(i, j) != 0 {
 				return nil, fmt.Errorf("SpectralFactor: only diagonal positive static gains are supported: %w", ErrDimensionMismatch)
 			}
@@ -128,8 +128,8 @@ func minHermitianPart(h [][]complex128) float64 {
 	}
 	dim := 2 * n
 	sym := mat.NewSymDense(dim, nil)
-	for i := 0; i < n; i++ {
-		for j := 0; j < n; j++ {
+	for i := range n {
+		for j := range n {
 			herm := (h[i][j] + cmplx.Conj(h[j][i])) / 2
 			re := real(herm)
 			im := imag(herm)

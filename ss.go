@@ -2,6 +2,7 @@ package controlsys
 
 import (
 	"fmt"
+	"slices"
 
 	"gonum.org/v1/gonum/mat"
 )
@@ -91,10 +92,8 @@ func (sys *System) Validate() error {
 		if err := validateSliceDelay(sys.LFT.Tau, N, sys.Dt); err != nil {
 			return err
 		}
-		for _, v := range sys.LFT.Tau {
-			if v == 0 {
-				return ErrZeroInternalDelay
-			}
+		if slices.Contains(sys.LFT.Tau, 0) {
+			return ErrZeroInternalDelay
 		}
 		if err := validateLFTDims(n, m, p, N, sys.LFT.B2, sys.LFT.C2, sys.LFT.D12, sys.LFT.D21, sys.LFT.D22); err != nil {
 			return err

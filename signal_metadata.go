@@ -96,7 +96,7 @@ func fohStateMetadata(src *System, n, m int) []string {
 	if src.StateName != nil {
 		copy(names, src.StateName)
 	}
-	for j := 0; j < m; j++ {
+	for j := range m {
 		if src.InputName != nil && j < len(src.InputName) {
 			names[n+j] = src.InputName[j] + "_prev"
 		}

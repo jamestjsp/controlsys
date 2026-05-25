@@ -12,7 +12,7 @@ import (
 // A has sub/superdiagonal coupling so transposition bugs surface.
 func benchSysNonSym(n, m, p int) *System {
 	A := mat.NewDense(n, n, nil)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		A.Set(i, i, -float64(i+1)*0.3)
 		if i > 0 {
 			A.Set(i, i-1, 1.0)
@@ -60,14 +60,14 @@ func benchIntegratorMIMOSystem(n, m, p int) *System {
 		}
 	}
 	B := mat.NewDense(n, m, nil)
-	for j := 0; j < m; j++ {
+	for j := range m {
 		B.Set(0, j, float64(j+1))
 	}
 	for i := 1; i < n; i++ {
 		B.Set(i, i%m, 1)
 	}
 	C := mat.NewDense(p, n, nil)
-	for i := 0; i < p; i++ {
+	for i := range p {
 		if i%2 == 0 {
 			C.Set(i, 0, 1)
 		}
@@ -404,8 +404,8 @@ func benchLsimB(b *testing.B, n, m, p, steps int) {
 		t[k] = float64(k) * dt
 	}
 	u := mat.NewDense(steps, m, nil)
-	for k := 0; k < steps; k++ {
-		for j := 0; j < m; j++ {
+	for k := range steps {
+		for j := range m {
 			u.Set(k, j, math.Sin(float64(k)*dt*float64(j+1)))
 		}
 	}
@@ -653,7 +653,7 @@ func benchDescriptorSystem(b *testing.B, n, m, p int) *System {
 	b.Helper()
 	sys := benchSysNonSym(n, m, p)
 	E := mat.NewDense(n, n, nil)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		E.Set(i, i, 1+0.1*float64(i+1))
 	}
 	sys.E = E
@@ -693,7 +693,7 @@ func BenchmarkStabsep_N100(b *testing.B) { benchStabsep(b, 100) }
 
 func benchStabsep(b *testing.B, n int) {
 	A := mat.NewDense(n, n, nil)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		if i%2 == 0 {
 			A.Set(i, i, -float64(i+1)*0.3)
 		} else {
@@ -796,7 +796,7 @@ func BenchmarkCovar_MIMO_N10(b *testing.B)  { benchCovarB(b, 10, 3, 4) }
 func benchCovarB(b *testing.B, n, m, p int) {
 	sys := benchSysNonSym(n, m, p)
 	W := mat.NewDense(m, m, nil)
-	for i := 0; i < m; i++ {
+	for i := range m {
 		W.Set(i, i, 1)
 	}
 	b.ResetTimer()

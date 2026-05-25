@@ -4,6 +4,7 @@ import (
 	"errors"
 	"math"
 	"math/cmplx"
+	"slices"
 	"testing"
 
 	"gonum.org/v1/gonum/mat"
@@ -85,8 +86,8 @@ func TestSeries_MIMO(t *testing.T) {
 	h2 := evalTF(sys2, s)
 	hc := evalTF(result, s)
 
-	for i := 0; i < 2; i++ {
-		for j := 0; j < 2; j++ {
+	for i := range 2 {
+		for j := range 2 {
 			want := h2[i][0]*h1[0][j] + h2[i][1]*h1[1][j]
 			if cmplx.Abs(hc[i][j]-want) > 1e-8 {
 				t.Errorf("H[%d][%d] at s=j: got %v, want %v", i, j, hc[i][j], want)
@@ -666,7 +667,7 @@ func TestSeries_IntermediateDelayUniform(t *testing.T) {
 	if td == nil {
 		t.Fatal("TotalDelay should not be nil")
 	}
-	for j := 0; j < 2; j++ {
+	for j := range 2 {
 		if td.At(0, j) != 4 {
 			t.Errorf("TotalDelay[0][%d] = %v, want 4", j, td.At(0, j))
 		}
@@ -876,7 +877,7 @@ func TestSafeFeedback_DiscreteInputDelay(t *testing.T) {
 
 	steps := 15
 	u := mat.NewDense(1, steps, nil)
-	for k := 0; k < steps; k++ {
+	for k := range steps {
 		u.Set(0, k, 1)
 	}
 	clResp, _ := cl.Simulate(u, nil, nil)
@@ -1881,13 +1882,7 @@ func TestFeedbackKeepsInputDelay(t *testing.T) {
 	if !cl.HasInternalDelay() {
 		t.Fatal("plant OutputDelay should become internal delay")
 	}
-	found := false
-	for _, tau := range cl.LFT.Tau {
-		if tau == 2 {
-			found = true
-			break
-		}
-	}
+	found := slices.Contains(cl.LFT.Tau, 2)
 	if !found {
 		t.Errorf("InternalDelay should contain 2 (from OutputDelay), got %v", cl.LFT.Tau)
 	}

@@ -92,7 +92,7 @@ func (e *sisoEval) at(w float64) complex128 {
 			h *= cmplx.Exp(-s * complex(e.tau, 0))
 		} else {
 			d := int(math.Round(e.tau))
-			for k := 0; k < d; k++ {
+			for range d {
 				h /= s
 			}
 		}

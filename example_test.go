@@ -142,7 +142,7 @@ func ExampleSystem_Simulate() {
 	resp, _ := sys.Simulate(u, nil, nil)
 
 	_, cols := resp.Y.Dims()
-	for i := 0; i < cols; i++ {
+	for i := range cols {
 		fmt.Printf("y[%d] = %.0f\n", i, resp.Y.At(0, i))
 	}
 

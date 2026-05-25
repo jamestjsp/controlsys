@@ -121,7 +121,7 @@ func TestFeedback_HighGain_Bounded(t *testing.T) {
 	}
 
 	_, cols := resp.Y.Dims()
-	for k := 0; k < cols; k++ {
+	for k := range cols {
 		if math.Abs(resp.Y.At(0, k)) > 100 {
 			t.Fatalf("step response unbounded at t=%v: y=%v", resp.T[k], resp.Y.At(0, k))
 		}

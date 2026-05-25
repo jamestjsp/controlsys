@@ -3,6 +3,7 @@ package controlsys
 import (
 	"fmt"
 	"math"
+	"slices"
 
 	"gonum.org/v1/gonum/blas/blas64"
 	"gonum.org/v1/gonum/mat"
@@ -68,10 +69,8 @@ func (sys *System) SetInternalDelay(tau []float64, B2, C2, D12, D21, D22 *mat.De
 	if err := validateSliceDelay(tau, N, sys.Dt); err != nil {
 		return err
 	}
-	for _, v := range tau {
-		if v == 0 {
-			return ErrZeroInternalDelay
-		}
+	if slices.Contains(tau, 0) {
+		return ErrZeroInternalDelay
 	}
 	if err := validateLFTDims(n, m, p, N, B2, C2, D12, D21, D22); err != nil {
 		return err
@@ -149,20 +148,20 @@ func effectiveIODelayData(sys *System, p, m int, includeDelayMatrix bool) []floa
 	data := make([]float64, p*m)
 	if includeDelayMatrix && sys.Delay != nil {
 		raw := sys.Delay.RawMatrix()
-		for i := 0; i < p; i++ {
+		for i := range p {
 			copy(data[i*m:i*m+m], raw.Data[i*raw.Stride:i*raw.Stride+m])
 		}
 	}
 	if sys.InputDelay != nil {
-		for j := 0; j < m; j++ {
-			for i := 0; i < p; i++ {
+		for j := range m {
+			for i := range p {
 				data[i*m+j] += sys.InputDelay[j]
 			}
 		}
 	}
 	if sys.OutputDelay != nil {
-		for i := 0; i < p; i++ {
-			for j := 0; j < m; j++ {
+		for i := range p {
+			for j := range m {
 				data[i*m+j] += sys.OutputDelay[i]
 			}
 		}
@@ -333,7 +332,7 @@ func absorbInternalDiscreteDelay(sys *System) (*System, error) {
 
 	delays := make([]int, N)
 	totalShift := 0
-	for j := 0; j < N; j++ {
+	for j := range N {
 		delays[j] = int(math.Round(tau[j] / sys.Dt))
 		totalShift += delays[j]
 	}
@@ -361,18 +360,18 @@ func absorbInternalDiscreteDelay(sys *System) (*System, error) {
 
 	if n > 0 {
 		hA := H.A.RawMatrix()
-		for i := 0; i < n; i++ {
+		for i := range n {
 			copy(aAug[i*nAug:i*nAug+n], hA.Data[i*hA.Stride:i*hA.Stride+n])
 		}
-		for i := 0; i < n; i++ {
+		for i := range n {
 			copy(bAug[i*m:i*m+m], hB.Data[i*hB.Stride:i*hB.Stride+m])
 		}
-		for i := 0; i < p; i++ {
+		for i := range p {
 			copy(cAug[i*nAug:i*nAug+n], hC.Data[i*hC.Stride:i*hC.Stride+n])
 		}
 	}
 
-	for i := 0; i < p; i++ {
+	for i := range p {
 		copy(dAug[i*m:i*m+m], hD.Data[i*hD.Stride:i*hD.Stride+m])
 	}
 
@@ -391,7 +390,7 @@ func absorbInternalDiscreteDelay(sys *System) (*System, error) {
 	// So the loop w -> D22*w is resolved by the shift registers, no algebraic loop.
 
 	offset := n
-	for j := 0; j < N; j++ {
+	for j := range N {
 		dj := delays[j]
 		if dj == 0 {
 			continue
@@ -400,11 +399,11 @@ func absorbInternalDiscreteDelay(sys *System) (*System, error) {
 		// s_1[k+1] = C2[j,:]*x[k] + D21[j,:]*u[k]
 		// (D22 contribution is handled after all shift chains are placed)
 		if n > 0 {
-			for col := 0; col < n; col++ {
+			for col := range n {
 				aAug[offset*nAug+col] = hC.Data[(p+j)*hC.Stride+col]
 			}
 		}
-		for col := 0; col < m; col++ {
+		for col := range m {
 			bAug[offset*m+col] = hD.Data[(p+j)*hD.Stride+col]
 		}
 
@@ -420,18 +419,18 @@ func absorbInternalDiscreteDelay(sys *System) (*System, error) {
 	// Build a map from delay index to its last shift state column.
 	lastState := make([]int, N)
 	off := n
-	for j := 0; j < N; j++ {
+	for j := range N {
 		lastState[j] = off + delays[j] - 1
 		off += delays[j]
 	}
 
 	off = n
-	for j := 0; j < N; j++ {
+	for j := range N {
 		dj := delays[j]
 		if dj == 0 {
 			continue
 		}
-		for k := 0; k < N; k++ {
+		for k := range N {
 			dk := delays[k]
 			if dk == 0 {
 				continue
@@ -448,8 +447,8 @@ func absorbInternalDiscreteDelay(sys *System) (*System, error) {
 	// through the shift chain last states.
 	// Original A_aug[i, lastState[j]] += B2[i,j] for the original state rows.
 	if n > 0 {
-		for i := 0; i < n; i++ {
-			for j := 0; j < N; j++ {
+		for i := range n {
+			for j := range N {
 				if delays[j] == 0 {
 					continue
 				}
@@ -462,8 +461,8 @@ func absorbInternalDiscreteDelay(sys *System) (*System, error) {
 	}
 
 	// D12 columns: C_aug[i, lastState[j]] += D12[i,j]
-	for i := 0; i < p; i++ {
-		for j := 0; j < N; j++ {
+	for i := range p {
+		for j := range N {
 			if delays[j] == 0 {
 				continue
 			}
@@ -507,7 +506,7 @@ func absorbInternalContinuousDelay(sys *System) (*System, error) {
 	// Build a block-diagonal Padé delay bank for all internal delays.
 	// delayBank is N-input, N-output.
 	var delayBank *System
-	for j := 0; j < N; j++ {
+	for j := range N {
 		pade, err := PadeDelay(tau[j], 5)
 		if err != nil {
 			return nil, fmt.Errorf("absorbInternalDelay: Padé for delay %d: %w", j, err)
@@ -609,19 +608,19 @@ func absorbInternalContinuousDelay(sys *System) (*System, error) {
 			copy(B2.RawMatrix().Data[i*N:i*N+N], hbRaw.Data[i*hbRaw.Stride+m:i*hbRaw.Stride+mN])
 		}
 		hcRaw := H.C.RawMatrix()
-		for i := 0; i < p; i++ {
+		for i := range p {
 			copy(C1.RawMatrix().Data[i*nh:i*nh+nh], hcRaw.Data[i*hcRaw.Stride:i*hcRaw.Stride+nh])
 		}
-		for i := 0; i < N; i++ {
+		for i := range N {
 			copy(C2.RawMatrix().Data[i*nh:i*nh+nh], hcRaw.Data[(p+i)*hcRaw.Stride:(p+i)*hcRaw.Stride+nh])
 		}
 	}
 	hdRaw := H.D.RawMatrix()
-	for i := 0; i < p; i++ {
+	for i := range p {
 		copy(D11.RawMatrix().Data[i*m:i*m+m], hdRaw.Data[i*hdRaw.Stride:i*hdRaw.Stride+m])
 		copy(D12.RawMatrix().Data[i*N:i*N+N], hdRaw.Data[i*hdRaw.Stride+m:i*hdRaw.Stride+mN])
 	}
-	for i := 0; i < N; i++ {
+	for i := range N {
 		copy(D21.RawMatrix().Data[i*m:i*m+m], hdRaw.Data[(p+i)*hdRaw.Stride:(p+i)*hdRaw.Stride+m])
 		copy(D22.RawMatrix().Data[i*N:i*N+N], hdRaw.Data[(p+i)*hdRaw.Stride+m:(p+i)*hdRaw.Stride+mN])
 	}
@@ -632,7 +631,7 @@ func absorbInternalContinuousDelay(sys *System) (*System, error) {
 	D22Dd.Mul(D22, Dd)
 	E := mat.NewDense(N, N, nil)
 	eRaw := E.RawMatrix()
-	for i := 0; i < N; i++ {
+	for i := range N {
 		eRaw.Data[i*eRaw.Stride+i] = 1
 	}
 	E.Sub(E, D22Dd)
@@ -640,7 +639,7 @@ func absorbInternalContinuousDelay(sys *System) (*System, error) {
 	lu.Factorize(E)
 	D22Dd.Zero()
 	idRaw := D22Dd.RawMatrix()
-	for i := 0; i < N; i++ {
+	for i := range N {
 		idRaw.Data[i*idRaw.Stride+i] = 1
 	}
 	Einv := mat.NewDense(N, N, nil)
@@ -771,10 +770,10 @@ func addBlock(dst *mat.Dense, r0, c0 int, src *mat.Dense) {
 	}
 	dRaw := dst.RawMatrix()
 	sRaw := src.RawMatrix()
-	for i := 0; i < sr; i++ {
+	for i := range sr {
 		dRow := dRaw.Data[(r0+i)*dRaw.Stride+c0:]
 		sRow := sRaw.Data[i*sRaw.Stride:]
-		for j := 0; j < sc; j++ {
+		for j := range sc {
 			dRow[j] += sRow[j]
 		}
 	}
@@ -790,8 +789,8 @@ func absorbIODelay(sys *System) (*System, error) {
 
 	hasNonzero := false
 	raw := sys.Delay.RawMatrix()
-	for i := 0; i < p; i++ {
-		for j := 0; j < m; j++ {
+	for i := range p {
+		for j := range m {
 			if raw.Data[i*raw.Stride+j] != 0 {
 				hasNonzero = true
 				break
@@ -814,14 +813,14 @@ func absorbIODelay(sys *System) (*System, error) {
 	if cp.InputDelay == nil {
 		cp.InputDelay = make([]float64, m)
 	}
-	for j := 0; j < m; j++ {
+	for j := range m {
 		cp.InputDelay[j] += inDel[j]
 	}
 
 	if cp.OutputDelay == nil {
 		cp.OutputDelay = make([]float64, p)
 	}
-	for i := 0; i < p; i++ {
+	for i := range p {
 		cp.OutputDelay[i] += outDel[i]
 	}
 
@@ -905,14 +904,14 @@ func absorbInputDelay(sys *System) (*System, error) {
 
 	if n > 0 {
 		aRaw := sys.A.RawMatrix()
-		for i := 0; i < n; i++ {
+		for i := range n {
 			copy(aAug[i*nAug:i*nAug+n], aRaw.Data[i*aRaw.Stride:i*aRaw.Stride+n])
 		}
 	}
 
 	if n > 0 {
 		cRaw := sys.C.RawMatrix()
-		for i := 0; i < p; i++ {
+		for i := range p {
 			copy(cAug[i*nAug:i*nAug+n], cRaw.Data[i*cRaw.Stride:i*cRaw.Stride+n])
 		}
 	}
@@ -921,15 +920,15 @@ func absorbInputDelay(sys *System) (*System, error) {
 	dRaw := sys.D.RawMatrix()
 
 	offset := n
-	for j := 0; j < m; j++ {
+	for j := range m {
 		dj := delays[j]
 		if dj == 0 {
 			if n > 0 {
-				for i := 0; i < n; i++ {
+				for i := range n {
 					bAug[i*m+j] = bRaw.Data[i*bRaw.Stride+j]
 				}
 			}
-			for i := 0; i < p; i++ {
+			for i := range p {
 				dAug[i*m+j] = dRaw.Data[i*dRaw.Stride+j]
 			}
 			continue
@@ -943,11 +942,11 @@ func absorbInputDelay(sys *System) (*System, error) {
 
 		lastShift := offset + dj - 1
 		if n > 0 {
-			for i := 0; i < n; i++ {
+			for i := range n {
 				aAug[i*nAug+lastShift] = bRaw.Data[i*bRaw.Stride+j]
 			}
 		}
-		for i := 0; i < p; i++ {
+		for i := range p {
 			cAug[i*nAug+lastShift] += dRaw.Data[i*dRaw.Stride+j]
 		}
 
@@ -1003,12 +1002,12 @@ func absorbOutputDelay(sys *System) (*System, error) {
 
 	if n > 0 {
 		aRaw := sys.A.RawMatrix()
-		for i := 0; i < n; i++ {
+		for i := range n {
 			copy(aAug[i*nAug:i*nAug+n], aRaw.Data[i*aRaw.Stride:i*aRaw.Stride+n])
 		}
 
 		bRaw := sys.B.RawMatrix()
-		for i := 0; i < n; i++ {
+		for i := range n {
 			copy(bAug[i*m:i*m+m], bRaw.Data[i*bRaw.Stride:i*bRaw.Stride+m])
 		}
 	}
@@ -1017,7 +1016,7 @@ func absorbOutputDelay(sys *System) (*System, error) {
 	dRaw := sys.D.RawMatrix()
 
 	offset := n
-	for i := 0; i < p; i++ {
+	for i := range p {
 		di := delays[i]
 		if di == 0 {
 			if n > 0 {
@@ -1140,8 +1139,8 @@ func absorbIODelayContinuous(sys *System, order int) (*System, error) {
 
 	hasNonzero := false
 	raw := sys.Delay.RawMatrix()
-	for i := 0; i < p; i++ {
-		for j := 0; j < m; j++ {
+	for i := range p {
+		for j := range m {
 			if raw.Data[i*raw.Stride+j] != 0 {
 				hasNonzero = true
 				break
@@ -1164,14 +1163,14 @@ func absorbIODelayContinuous(sys *System, order int) (*System, error) {
 	if cp.InputDelay == nil {
 		cp.InputDelay = make([]float64, m)
 	}
-	for j := 0; j < m; j++ {
+	for j := range m {
 		cp.InputDelay[j] += inDel[j]
 	}
 
 	if cp.OutputDelay == nil {
 		cp.OutputDelay = make([]float64, p)
 	}
-	for i := 0; i < p; i++ {
+	for i := range p {
 		cp.OutputDelay[i] += outDel[i]
 	}
 
@@ -1250,9 +1249,9 @@ func decomposeInputFirst(data []float64, stride, p, m int) (inputDelay, outputDe
 	outputDelay = make([]float64, p)
 	residual = make([]float64, p*m)
 
-	for j := 0; j < m; j++ {
+	for j := range m {
 		mn := math.Inf(1)
-		for i := 0; i < p; i++ {
+		for i := range p {
 			if v := data[i*stride+j]; v < mn {
 				mn = v
 			}
@@ -1260,15 +1259,15 @@ func decomposeInputFirst(data []float64, stride, p, m int) (inputDelay, outputDe
 		inputDelay[j] = mn
 	}
 
-	for i := 0; i < p; i++ {
-		for j := 0; j < m; j++ {
+	for i := range p {
+		for j := range m {
 			residual[i*m+j] = data[i*stride+j] - inputDelay[j]
 		}
 	}
 
-	for i := 0; i < p; i++ {
+	for i := range p {
 		mn := math.Inf(1)
-		for j := 0; j < m; j++ {
+		for j := range m {
 			if v := residual[i*m+j]; v < mn {
 				mn = v
 			}
@@ -1276,8 +1275,8 @@ func decomposeInputFirst(data []float64, stride, p, m int) (inputDelay, outputDe
 		outputDelay[i] = mn
 	}
 
-	for i := 0; i < p; i++ {
-		for j := 0; j < m; j++ {
+	for i := range p {
+		for j := range m {
 			residual[i*m+j] -= outputDelay[i]
 		}
 	}
@@ -1290,9 +1289,9 @@ func decomposeOutputFirst(data []float64, stride, p, m int) (inputDelay, outputD
 	outputDelay = make([]float64, p)
 	residual = make([]float64, p*m)
 
-	for i := 0; i < p; i++ {
+	for i := range p {
 		mn := math.Inf(1)
-		for j := 0; j < m; j++ {
+		for j := range m {
 			if v := data[i*stride+j]; v < mn {
 				mn = v
 			}
@@ -1300,15 +1299,15 @@ func decomposeOutputFirst(data []float64, stride, p, m int) (inputDelay, outputD
 		outputDelay[i] = mn
 	}
 
-	for i := 0; i < p; i++ {
-		for j := 0; j < m; j++ {
+	for i := range p {
+		for j := range m {
 			residual[i*m+j] = data[i*stride+j] - outputDelay[i]
 		}
 	}
 
-	for j := 0; j < m; j++ {
+	for j := range m {
 		mn := math.Inf(1)
-		for i := 0; i < p; i++ {
+		for i := range p {
 			if v := residual[i*m+j]; v < mn {
 				mn = v
 			}
@@ -1316,8 +1315,8 @@ func decomposeOutputFirst(data []float64, stride, p, m int) (inputDelay, outputD
 		inputDelay[j] = mn
 	}
 
-	for i := 0; i < p; i++ {
-		for j := 0; j < m; j++ {
+	for i := range p {
+		for j := range m {
 			residual[i*m+j] -= inputDelay[j]
 		}
 	}
@@ -1351,13 +1350,13 @@ func (sys *System) PullDelaysToLFT() (*System, error) {
 		if cur.InputDelay == nil {
 			cur.InputDelay = make([]float64, m)
 		}
-		for j := 0; j < m; j++ {
+		for j := range m {
 			cur.InputDelay[j] += inDel[j]
 		}
 		if cur.OutputDelay == nil {
 			cur.OutputDelay = make([]float64, p)
 		}
-		for i := 0; i < p; i++ {
+		for i := range p {
 			cur.OutputDelay[i] += outDel[i]
 		}
 
@@ -1384,19 +1383,19 @@ func (sys *System) PullDelaysToLFT() (*System, error) {
 			// handler below to avoid double-counting feedthrough.
 			resRaw := residual.RawMatrix()
 			if n == 0 && cur.InputDelay != nil {
-				for j := 0; j < m; j++ {
+				for j := range m {
 					if cur.InputDelay[j] == 0 {
 						continue
 					}
 					colHasRes := false
-					for i := 0; i < p; i++ {
+					for i := range p {
 						if resRaw.Data[i*resRaw.Stride+j] > 0 {
 							colHasRes = true
 							break
 						}
 					}
 					if colHasRes {
-						for i := 0; i < p; i++ {
+						for i := range p {
 							resRaw.Data[i*resRaw.Stride+j] += cur.InputDelay[j]
 						}
 						cur.InputDelay[j] = 0
@@ -1404,7 +1403,7 @@ func (sys *System) PullDelaysToLFT() (*System, error) {
 				}
 			}
 			if n == 0 && cur.OutputDelay != nil {
-				for i := 0; i < p; i++ {
+				for i := range p {
 					if cur.OutputDelay[i] == 0 {
 						continue
 					}
@@ -1447,8 +1446,8 @@ func (sys *System) PullDelaysToLFT() (*System, error) {
 	}
 	if cur.Delay != nil {
 		raw := cur.Delay.RawMatrix()
-		for i := 0; i < p; i++ {
-			for j := 0; j < m; j++ {
+		for i := range p {
+			for j := range m {
 				v := raw.Data[i*raw.Stride+j]
 				if v > 0 {
 					entries = append(entries, delayEntry{i, j, v, 'd'})
@@ -1523,12 +1522,12 @@ func (sys *System) PullDelaysToLFT() (*System, error) {
 		case 'i':
 			j := e.col
 			if n > 0 {
-				for i := 0; i < n; i++ {
+				for i := range n {
 					b2Raw.Data[i*b2Raw.Stride+idx] = curBRaw.Data[i*curBRaw.Stride+j]
 					newBRaw.Data[i*newBRaw.Stride+j] = 0
 				}
 			}
-			for i := 0; i < p; i++ {
+			for i := range p {
 				dVal := curDRaw.Data[i*curDRaw.Stride+j]
 				if !outputDelayRows[i] {
 					d12Raw.Data[i*d12Raw.Stride+idx] = dVal
@@ -1540,12 +1539,12 @@ func (sys *System) PullDelaysToLFT() (*System, error) {
 		case 'o':
 			i := e.row
 			if n > 0 {
-				for j := 0; j < n; j++ {
+				for j := range n {
 					c2Raw.Data[idx*c2Raw.Stride+j] = curCRaw.Data[i*curCRaw.Stride+j]
 					newCRaw.Data[i*newCRaw.Stride+j] = 0
 				}
 			}
-			for j := 0; j < m; j++ {
+			for j := range m {
 				dVal := curDRaw.Data[i*curDRaw.Stride+j]
 				if inIdx, ok := inputDelayIdx[j]; ok {
 					d22Raw.Data[idx*d22Raw.Stride+inIdx] = dVal
@@ -1701,26 +1700,26 @@ func SetDelayModel(H *System, tau []float64) (*System, error) {
 
 	if n > 0 {
 		hbRaw := H.B.RawMatrix()
-		for i := 0; i < n; i++ {
+		for i := range n {
 			copy(bData[i*m:i*m+m], hbRaw.Data[i*hbRaw.Stride:i*hbRaw.Stride+m])
 			copy(b2Data[i*N:i*N+N], hbRaw.Data[i*hbRaw.Stride+m:i*hbRaw.Stride+mN])
 		}
 
 		hcRaw := H.C.RawMatrix()
-		for i := 0; i < p; i++ {
+		for i := range p {
 			copy(cData[i*n:i*n+n], hcRaw.Data[i*hcRaw.Stride:i*hcRaw.Stride+n])
 		}
-		for i := 0; i < N; i++ {
+		for i := range N {
 			copy(c2Data[i*n:i*n+n], hcRaw.Data[(p+i)*hcRaw.Stride:(p+i)*hcRaw.Stride+n])
 		}
 	}
 
 	hdRaw := H.D.RawMatrix()
-	for i := 0; i < p; i++ {
+	for i := range p {
 		copy(dData[i*m:i*m+m], hdRaw.Data[i*hdRaw.Stride:i*hdRaw.Stride+m])
 		copy(d12Data[i*N:i*N+N], hdRaw.Data[i*hdRaw.Stride+m:i*hdRaw.Stride+mN])
 	}
-	for i := 0; i < N; i++ {
+	for i := range N {
 		copy(d21Data[i*m:i*m+m], hdRaw.Data[(p+i)*hdRaw.Stride:(p+i)*hdRaw.Stride+m])
 		copy(d22Data[i*N:i*N+N], hdRaw.Data[(p+i)*hdRaw.Stride+m:(p+i)*hdRaw.Stride+mN])
 	}
@@ -1788,8 +1787,8 @@ func validateDelay(delay *mat.Dense, p, m int, dt float64) error {
 		return fmt.Errorf("delay %d×%d != p×m %d×%d: %w", dr, dc, p, m, ErrDimensionMismatch)
 	}
 	raw := delay.RawMatrix()
-	for i := 0; i < dr; i++ {
-		for j := 0; j < dc; j++ {
+	for i := range dr {
+		for j := range dc {
 			v := raw.Data[i*raw.Stride+j]
 			if v < 0 {
 				return ErrNegativeDelay
@@ -1819,7 +1818,7 @@ func denseToSlice2D(m *mat.Dense) [][]float64 {
 	raw := m.RawMatrix()
 	r, c := raw.Rows, raw.Cols
 	out := make([][]float64, r)
-	for i := 0; i < r; i++ {
+	for i := range r {
 		out[i] = make([]float64, c)
 		copy(out[i], raw.Data[i*raw.Stride:i*raw.Stride+c])
 	}
@@ -1836,7 +1835,7 @@ func slice2DToDense(s [][]float64) *mat.Dense {
 	}
 	m := len(s[0])
 	data := make([]float64, p*m)
-	for i := 0; i < p; i++ {
+	for i := range p {
 		copy(data[i*m:], s[i][:m])
 	}
 	return mat.NewDense(p, m, data)
@@ -1851,7 +1850,7 @@ func (sys *System) MinimalLFT() (*System, error) {
 	n, m, p := sys.Dims()
 
 	keep := make([]int, 0, N)
-	for j := 0; j < N; j++ {
+	for j := range N {
 		if !isZeroGainChannel(sys, j, n, m, p, N) {
 			keep = append(keep, j)
 		}
@@ -1901,16 +1900,16 @@ func lftSelectChannels(sys *System, keep []int, n, m, p int) *System {
 
 	for ki, j := range keep {
 		newTau[ki] = sys.LFT.Tau[j]
-		for i := 0; i < n; i++ {
+		for i := range n {
 			nb2.Data[i*nb2.Stride+ki] = b2Raw.Data[i*b2Raw.Stride+j]
 		}
-		for i := 0; i < n; i++ {
+		for i := range n {
 			nc2.Data[ki*nc2.Stride+i] = c2Raw.Data[j*c2Raw.Stride+i]
 		}
-		for i := 0; i < p; i++ {
+		for i := range p {
 			nd12.Data[i*nd12.Stride+ki] = d12Raw.Data[i*d12Raw.Stride+j]
 		}
-		for i := 0; i < m; i++ {
+		for i := range m {
 			nd21.Data[ki*nd21.Stride+i] = d21Raw.Data[j*d21Raw.Stride+i]
 		}
 		for kj, jj := range keep {
@@ -1943,7 +1942,7 @@ func lftMergeProportional(sys *System, n, m, p int) *System {
 		alpha[i] = 1
 	}
 
-	for i := 0; i < N; i++ {
+	for i := range N {
 		if merged[i] != i {
 			continue
 		}
@@ -1967,7 +1966,7 @@ func lftMergeProportional(sys *System, n, m, p int) *System {
 	}
 
 	changed := false
-	for i := 0; i < N; i++ {
+	for i := range N {
 		if merged[i] != i {
 			changed = true
 			break
@@ -1978,7 +1977,7 @@ func lftMergeProportional(sys *System, n, m, p int) *System {
 	}
 
 	reps := make([]int, 0, N)
-	for i := 0; i < N; i++ {
+	for i := range N {
 		if merged[i] == i {
 			reps = append(reps, i)
 		}
@@ -2007,22 +2006,22 @@ func lftMergeProportional(sys *System, n, m, p int) *System {
 
 	for ki, r := range reps {
 		newTau[ki] = sys.LFT.Tau[r]
-		for i := 0; i < n; i++ {
+		for i := range n {
 			nc2.Data[ki*nc2.Stride+i] = c2Raw.Data[r*c2Raw.Stride+i]
 		}
-		for i := 0; i < m; i++ {
+		for i := range m {
 			nd21.Data[ki*nd21.Stride+i] = d21Raw.Data[r*d21Raw.Stride+i]
 		}
 	}
 
-	for j := 0; j < N; j++ {
+	for j := range N {
 		r := merged[j]
 		ki := repIdx[r]
 		a := alpha[j]
-		for i := 0; i < n; i++ {
+		for i := range n {
 			nb2.Data[i*nb2.Stride+ki] += a * b2Raw.Data[i*b2Raw.Stride+j]
 		}
-		for i := 0; i < p; i++ {
+		for i := range p {
 			nd12.Data[i*nd12.Stride+ki] += a * d12Raw.Data[i*d12Raw.Stride+j]
 		}
 	}
@@ -2052,7 +2051,7 @@ func proportionalRows(c2Raw, d21Raw blas64.General, i, j, n, m int, tol float64)
 	var a float64
 	found := false
 
-	for k := 0; k < n; k++ {
+	for k := range n {
 		vi := c2Raw.Data[i*c2Raw.Stride+k]
 		vj := c2Raw.Data[j*c2Raw.Stride+k]
 		if math.Abs(vi) <= tol && math.Abs(vj) <= tol {
@@ -2070,7 +2069,7 @@ func proportionalRows(c2Raw, d21Raw blas64.General, i, j, n, m int, tol float64)
 		}
 	}
 
-	for k := 0; k < m; k++ {
+	for k := range m {
 		vi := d21Raw.Data[i*d21Raw.Stride+k]
 		vj := d21Raw.Data[j*d21Raw.Stride+k]
 		if math.Abs(vi) <= tol && math.Abs(vj) <= tol {
@@ -2097,31 +2096,31 @@ func proportionalRows(c2Raw, d21Raw blas64.General, i, j, n, m int, tol float64)
 func isZeroGainChannel(sys *System, j, n, m, p, N int) bool {
 	const tol = 1e-15
 	b2Raw := sys.LFT.B2.RawMatrix()
-	for i := 0; i < n; i++ {
+	for i := range n {
 		if math.Abs(b2Raw.Data[i*b2Raw.Stride+j]) > tol {
 			return false
 		}
 	}
 	d12Raw := sys.LFT.D12.RawMatrix()
-	for i := 0; i < p; i++ {
+	for i := range p {
 		if math.Abs(d12Raw.Data[i*d12Raw.Stride+j]) > tol {
 			return false
 		}
 	}
 	c2Raw := sys.LFT.C2.RawMatrix()
-	for i := 0; i < n; i++ {
+	for i := range n {
 		if math.Abs(c2Raw.Data[j*c2Raw.Stride+i]) > tol {
 			return false
 		}
 	}
 	d21Raw := sys.LFT.D21.RawMatrix()
-	for i := 0; i < m; i++ {
+	for i := range m {
 		if math.Abs(d21Raw.Data[j*d21Raw.Stride+i]) > tol {
 			return false
 		}
 	}
 	d22Raw := sys.LFT.D22.RawMatrix()
-	for i := 0; i < N; i++ {
+	for i := range N {
 		if math.Abs(d22Raw.Data[j*d22Raw.Stride+i]) > tol {
 			return false
 		}
@@ -2143,8 +2142,8 @@ func (sys *System) ZeroDelayApprox() (*System, error) {
 	ImD22 := mat.NewDense(N, N, nil)
 	d22Raw := sys.LFT.D22.RawMatrix()
 	imRaw := ImD22.RawMatrix()
-	for i := 0; i < N; i++ {
-		for j := 0; j < N; j++ {
+	for i := range N {
+		for j := range N {
 			imRaw.Data[i*imRaw.Stride+j] = -d22Raw.Data[i*d22Raw.Stride+j]
 		}
 		imRaw.Data[i*imRaw.Stride+i] += 1
@@ -2158,7 +2157,7 @@ func (sys *System) ZeroDelayApprox() (*System, error) {
 
 	eye := mat.NewDense(N, N, nil)
 	eyeRaw := eye.RawMatrix()
-	for i := 0; i < N; i++ {
+	for i := range N {
 		eyeRaw.Data[i*eyeRaw.Stride+i] = 1
 	}
 	E := mat.NewDense(N, N, nil)

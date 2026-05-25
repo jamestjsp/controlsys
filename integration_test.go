@@ -53,8 +53,8 @@ func TestSSToTFToSSRoundtrip(t *testing.T) {
 	for _, s := range freqs {
 		m1 := tfRes.TF.Eval(s)
 		m2 := tfRes2.TF.Eval(s)
-		for i := 0; i < 2; i++ {
-			for j := 0; j < 2; j++ {
+		for i := range 2 {
+			for j := range 2 {
 				if cmplx.Abs(m1[i][j]-m2[i][j]) > 1e-6 {
 					t.Errorf("at s=%v [%d][%d]: first=%v roundtrip=%v", s, i, j, m1[i][j], m2[i][j])
 				}
@@ -92,7 +92,7 @@ func TestDiscretizeAndSimulate(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for i := 0; i < nSteps; i++ {
+	for i := range nSteps {
 		tVal := float64(i) * dt
 		analytical := 1.0 - math.Exp(-tVal)
 		got := resp.Y.At(0, i)
@@ -198,8 +198,8 @@ func TestMIMOTransferFunctionFreqResponse(t *testing.T) {
 
 	for _, s := range freqs {
 		tfMat := tfRes.TF.Eval(s)
-		for i := 0; i < 2; i++ {
-			for j := 0; j < 2; j++ {
+		for i := range 2 {
+			for j := range 2 {
 				ssVal := evalSSij(sys, s, i, j)
 				if cmplx.Abs(tfMat[i][j]-ssVal) > 1e-8 {
 					t.Errorf("at s=%v [%d][%d]: TF=%v SS=%v", s, i, j, tfMat[i][j], ssVal)

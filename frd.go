@@ -136,10 +136,10 @@ func newFRDResponseStorage(nw, p, m int) ([][][]complex128, []complex128) {
 	}
 	rows := make([][]complex128, nw*p)
 	data := make([]complex128, nw*p*m)
-	for k := 0; k < nw; k++ {
+	for k := range nw {
 		response[k] = rows[k*p : (k+1)*p]
 		block := data[k*p*m : (k+1)*p*m]
-		for i := 0; i < p; i++ {
+		for i := range p {
 			start := i * m
 			response[k][i] = block[start : start+m : start+m]
 		}
@@ -151,24 +151,24 @@ func copyComplexGridInto(dst []complex128, src [][][]complex128, p, m int) {
 	pm := p * m
 	for k := range src {
 		base := k * pm
-		for i := 0; i < p; i++ {
+		for i := range p {
 			copy(dst[base+i*m:base+(i+1)*m], src[k][i])
 		}
 	}
 }
 
 func copyComplexMatrixInto(dst []complex128, src [][]complex128, rows, cols int) {
-	for i := 0; i < rows; i++ {
+	for i := range rows {
 		copy(dst[i*cols:(i+1)*cols], src[i])
 	}
 }
 
 func cMulNestedInto(dst []complex128, a, b [][]complex128, ra, ca, cb int) {
-	for i := 0; i < ra; i++ {
+	for i := range ra {
 		row := dst[i*cb : (i+1)*cb]
-		for j := 0; j < cb; j++ {
+		for j := range cb {
 			var sum complex128
-			for k := 0; k < ca; k++ {
+			for k := range ca {
 				sum += a[i][k] * b[k][j]
 			}
 			row[j] = sum
@@ -177,9 +177,9 @@ func cMulNestedInto(dst []complex128, a, b [][]complex128, ra, ca, cb int) {
 }
 
 func cAddNestedInto(dst []complex128, a, b [][]complex128, rows, cols int) {
-	for i := 0; i < rows; i++ {
+	for i := range rows {
 		row := dst[i*cols : (i+1)*cols]
-		for j := 0; j < cols; j++ {
+		for j := range cols {
 			row[j] = a[i][j] + b[i][j]
 		}
 	}
@@ -221,10 +221,10 @@ func (f *FRD) Abs() *FRD {
 	nw := len(f.Omega)
 	response, data := newFRDResponseStorage(nw, p, m)
 	pm := p * m
-	for k := 0; k < nw; k++ {
+	for k := range nw {
 		base := k * pm
-		for i := 0; i < p; i++ {
-			for j := 0; j < m; j++ {
+		for i := range p {
+			for j := range m {
 				data[base+i*m+j] = complex(cmplx.Abs(f.Response[k][i][j]), 0)
 			}
 		}
@@ -298,7 +298,7 @@ func (f *FRD) PeakGain() (*FRDPeakGainResult, error) {
 	}
 	result := &FRDPeakGainResult{Gain: math.Inf(-1), Index: -1}
 	if p == 1 && m == 1 {
-		for k := 0; k < nw; k++ {
+		for k := range nw {
 			gain := cmplx.Abs(f.Response[k][0][0])
 			if gain > result.Gain {
 				result.Gain = gain
@@ -310,7 +310,7 @@ func (f *FRD) PeakGain() (*FRDPeakGainResult, error) {
 	}
 	ws := newComplexSVDWorkspace(p, m)
 	sv := make([]float64, min(p, m))
-	for k := 0; k < nw; k++ {
+	for k := range nw {
 		ws.singularValuesFromNested(sv, f.Response[k], p, m)
 		if sv[0] > result.Gain {
 			result.Gain = sv[0]
@@ -386,7 +386,7 @@ func (f *FRD) withResponseAndOmega(response [][][]complex128, omega []float64) *
 func (f *FRD) EvalFr(freqIdx int) [][]complex128 {
 	p, m := f.Dims()
 	result := make([][]complex128, p)
-	for i := 0; i < p; i++ {
+	for i := range p {
 		result[i] = make([]complex128, m)
 		copy(result[i], f.Response[freqIdx][i])
 	}
@@ -413,8 +413,8 @@ func (f *FRD) Bode() *BodeResult {
 	mag := newSampledScalarResponse(magDB, omega, p, m)
 	phaseResp := newSampledScalarResponse(phase, omega, p, m)
 	for k := range omega {
-		for i := 0; i < p; i++ {
-			for j := 0; j < m; j++ {
+		for i := range p {
+			for j := range m {
 				h := f.Response[k][i][j]
 				mag.set(k, i, j, 20*math.Log10(cmplx.Abs(h)))
 				phaseResp.set(k, i, j, cmplx.Phase(h)*180/math.Pi)
@@ -441,7 +441,7 @@ func (f *FRD) Nyquist() (*NyquistResult, error) {
 	nw := len(f.Omega)
 	contour := make([]complex128, nw)
 	contourN := make([]complex128, nw)
-	for k := 0; k < nw; k++ {
+	for k := range nw {
 		contour[k] = f.Response[k][0][0]
 		contourN[k] = cmplx.Conj(contour[k])
 	}
@@ -476,7 +476,7 @@ func (f *FRD) Sigma() (*SigmaResult, error) {
 	}
 	sv := make([]float64, nw*nsv)
 	if p == 1 && m == 1 {
-		for k := 0; k < nw; k++ {
+		for k := range nw {
 			sv[k] = cmplx.Abs(f.Response[k][0][0])
 		}
 		omega := make([]float64, nw)
@@ -486,7 +486,7 @@ func (f *FRD) Sigma() (*SigmaResult, error) {
 	response := newSampledComplexGridResponse(f.Response, f.Omega, p, m)
 	var ws *complexSVDWorkspace
 	ws = newComplexSVDWorkspace(p, m)
-	for k := 0; k < nw; k++ {
+	for k := range nw {
 		response.singularValues(sv[k*nsv:(k+1)*nsv], ws, k)
 	}
 	omega := make([]float64, nw)

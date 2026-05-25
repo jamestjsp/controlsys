@@ -320,7 +320,7 @@ func TestStep_SISO_Continuous(t *testing.T) {
 	}
 
 	_, steps := resp.Y.Dims()
-	for k := 0; k < steps; k++ {
+	for k := range steps {
 		tk := resp.T[k]
 		want := 1 - math.Exp(-tk)
 		got := resp.Y.At(0, k)
@@ -344,7 +344,7 @@ func TestStep_Discrete_Integrator(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for k := 0; k < 5; k++ {
+	for k := range 5 {
 		got := resp.Y.At(0, k)
 		want := float64(k)
 		if math.Abs(got-want) > 1e-12 {
@@ -374,8 +374,8 @@ func TestStep_MIMO_NonSymmetricA(t *testing.T) {
 
 	dcGain, _ := sys.DCGain()
 	lastK := steps - 1
-	for j := 0; j < 2; j++ {
-		for i := 0; i < 2; i++ {
+	for j := range 2 {
+		for i := range 2 {
 			got := resp.Y.At(j*2+i, lastK)
 			want := dcGain.At(i, j)
 			if math.Abs(got-want) > 0.05 {
@@ -393,7 +393,7 @@ func TestStep_PureGain(t *testing.T) {
 	}
 
 	_, steps := resp.Y.Dims()
-	for k := 0; k < steps; k++ {
+	for k := range steps {
 		if math.Abs(resp.Y.At(0, k)-3.0) > 1e-12 {
 			t.Errorf("k=%d: got %f, want 3.0", k, resp.Y.At(0, k))
 		}
@@ -471,7 +471,7 @@ func TestInitial_SISO_Continuous(t *testing.T) {
 	}
 
 	_, steps := resp.Y.Dims()
-	for k := 0; k < steps; k++ {
+	for k := range steps {
 		tk := resp.T[k]
 		want := math.Exp(-tk)
 		got := resp.Y.At(0, k)

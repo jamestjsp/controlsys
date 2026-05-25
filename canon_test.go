@@ -32,8 +32,8 @@ func TestCanonModal_RealEigenvalues(t *testing.T) {
 		t.Errorf("poles = %v, want [-3, -2]", poles)
 	}
 
-	for i := 0; i < 2; i++ {
-		for j := 0; j < 2; j++ {
+	for i := range 2 {
+		for j := range 2 {
 			if i != j && math.Abs(Amod.At(i, j)) > 1e-8 {
 				t.Errorf("A_modal[%d,%d] = %g, want 0 (should be diagonal)", i, j, Amod.At(i, j))
 			}
