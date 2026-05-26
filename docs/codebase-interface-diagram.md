@@ -1,6 +1,6 @@
 # Controlsys Codebase Interface Diagram
 
-This diagram shows the current module interfaces after the PR149-151 architecture deepening work. It is a codebase-level view, not a complete call graph: the public model interfaces are centered, and the internal seams show where recurring rules are localized.
+This diagram shows the current module interfaces on `main`. It is a codebase-level view, not a complete call graph: the public model interfaces are centered, and the internal seams show where recurring rules are localized.
 
 ## Public Interface Map
 
@@ -23,58 +23,61 @@ flowchart LR
     end
 
     subgraph construction["Construction and identification"]
-        constructStateSpace["New / NewGain / NewFromSlices"]
+        constructStateSpace["New / NewGain / NewFromSlices<br/>NewWithDelay / Rss / Drss"]
         constructDescriptor["NewDescriptor / ToExplicit"]
         realizeTransferFunc["TransferFunc.StateSpace"]
         constructZPK["NewZPK / NewZPKMIMO"]
         constructFRD["NewFRD"]
         constructModelArray["NewModelArray / StackModelArrays"]
+        constructGeneralized["NewGeneralizedModel<br/>NewGeneralizedClosedLoop"]
         identifyERA["ERA<br/>Markov parameters to state-space model"]
         estimateFreqResponse["FreqRespEst<br/>sampled input/output to response estimate"]
-        linearizeNonlinear["Linearize / EKF<br/>local nonlinear approximation"]
-        assemblePhysical["AssemblePhysical<br/>port-checked component assembly"]
+        linearizeNonlinear["Linearize / NewEKF<br/>local nonlinear approximation"]
+        assemblePhysical["NewPhysicalComponent / AssemblePhysical<br/>port-checked component assembly"]
     end
 
     subgraph interconnection["Interconnection interfaces"]
         seriesOp["Series"]
         parallelOp["Parallel"]
         feedbackOp["Feedback / SafeFeedback"]
-        connectOps["Append / Connect / LFT / SumBlk"]
-        delayOps["PadeDelay / ThiranDelay<br/>PullDelaysToLFT / AbsorbDelay"]
+        connectOps["Append / BlkDiag / Connect<br/>ConnectByName / LFT / SumBlk"]
+        frdConnectOps["FRDSeries / FRDParallel<br/>FRDFeedback / FRDConcat"]
+        delayOps["PadeDelay / ThiranDelay<br/>PullDelaysToLFT / AbsorbDelay<br/>SetDelayModel / GetDelayModel"]
     end
 
     subgraph conversion["Representation and domain conversion"]
         convertToTF["System.TransferFunction"]
         convertToZPK["System.ZPKModel"]
         convertToFRD["System.FRD"]
-        convertToDiscrete["Discretize / DiscretizeWithOpts / D2D"]
+        convertToDiscrete["System.Discretize / DiscretizeWithOpts<br/>DiscretizeZOH / FOH / Impulse / Matched / D2D"]
         convertToContinuous["System.Undiscretize / System.D2C"]
-        stateSpaceUtilities["StateTransform / EliminateStates<br/>FixedInputReduction"]
+        stateSpaceUtilities["StateTransform / EliminateStates<br/>FixedInputReduction / SelectByName / SelectByIndex"]
     end
 
     subgraph analysis["Analysis interfaces"]
-        timeAnalysis["Step / Impulse / Initial / Lsim / Simulate / StepInfo"]
-        freqAnalysis["FreqResponse / Bode / Nyquist / Margin / Sigma / FRD helpers"]
-        modelAnalysis["Poles / Zeros / Damp / IsStable / Pzmap"]
-        energyAnalysis["Gram / HSV / H2Norm / HinfNorm / Covar / Passive"]
-        structureAnalysis["Ctrb / Obsv / Stabilizable / Detectable"]
-        loopAnalysis["Loopsens / RootLocus"]
+        timeAnalysis["Step / Impulse / Initial / Lsim<br/>Simulate / StepInfo / StepInfoForSystem"]
+        signalGeneration["GenSig<br/>test-signal generation"]
+        freqAnalysis["FreqResponse / Bode / Nyquist / Nichols<br/>Margin / AllMargin / DiskMargin / Bandwidth / Sigma"]
+        modelAnalysis["Poles / Zeros / Damp / IsStable<br/>DCGain / Pzmap"]
+        energyAnalysis["Gram / HSV / Norm<br/>H2Norm / HinfNorm / Covar"]
+        structureAnalysis["Ctrb / Obsv / IsStabilizable / IsDetectable"]
+        loopAnalysis["Loopsens / RootLocus / FRDMargin"]
         passivityAnalysis["Passive / FRDPassive / SpectralFactor"]
     end
 
     subgraph transforms["Transformation and reduction"]
         realizationTransforms["SS2SS / Xperm / Canon"]
-        balancingTransforms["Balreal / Balred / Modred / Sminreal / ModalTruncate"]
+        balancingTransforms["Balreal / Balred / Modred / Sminreal<br/>Reduce / MinimalRealization / ModalTruncate"]
         decompositionTransforms["Stabsep / Modsep / Prescale / Ssbal"]
         algebraTransforms["Inv / Augstate"]
     end
 
     subgraph synthesis["Design and synthesis"]
         riccatiSolvers["Care / Dare / Lyap / DLyap"]
-        controllerDesign["Lqr / Dlqr / Lqi / Lqrd / Place / Acker"]
-        observerDesign["Kalman / Lqg / Observer assembly"]
+        controllerDesign["Lqr / Dlqr / Lqi / Lqrd<br/>Place / Acker"]
+        observerDesign["Kalman / Kalmd / Lqe / Lqg<br/>Estim / Reg"]
         robustSynthesis["H2Syn / HinfSyn"]
-        pidDesign["Pidtune / PID / SmithPredictor"]
+        pidDesign["NewPID / NewPIDStd / Pidtune<br/>PID / PID2 / SmithPredictor"]
         fixedStructureTuning["Systune / Looptune<br/>tuning goals"]
     end
 
@@ -84,6 +87,7 @@ flowchart LR
     caller --> constructZPK
     caller --> constructFRD
     caller --> constructModelArray
+    caller --> constructGeneralized
     caller --> identifyERA
     caller --> estimateFreqResponse
     caller --> linearizeNonlinear
@@ -96,6 +100,7 @@ flowchart LR
     constructZPK --> ZPK
     constructFRD --> FRD
     constructModelArray --> ModelArray
+    constructGeneralized --> generalizedModels
     identifyERA --> System
     estimateFreqResponse --> freqResponseMatrix
     estimateFreqResponse --> FRD
@@ -120,6 +125,7 @@ flowchart LR
     System --> parallelOp --> System
     System --> feedbackOp --> System
     System --> connectOps --> System
+    FRD --> frdConnectOps --> FRD
     System --> delayOps --> System
 
     System --> convertToDiscrete --> System
@@ -127,6 +133,7 @@ flowchart LR
     System --> stateSpaceUtilities --> System
 
     System --> timeAnalysis --> timeResponse
+    caller --> signalGeneration
     System --> freqAnalysis --> freqResponseMatrix
     FRD --> freqAnalysis
     System --> modelAnalysis
@@ -169,6 +176,7 @@ classDiagram
         +Validate()
         +Poles()
         +IsStable()
+        +DCGain()
         +IsContinuous()
         +IsDiscrete()
         +Simulate()
@@ -208,6 +216,7 @@ classDiagram
         +Shape()
         +Model()
         +SelectFlat()
+        +ModelFlat()
         +FreqResponse()
         +Step()
     }
@@ -215,6 +224,7 @@ classDiagram
     class GeneralizedModel {
         +InsertAnalysisPoint()
         +AnalysisPoint()
+        +HasAnalysisPoint()
         +CurrentSystem()
     }
 
@@ -277,6 +287,8 @@ classDiagram
         +ToExplicit()
         +EliminateStates()
         +FixedInputReduction()
+        +SelectByName()
+        +SelectByIndex()
         +AugmentInternalDelayOutputs()
     }
 
@@ -306,10 +318,10 @@ classDiagram
     }
 
     class generalizedTuningSeam {
-        +analysisPoints()
-        +openLoop()
-        +closedLoop()
-        +tunableController()
+        +numericBlockFromAny()
+        +primaryAnalysisPointName()
+        +tuneFixedStructure()
+        +evaluateTuningGoals()
     }
 
     class tuningGoalEvaluator {
@@ -328,16 +340,18 @@ classDiagram
     }
 
     class physicalAssemblySeam {
-        +validatePorts()
-        +prefixMetadata()
-        +appendComponents()
+        +NewPhysicalComponent()
+        +lookupPhysicalPort()
+        +prefixSystemMetadata()
+        +AssemblePhysical()
     }
 
     class modelArraySeam {
-        +validateCompatible()
+        +validateModelArrayCompatible()
         +flatIndex()
-        +freqResponse()
-        +step()
+        +ModelFlat()
+        +FreqResponse()
+        +Step()
     }
 
     class controllerObserverPolicy {
@@ -388,5 +402,5 @@ classDiagram
 - Interconnection routines concentrate compatibility checks, direct feedthrough handling, delay movement, and metadata propagation behind a small caller-facing interface.
 - Delay behavior is intentionally split between topology and conversion seams: topology answers what delay structure exists; conversion decides whether it remains explicit, becomes a delay bank, or moves into LFT form.
 - Analysis routines share sampled-response layouts so frequency-response data, Bode results, singular-value analysis, and frequency-response estimates use the same output/input/frequency indexing.
-- Model-array, physical-assembly, and state-space utility seams make MATLAB-parity workflows available while keeping compatibility checks and metadata rules localized.
+- Model-array, physical-assembly, and state-space utility seams support model-grid, port-checked assembly, and signal-selection workflows while keeping compatibility checks and metadata rules localized.
 - Synthesis routines route generalized-plant, generalized tuning, and controller/observer rules through policy modules before returning controller or closed-loop state-space models.

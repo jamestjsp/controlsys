@@ -1,8 +1,8 @@
-# controlsys
+# Controlsys
 
-Go library for linear state-space control systems.
+Go control-system toolbox for modeling, analyzing, transforming, and designing continuous-time and discrete-time linear time-invariant models.
 
-Supports continuous and discrete LTI models with MIMO capability.
+The state-space model is the fundamental representation. Transfer-function, zero-pole-gain, frequency-response data, model-array, generalized-model, and tunable-block workflows convert to or build on that core representation where needed. See [docs/codebase-interface-diagram.md](docs/codebase-interface-diagram.md) for the current interface map.
 
 ## Install
 
@@ -22,11 +22,11 @@ This package is intended to be usable in production control and estimation code,
 - Pin both `controlsys` and the required gonum fork to explicit versions.
 - Validate mission-critical models against an external reference, especially for ill-conditioned realizations and delay-heavy systems.
 - `System` values are mutable. Use `Copy` before sharing a model across goroutines that may mutate names, delays, notes, or other receiver state. Use `Validate` after direct field edits.
-- The repository CI runs `go vet ./...` and `go test -v -count=1 -race ./...`; those are the recommended baseline checks for downstream integrations.
+- The recommended baseline checks for downstream integrations are `go fix ./...`, `go vet ./...`, and `go test -v -count=1`.
 
 ## Features
 
-- **Four representations:** state-space, transfer function, zero-pole-gain (ZPK), and frequency-response data (FRD)
+- **Model interfaces:** state-space, transfer function, zero-pole-gain (ZPK), frequency-response data (FRD), model arrays, generalized models, and tunable blocks
 - **Frequency response:** Bode, Nyquist, Nichols, singular values
 - **Stability and response analysis:** gain/phase margins, disk margins, bandwidth, damping, root locus, passivity, step-response metrics
 - **Control design:** LQR, LQE (Kalman), LQI, LQG, H2 synthesis, H-infinity synthesis, pole placement, Ackermann placement, Riccati solvers (CARE/DARE)
@@ -37,7 +37,7 @@ This package is intended to be usable in production control and estimation code,
 - **Model arrays and physical assembly:** compatible model grids for parameter sweeps and port-checked physical component assembly
 - **Model reduction & decomposition:** controllability/observability staircase, balanced realization, balanced truncation, stable/unstable and modal separation, modal truncation
 - **System norms & covariance:** H2/H-infinity norms, Hankel singular values, state covariance
-- **Interconnection:** series, parallel, feedback, append, sum blocks
+- **Interconnection:** series, parallel, feedback, safe feedback, append, block diagonal, named/indexed connect, FRD interconnections, sum blocks, and LFT
 - **Time-domain:** step, impulse, initial condition, arbitrary input (lsim), discrete simulation
 - **Discretization:** ZOH, FOH, Tustin (bilinear), matched pole-zero, discrete-to-discrete resampling
 - **Transport delays:** input/output/internal delays, Pade and Thiran approximations, LFT representation
@@ -90,6 +90,10 @@ func main() {
 | `NewFRD` | Frequency-response data model from sampled complex responses |
 | `NewModelArray` | Compatible array of state-space models for sweeps or model grids |
 | `StackModelArrays` | Concatenate compatible model arrays along a new leading axis |
+| `NewGeneralizedModel` | Wrap a fixed or tunable block and attach analysis points |
+| `NewGeneralizedClosedLoop` | Build a plant/controller closed-loop model with an analysis point |
+| `NewPhysicalComponent` | Wrap a model with named physical ports |
+| `AssemblePhysical` | Validate physical port compatibility and append component models |
 | `NewDescriptor` | Descriptor state-space model with explicit E matrix |
 | `Rss` | Random stable continuous-time state-space model |
 | `Drss` | Random stable discrete-time state-space model |
@@ -185,6 +189,8 @@ func main() {
 | `Lqe` | Kalman filter (observer) gain |
 | `Kalman` | Kalman estimator from a `System` model |
 | `Kalmd` | Discrete-time Kalman estimator from sampled model data |
+| `Estim` | Observer model assembled from a plant and observer gain |
+| `Reg` | Observer-based regulator assembled from plant, state-feedback gain, and observer gain |
 | `Lqi` | LQR with integral action |
 | `Lqg` | LQG controller (combined LQR + Kalman filter) |
 | `H2Syn` | H2 optimal controller synthesis from generalized plant |
@@ -219,7 +225,7 @@ func main() {
 | Function/Type | Description |
 |---------------|-------------|
 | `Linearize(model, x0, u0)` | Jacobian linearization of a nonlinear model around an operating point |
-| `type NonlinearModel` | Continuous nonlinear model definition (F, G, H functions) |
+| `type NonlinearModel` | Nonlinear state and measurement model definition (`F`, `H`, dimensions `N`, `M`, `P`) |
 
 ### Model Reduction
 
@@ -227,6 +233,7 @@ func main() {
 |-----------------|-------------|
 | `Balreal` | Balanced realization |
 | `Balred` | Balanced truncation / singular perturbation |
+| `Reduce` / `MinimalRealization` | Controllable/observable state reduction workflows |
 | `Modred` | Model reduction by eliminating selected states |
 | `Ssbal` | State-space balancing / scaling |
 | `Sminreal` | Minimal realization via staircase reduction |
@@ -240,6 +247,7 @@ func main() {
 | `Prescale` | Pre-scale states/inputs/outputs for numerical conditioning |
 | `ToExplicit` | Convert supported descriptor models to explicit state-space form |
 | `DescriptorE` | Return a copy of the descriptor E matrix |
+| `SelectByName` / `SelectByIndex` | Select input/output channels by signal names or indices |
 | `EliminateStates` | Remove selected states using the model-reduction methods |
 | `FixedInputReduction` | Reduce a model by fixing selected input channels |
 | `AugmentInternalDelayOutputs` | Expose internal delay-bank outputs with prefixed names |
@@ -254,7 +262,7 @@ func main() {
 
 | Function | Description |
 |----------|-------------|
-| `Norm` | Generic norm entry point (`NormH2`, `NormInf`) |
+| `Norm` | Generic norm entry point (`NormH2` or `math.Inf(1)`) |
 | `H2Norm` | H2 norm (RMS gain) |
 | `HinfNorm` | H-infinity norm (peak gain) |
 | `HSV` | Hankel singular values |
@@ -276,17 +284,21 @@ func main() {
 | `(*TransferFunc).ZPK` | Transfer function → zero-pole-gain |
 | `(*ZPK).TransferFunction` | ZPK → transfer function |
 | `(*ZPK).StateSpace` | ZPK → state-space |
+| `(*System).FRD` | State-space → frequency-response data over a frequency grid |
 
 ### Discretization
 
 | Method | Description |
 |--------|-------------|
 | `Discretize` | Bilinear (Tustin) c2d |
+| `DiscretizeWithOpts` | Option-driven c2d with method and delay-modeling controls |
 | `DiscretizeZOH` | Zero-order hold c2d |
 | `DiscretizeFOH` | First-order hold c2d |
+| `DiscretizeImpulse` | Impulse-invariant c2d |
 | `DiscretizeMatched` | Matched pole-zero c2d |
 | `D2D` | Discrete-to-discrete resampling |
 | `Undiscretize` | Bilinear d2c |
+| `D2C` | Discrete-to-continuous conversion by Tustin or ZOH assumptions |
 
 ### Interconnection
 
@@ -343,7 +355,11 @@ func main() {
 | `SetInputDelay` | Set per-input delays |
 | `SetOutputDelay` | Set per-output delays |
 | `SetDelayModel` | Attach a custom internal delay model |
+| `GetDelayModel` | Read the internal delay model and delay times |
 | `DecomposeIODelay` | Split a full I/O delay matrix into input/output/residual pieces |
+| `PullDelaysToLFT` | Move external delays into the internal LFT delay representation |
+| `MinimalLFT` | Reduce redundant internal delay blocks |
+| `ZeroDelayApprox` | Replace internal delay blocks with zero-delay behavior |
 | `PadeDelay` | Pade rational approximation |
 | `ThiranDelay` | Thiran allpass (fractional discrete delays) |
 | `Pade` | Replace all delays with Pade approximations |
