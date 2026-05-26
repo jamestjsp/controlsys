@@ -22,7 +22,7 @@ This package is intended to be usable in production control and estimation code,
 - Pin both `controlsys` and the required gonum fork to explicit versions.
 - Validate mission-critical models against an external reference, especially for ill-conditioned realizations and delay-heavy systems.
 - `System` values are mutable. Use `Copy` before sharing a model across goroutines that may mutate names, delays, notes, or other receiver state. Use `Validate` after direct field edits.
-- The recommended baseline checks for downstream integrations are `go fix ./...`, `go vet ./...`, and `go test -v -count=1`.
+- The repository CI runs `go vet ./...` and `go test -v -count=1 -race ./...`; those are the recommended baseline checks for downstream integrations. Run `go fix ./...` before `go vet ./...` when updating code.
 
 ## Features
 
