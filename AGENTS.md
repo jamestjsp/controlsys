@@ -3,6 +3,14 @@
 For domain terminology, modeling assumptions, and project language, read
 `CONTEXT.md` before making design, documentation, or behavior changes.
 
+## gopls MCP
+
+Use `gopls mcp -instructions` as the source of truth. `gopls mcp` runs detached over stdio and only sees saved files.
+
+When `gopls` MCP tools are available for Go work, start with `go_workspace`, use `go_symbol_references` before changing symbol definitions, and run `go_diagnostics` on edited Go files before tests. Omit `files` for workspace diagnostics; do not pass Markdown files. If `go.mod` changes, run `go_vulncheck`.
+
+If the MCP tools are not exposed in Codex, say so and use CLI checks instead.
+
 ## Static Checks
 
 Run `go fix` the same way you run `go vet`:
