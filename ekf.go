@@ -69,9 +69,12 @@ func NewEKF(model *EKFModel, x0 *mat.VecDense, P0 *mat.Dense) (*EKF, error) {
 
 	xCopy := mat.VecDenseCopyOf(x0)
 	pCopy := mat.DenseCopyOf(P0)
+	modelCopy := *model
+	modelCopy.Q = mat.DenseCopyOf(model.Q)
+	modelCopy.R = mat.DenseCopyOf(model.R)
 
 	return &EKF{
-		model:  model,
+		model:  &modelCopy,
 		X:      xCopy,
 		P:      pCopy,
 		n:      n,
@@ -88,6 +91,34 @@ func NewEKF(model *EKFModel, x0 *mat.VecDense, P0 *mat.Dense) (*EKF, error) {
 		innov:  mat.NewVecDense(p, nil),
 		kInnov: mat.NewVecDense(n, nil),
 	}, nil
+}
+
+// Copy returns a deep copy of the filter state, covariance, and work buffers.
+func (e *EKF) Copy() *EKF {
+	if e == nil {
+		return nil
+	}
+	modelCopy := *e.model
+	modelCopy.Q = mat.DenseCopyOf(e.model.Q)
+	modelCopy.R = mat.DenseCopyOf(e.model.R)
+	return &EKF{
+		model:  &modelCopy,
+		X:      mat.VecDenseCopyOf(e.X),
+		P:      mat.DenseCopyOf(e.P),
+		n:      e.n,
+		p:      e.p,
+		ap:     mat.DenseCopyOf(e.ap),
+		cp:     mat.DenseCopyOf(e.cp),
+		s:      mat.DenseCopyOf(e.s),
+		kt:     mat.DenseCopyOf(e.kt),
+		k:      mat.DenseCopyOf(e.k),
+		ikc:    mat.DenseCopyOf(e.ikc),
+		ikcP:   mat.DenseCopyOf(e.ikcP),
+		kR:     mat.DenseCopyOf(e.kR),
+		kRKt:   mat.DenseCopyOf(e.kRKt),
+		innov:  mat.VecDenseCopyOf(e.innov),
+		kInnov: mat.VecDenseCopyOf(e.kInnov),
+	}
 }
 
 // Predict performs the EKF prediction step using control input u.

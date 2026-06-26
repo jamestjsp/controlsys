@@ -22,6 +22,15 @@ type PID struct {
 	Form PIDForm
 }
 
+// Copy returns a copy of the PID controller.
+func (p *PID) Copy() *PID {
+	if p == nil {
+		return nil
+	}
+	cp := *p
+	return &cp
+}
+
 type PIDOption func(*PID)
 
 func WithFilter(Tf float64) PIDOption {
@@ -107,6 +116,15 @@ type PID2 struct {
 	B  float64 // setpoint weight on proportional
 	C  float64 // setpoint weight on derivative
 	Dt float64
+}
+
+// Copy returns a copy of the 2-DOF PID controller.
+func (p *PID2) Copy() *PID2 {
+	if p == nil {
+		return nil
+	}
+	cp := *p
+	return &cp
 }
 
 func NewPID2(Kp, Ki, Kd, Tf, b, c float64, opts ...PIDOption) *PID2 {

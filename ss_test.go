@@ -184,6 +184,36 @@ func TestNewFromSlicesGainOnlyCopiesInputSlice(t *testing.T) {
 	}
 }
 
+func TestNewFromSlicesDynamicCopiesInputSlices(t *testing.T) {
+	a := []float64{0, 1, -2, -3}
+	b := []float64{0, 1}
+	c := []float64{1, 0}
+	d := []float64{5}
+
+	sys, err := NewFromSlices(2, 1, 1, a, b, c, d, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	a[0] = 99
+	b[0] = 99
+	c[0] = 99
+	d[0] = 99
+
+	if got := sys.A.At(0, 0); got != 0 {
+		t.Fatalf("A alias detected: got %v, want 0", got)
+	}
+	if got := sys.B.At(0, 0); got != 0 {
+		t.Fatalf("B alias detected: got %v, want 0", got)
+	}
+	if got := sys.C.At(0, 0); got != 1 {
+		t.Fatalf("C alias detected: got %v, want 1", got)
+	}
+	if got := sys.D.At(0, 0); got != 5 {
+		t.Fatalf("D alias detected: got %v, want 5", got)
+	}
+}
+
 func TestCopy(t *testing.T) {
 	sys, _ := NewFromSlices(2, 1, 1,
 		[]float64{0, 1, -2, -3},

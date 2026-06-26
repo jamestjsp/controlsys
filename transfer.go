@@ -22,6 +22,21 @@ type TransferFunc struct {
 	OutputName []string
 }
 
+// Copy returns a deep copy of the transfer-function model.
+func (tf *TransferFunc) Copy() *TransferFunc {
+	if tf == nil {
+		return nil
+	}
+	return &TransferFunc{
+		Num:        copyFloatTensor(tf.Num),
+		Den:        copyFloatRows(tf.Den),
+		Delay:      copyFloatRows(tf.Delay),
+		Dt:         tf.Dt,
+		InputName:  copyStringSlice(tf.InputName),
+		OutputName: copyStringSlice(tf.OutputName),
+	}
+}
+
 func (tf *TransferFunc) Dims() (p, m int) {
 	p = len(tf.Den)
 	if p > 0 && len(tf.Num) > 0 && len(tf.Num[0]) > 0 {
@@ -99,6 +114,17 @@ type TransferFuncResult struct {
 	TF           *TransferFunc
 	MinimalOrder int
 	RowDegrees   []int
+}
+
+func copyFloatTensor(src [][][]float64) [][][]float64 {
+	if src == nil {
+		return nil
+	}
+	dst := make([][][]float64, len(src))
+	for i := range src {
+		dst[i] = copyFloatRows(src[i])
+	}
+	return dst
 }
 
 func (sys *System) TransferFunction(opts *TransferFuncOpts) (*TransferFuncResult, error) {

@@ -24,6 +24,8 @@ type LyapunovWorkspace struct {
 }
 
 type LyapunovOpts struct {
+	// Workspace supplies reusable scratch storage. Results may share its storage
+	// until the next call that reuses the same workspace.
 	Workspace *LyapunovWorkspace
 }
 

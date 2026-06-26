@@ -9,6 +9,31 @@ import (
 	"gonum.org/v1/gonum/mat"
 )
 
+func TestZPKCopyIsIndependent(t *testing.T) {
+	z := &ZPK{
+		Zeros:      [][][]complex128{{{1 + 2i}}},
+		Poles:      [][][]complex128{{{-3 + 4i}}},
+		Gain:       [][]float64{{5}},
+		Dt:         0.1,
+		InputName:  []string{"u"},
+		OutputName: []string{"y"},
+	}
+
+	cp := z.Copy()
+	z.Zeros[0][0][0] = 99
+	z.Poles[0][0][0] = 99
+	z.Gain[0][0] = 99
+	z.InputName[0] = "mutated"
+	z.OutputName[0] = "mutated"
+
+	if cp.Zeros[0][0][0] != 1+2i || cp.Poles[0][0][0] != -3+4i || cp.Gain[0][0] != 5 {
+		t.Fatalf("Copy aliases model storage: %+v", cp)
+	}
+	if cp.InputName[0] != "u" || cp.OutputName[0] != "y" {
+		t.Fatalf("Copy aliases names: %+v", cp)
+	}
+}
+
 // --- Phase 0: Poly.Roots tests ---
 
 func TestPolyRootsQuadratic(t *testing.T) {

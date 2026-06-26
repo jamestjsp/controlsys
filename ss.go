@@ -242,26 +242,26 @@ func NewFromSlices(n, m, p int, a, b, c, d []float64, dt float64) (*System, erro
 		if len(a) != n*n {
 			return nil, fmt.Errorf("a length %d != n²=%d: %w", len(a), n*n, ErrDimensionMismatch)
 		}
-		A = mat.NewDense(n, n, a)
+		A = mat.NewDense(n, n, append([]float64(nil), a...))
 	}
 	if n > 0 && m > 0 {
 		if len(b) != n*m {
 			return nil, fmt.Errorf("b length %d != n*m=%d: %w", len(b), n*m, ErrDimensionMismatch)
 		}
-		B = mat.NewDense(n, m, b)
+		B = mat.NewDense(n, m, append([]float64(nil), b...))
 	}
 	if p > 0 && n > 0 {
 		if len(c) != p*n {
 			return nil, fmt.Errorf("c length %d != p*n=%d: %w", len(c), p*n, ErrDimensionMismatch)
 		}
-		C = mat.NewDense(p, n, c)
+		C = mat.NewDense(p, n, append([]float64(nil), c...))
 	}
 	if p > 0 && m > 0 {
 		if d != nil {
 			if len(d) != p*m {
 				return nil, fmt.Errorf("d length %d != p*m=%d: %w", len(d), p*m, ErrDimensionMismatch)
 			}
-			D = mat.NewDense(p, m, d)
+			D = mat.NewDense(p, m, append([]float64(nil), d...))
 		}
 	}
 

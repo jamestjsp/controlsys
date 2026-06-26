@@ -26,6 +26,31 @@ func TestTransferFuncDims(t *testing.T) {
 	}
 }
 
+func TestTransferFuncCopyIsIndependent(t *testing.T) {
+	tf := &TransferFunc{
+		Num:        [][][]float64{{{1, 2}}},
+		Den:        [][]float64{{1, 3}},
+		Delay:      [][]float64{{0.5}},
+		Dt:         0.1,
+		InputName:  []string{"u"},
+		OutputName: []string{"y"},
+	}
+
+	cp := tf.Copy()
+	tf.Num[0][0][0] = 99
+	tf.Den[0][0] = 99
+	tf.Delay[0][0] = 99
+	tf.InputName[0] = "mutated"
+	tf.OutputName[0] = "mutated"
+
+	if cp.Num[0][0][0] != 1 || cp.Den[0][0] != 1 || cp.Delay[0][0] != 0.5 {
+		t.Fatalf("Copy aliases polynomial or delay storage: %+v", cp)
+	}
+	if cp.InputName[0] != "u" || cp.OutputName[0] != "y" {
+		t.Fatalf("Copy aliases names: %+v", cp)
+	}
+}
+
 func TestTransferFuncStateSpaceRejectsMalformedRawModel(t *testing.T) {
 	tests := []struct {
 		name string

@@ -152,6 +152,23 @@ type C2DOptions struct {
 	DelayModeling string
 }
 
+type C2DMethod string
+
+const (
+	C2DMethodZOH     C2DMethod = "zoh"
+	C2DMethodTustin  C2DMethod = "tustin"
+	C2DMethodFOH     C2DMethod = "foh"
+	C2DMethodImpulse C2DMethod = "impulse"
+	C2DMethodMatched C2DMethod = "matched"
+)
+
+type C2DDelayModeling string
+
+const (
+	C2DDelayModelingState    C2DDelayModeling = "state"
+	C2DDelayModelingInternal C2DDelayModeling = "internal"
+)
+
 func (sys *System) DiscretizeWithOpts(dt float64, opts C2DOptions) (*System, error) {
 	plan, err := newC2DPlan(sys, dt, opts)
 	if err != nil {

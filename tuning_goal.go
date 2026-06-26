@@ -48,34 +48,50 @@ func NewTuningGoal(spec TuningGoalSpec) (TuningGoal, error) {
 	return TuningGoal{spec: spec}, nil
 }
 
+// NewTrackingGoal returns a tracking goal and panics if the goal is invalid.
+// Use NewTuningGoal for error-returning construction.
 func NewTrackingGoal(name string, maxError float64) TuningGoal {
 	return mustTuningGoal(TuningGoalSpec{Name: name, Type: TuningGoalTracking, Max: maxError})
 }
 
+// NewRejectionGoal returns a rejection goal and panics if the goal is invalid.
+// Use NewTuningGoal for error-returning construction.
 func NewRejectionGoal(name string, maxGain float64) TuningGoal {
 	return mustTuningGoal(TuningGoalSpec{Name: name, Type: TuningGoalRejection, Max: maxGain})
 }
 
+// NewSensitivityGoal returns a sensitivity goal and panics if the goal is invalid.
+// Use NewTuningGoal for error-returning construction.
 func NewSensitivityGoal(name string, maxGain float64) TuningGoal {
 	return mustTuningGoal(TuningGoalSpec{Name: name, Type: TuningGoalSensitivity, Max: maxGain})
 }
 
+// NewWeightedGainGoal returns a weighted-gain goal and panics if the goal is invalid.
+// Use NewTuningGoal for error-returning construction.
 func NewWeightedGainGoal(name string, maxGain float64) TuningGoal {
 	return mustTuningGoal(TuningGoalSpec{Name: name, Type: TuningGoalWeightedGain, Max: maxGain})
 }
 
+// NewLoopShapeGoal returns a loop-shape goal and panics if the goal is invalid.
+// Use NewTuningGoal for error-returning construction.
 func NewLoopShapeGoal(name string, minGain, maxGain float64) TuningGoal {
 	return mustTuningGoal(TuningGoalSpec{Name: name, Type: TuningGoalLoopShape, Min: minGain, Max: maxGain})
 }
 
+// NewMarginGoal returns a stability-margin goal and panics if the goal is invalid.
+// Use NewTuningGoal for error-returning construction.
 func NewMarginGoal(name string, minGainMarginDB, minPhaseMarginDeg float64) TuningGoal {
 	return mustTuningGoal(TuningGoalSpec{Name: name, Type: TuningGoalMargin, Min: minGainMarginDB, Max: minPhaseMarginDeg})
 }
 
+// NewPoleGoal returns a pole-location goal and panics if the goal is invalid.
+// Use NewTuningGoal for error-returning construction.
 func NewPoleGoal(name string, maxRealPart float64) TuningGoal {
 	return mustTuningGoal(TuningGoalSpec{Name: name, Type: TuningGoalPole, Max: maxRealPart})
 }
 
+// NewOvershootGoal returns an overshoot goal and panics if the goal is invalid.
+// Use NewTuningGoal for error-returning construction.
 func NewOvershootGoal(name string, maxPercent float64) TuningGoal {
 	return mustTuningGoal(TuningGoalSpec{Name: name, Type: TuningGoalOvershoot, Max: maxPercent})
 }
