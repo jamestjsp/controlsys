@@ -811,7 +811,7 @@ func BenchmarkPidtune_PI(b *testing.B) {
 	sys := benchSysNonSym(4, 1, 1)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		Pidtune(sys, "PI")
+		Pidtune(sys, PidtunePI)
 	}
 }
 
@@ -819,7 +819,7 @@ func BenchmarkPidtune_PID(b *testing.B) {
 	sys := benchSysNonSym(4, 1, 1)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		Pidtune(sys, "PID")
+		Pidtune(sys, PidtunePID)
 	}
 }
 
@@ -827,6 +827,6 @@ func BenchmarkPidtune_PIDF(b *testing.B) {
 	sys := benchSysNonSym(4, 1, 1)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		Pidtune(sys, "PIDF")
+		Pidtune(sys, PidtunePIDF)
 	}
 }

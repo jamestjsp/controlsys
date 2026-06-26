@@ -18,7 +18,7 @@ func (sys *System) Discretize(dt float64) (*System, error) {
 	}
 
 	if sys.HasInternalDelay() {
-		return discretizeWithInternalDelay(sys, dt, C2DOptions{Method: "tustin"})
+		return discretizeWithInternalDelay(sys, dt, C2DOptions{Method: C2DMethodTustin})
 	}
 
 	beta := 2.0 / dt
@@ -147,9 +147,9 @@ func bilinear(sys *System, palpha, pbeta, alpha, beta float64) (*System, error) 
 }
 
 type C2DOptions struct {
-	Method        string
+	Method        C2DMethod
 	ThiranOrder   int
-	DelayModeling string
+	DelayModeling C2DDelayModeling
 }
 
 type C2DMethod string
@@ -404,7 +404,7 @@ func (sys *System) DiscretizeZOH(dt float64) (*System, error) {
 	}
 
 	if sys.HasInternalDelay() {
-		return discretizeWithInternalDelay(sys, dt, C2DOptions{Method: "zoh"})
+		return discretizeWithInternalDelay(sys, dt, C2DOptions{Method: C2DMethodZOH})
 	}
 
 	n, m, _ := sys.Dims()
@@ -483,7 +483,7 @@ func discretizeWithInternalDelay(sys *System, dt float64, opts C2DOptions) (*Sys
 
 	method := opts.Method
 	if method == "" {
-		method = "zoh"
+		method = C2DMethodZOH
 	}
 
 	n, _, _ := sys.Dims()
@@ -499,13 +499,13 @@ func discretizeWithInternalDelay(sys *System, dt float64, opts C2DOptions) (*Sys
 	var Bd2 *mat.Dense
 
 	switch method {
-	case "zoh":
+	case C2DMethodZOH:
 		disc, Bd2, err = discretizeZOHAugmented(sys, dt)
-	case "tustin":
+	case C2DMethodTustin:
 		disc, Bd2, err = discretizeTustinAugmented(sys, dt)
-	case "foh":
+	case C2DMethodFOH:
 		disc, Bd2, err = discretizeFOHAugmented(sys, dt)
-	case "impulse":
+	case C2DMethodImpulse:
 		disc, Bd2, err = discretizeImpulseAugmented(sys, dt)
 	default:
 		return nil, fmt.Errorf("DiscretizeWithOpts: unknown method %q", method)
@@ -695,7 +695,7 @@ func (sys *System) DiscretizeImpulse(dt float64) (*System, error) {
 	}
 
 	if sys.HasInternalDelay() {
-		return discretizeWithInternalDelay(sys, dt, C2DOptions{Method: "impulse"})
+		return discretizeWithInternalDelay(sys, dt, C2DOptions{Method: C2DMethodImpulse})
 	}
 
 	n, m, _ := sys.Dims()
@@ -788,7 +788,7 @@ func (sys *System) DiscretizeFOH(dt float64) (*System, error) {
 	}
 
 	if sys.HasInternalDelay() {
-		return discretizeWithInternalDelay(sys, dt, C2DOptions{Method: "foh"})
+		return discretizeWithInternalDelay(sys, dt, C2DOptions{Method: C2DMethodFOH})
 	}
 
 	n, m, p := sys.Dims()
@@ -1150,7 +1150,7 @@ func matchedGainFallback(num, den Poly, discZeros, discPoles []complex128, dt fl
 //     axis and A_d − I non-singular (no eigenvalue exactly at 1).
 //
 // Delay fields are converted back to continuous (τ_c = τ_d · Dt).
-func (sys *System) D2C(method string) (*System, error) {
+func (sys *System) D2C(method C2DMethod) (*System, error) {
 	plan, err := newD2CPlan(sys, method)
 	if err != nil {
 		return nil, err

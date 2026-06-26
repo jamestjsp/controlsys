@@ -9,8 +9,8 @@ type c2dPlan struct {
 	sys             *System
 	dt              float64
 	opts            C2DOptions
-	method          string
-	delayModeling   string
+	method          C2DMethod
+	delayModeling   C2DDelayModeling
 	contInputDelay  []float64
 	contOutputDelay []float64
 	workSys         *System
@@ -26,10 +26,10 @@ func newC2DPlan(sys *System, dt float64, opts C2DOptions) (c2dPlan, error) {
 
 	method := opts.Method
 	if method == "" {
-		method = "zoh"
+		method = C2DMethodZOH
 	}
 	switch method {
-	case "zoh", "tustin", "foh", "impulse", "matched":
+	case C2DMethodZOH, C2DMethodTustin, C2DMethodFOH, C2DMethodImpulse, C2DMethodMatched:
 	default:
 		return c2dPlan{}, fmt.Errorf("DiscretizeWithOpts: unknown method %q", method)
 	}
@@ -37,10 +37,10 @@ func newC2DPlan(sys *System, dt float64, opts C2DOptions) (c2dPlan, error) {
 
 	delayModeling := opts.DelayModeling
 	if delayModeling == "" {
-		delayModeling = "state"
+		delayModeling = C2DDelayModelingState
 	}
 	switch delayModeling {
-	case "state", "internal":
+	case C2DDelayModelingState, C2DDelayModelingInternal:
 	default:
 		return c2dPlan{}, fmt.Errorf("DiscretizeWithOpts: unknown DelayModeling %q", delayModeling)
 	}
@@ -58,7 +58,7 @@ func newC2DPlan(sys *System, dt float64, opts C2DOptions) (c2dPlan, error) {
 	}
 	plan.workSys.InputDelay = nil
 	plan.workSys.OutputDelay = nil
-	if sys.Delay != nil && (opts.ThiranOrder > 0 || delayModeling == "internal") {
+	if sys.Delay != nil && (opts.ThiranOrder > 0 || delayModeling == C2DDelayModelingInternal) {
 		decomp := decomposedDelayMatrix(sys.Delay)
 		if decomp.hasResidual() {
 			plan.workSys.Delay = decomp.residual
@@ -82,7 +82,7 @@ func (p c2dPlan) run() (*System, error) {
 		return nil, err
 	}
 
-	if p.delayModeling == "internal" {
+	if p.delayModeling == C2DDelayModelingInternal {
 		return discretizeDelaysAsInternal(disc, p.contInputDelay, p.contOutputDelay, p.dt)
 	}
 	return p.applyExternalDelays(disc)
@@ -120,18 +120,18 @@ func (p c2dPlan) applyExternalDelays(disc *System) (*System, error) {
 
 type d2cPlan struct {
 	sys    *System
-	method string
+	method C2DMethod
 }
 
-func newD2CPlan(sys *System, method string) (d2cPlan, error) {
+func newD2CPlan(sys *System, method C2DMethod) (d2cPlan, error) {
 	if sys.IsContinuous() {
 		return d2cPlan{}, fmt.Errorf("D2C: system already continuous: %w", ErrWrongDomain)
 	}
 	if method == "" {
-		method = "zoh"
+		method = C2DMethodZOH
 	}
 	switch method {
-	case "zoh", "tustin":
+	case C2DMethodZOH, C2DMethodTustin:
 		return d2cPlan{sys: sys, method: method}, nil
 	default:
 		return d2cPlan{}, fmt.Errorf("D2C: unknown method %q (supported: \"tustin\", \"zoh\")", method)
@@ -140,9 +140,9 @@ func newD2CPlan(sys *System, method string) (d2cPlan, error) {
 
 func (p d2cPlan) run() (*System, error) {
 	switch p.method {
-	case "zoh":
+	case C2DMethodZOH:
 		return p.sys.d2cZOH()
-	case "tustin":
+	case C2DMethodTustin:
 		return p.sys.Undiscretize()
 	default:
 		panic("unvalidated D2C method")

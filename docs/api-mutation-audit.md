@@ -32,7 +32,7 @@ ownership clarity, and release readiness, not shrinking the toolbox shape.
 | P1 | `System`, `TransferFunc`, `ZPK`, `FRD`, result structs | Public fields make mutation possible by design, but ownership rules were not stated uniformly. | Fixed with package-level ownership docs for public mutable models, results, constructors, workspace-backed outputs, and nil receivers. |
 | P1 | `Lyap`, `DLyap`, `Care`, `Dare`, `Lqr`, `Dlqr`, `Lqi`, `Lqrd` | Workspace-backed result ownership was not consistently visible across Riccati/controller APIs. | Fixed by documenting workspace-backed result lifetime in package docs, `RiccatiOpts`, `RiccatiResult`, and `LyapunovOpts`. |
 | P1 | `PID`, `PID2`, `TransferFunc`, `ZPK`, `FRD`, `EKF` | Public model structs had no uniform copy helper outside `System`/array workflows. | Fixed with `Copy` methods and independence tests for each model type. |
-| P2 | `D2C`, `Pidtune`, `FreqRespEst`, `C2DOptions` | Several APIs used free-form strings for method/type selectors. | Fixed with named constants for C2D/D2C methods, C2D delay modeling, PID tuning types, and frequency-response estimator methods while keeping string compatibility. |
+| P2 | `D2C`, `Pidtune`, `FreqRespEst`, `C2DOptions` | Several APIs used free-form strings for method/type selectors. | Fixed with typed selector fields and parameters for C2D/D2C methods, C2D delay modeling, PID tuning types, and frequency-response estimator methods. |
 | P2 | `NewTrackingGoal`, `NewRejectionGoal`, `NewSensitivityGoal`, `NewWeightedGainGoal`, `NewLoopShapeGoal`, `NewMarginGoal`, `NewPoleGoal`, `NewOvershootGoal` | Convenience constructors call `mustTuningGoal` and can panic on invalid names or bounds. | Fixed by documenting panic behavior and pointing callers to error-returning `NewTuningGoal`. |
 | P2 | Nil receiver behavior | Some methods are nil-safe (`ModelArray`, `TunableReal` accessors), while most model methods are not. | Fixed with package-level docs: nil receivers are unsupported unless a method explicitly documents nil-safe behavior. |
 
@@ -119,7 +119,7 @@ ownership clarity, and release readiness, not shrinking the toolbox shape.
 | `(*System).DiscretizeFOH` | `pure`, `returns-mutable` | First-order hold conversion. |
 | `(*System).DiscretizeMatched` | `pure`, `returns-mutable` | Matched pole-zero conversion. |
 | `(*System).Undiscretize` | `pure`, `returns-mutable` | Inverse bilinear conversion. |
-| `(*System).D2C` | `pure`, `returns-mutable` | String method selector should stay documented. |
+| `(*System).D2C` | `pure`, `returns-mutable` | Uses typed `C2DMethod` selector. |
 | `(*System).D2D` | `pure`, `returns-mutable` | Resamples through conversion policy. |
 
 ## Analysis, Synthesis, and Numerical Solvers
@@ -203,7 +203,7 @@ ownership clarity, and release readiness, not shrinking the toolbox shape.
 | `(*System).Simulate` | `view-in`, `workspace`, `returns-mutable` | Mutates supplied buffers in `SimulateOpts`. |
 | `StepInfo` | `view-in`, `returns-mutable` | Reads response and returns metrics slice. |
 | `StepInfoForSystem` | `pure`, `returns-mutable` | Runs `Step` then `StepInfo`. |
-| `FreqRespEst` | `view-in`, `returns-mutable` | String method selector remains compatibility risk. |
+| `FreqRespEst` | `view-in`, `returns-mutable` | Uses typed `FreqRespEstMethod` selector through options. |
 | `(*FreqRespEstResult).CoherenceAt` | `pure` | Accessor over exported coherence slice. |
 | `(*FreqRespEstResult).FRD` | `returns-mutable` | Converts estimate to FRD. |
 | `ERA` | `view-in`, `returns-mutable` | Reads Markov matrices and returns identified model. |
@@ -346,7 +346,7 @@ ownership clarity, and release readiness, not shrinking the toolbox shape.
 | `(*PID).System` | `returns-mutable` | Builds controller model. |
 | `(*PID2).Copy` | `copy-out`, `returns-mutable` | Copies 2-DOF controller scalar fields. |
 | `(*PID2).System` | `returns-mutable` | Builds 2-DOF controller model. |
-| `Pidtune` | `view-in`, `returns-mutable` | String controller type selector. |
+| `Pidtune` | `view-in`, `returns-mutable` | Uses typed `PidtuneType` selector. |
 | `NewEKF` | `copy-in`, `returns-mutable` | Copies `x0`, `P0`, `Q`, and `R`; stores model callback functions by reference. |
 | `(*EKF).Copy` | `copy-out`, `returns-mutable` | Deep-copies filter state, covariance, noise matrices, and work buffers. |
 | `(*EKF).Predict` | `mutates`, `alias-risk` | Mutates filter state/covariance; stores callback-returned state vector. |

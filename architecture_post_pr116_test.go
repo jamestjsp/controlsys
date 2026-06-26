@@ -35,7 +35,7 @@ func TestPostPR116CrossSeamConversionMetadataRationalAndFRD(t *testing.T) {
 		t.Fatalf("discrete metadata InputName=%v OutputName=%v", disc.InputName, disc.OutputName)
 	}
 
-	back, err := disc.D2C("zoh")
+	back, err := disc.D2C(C2DMethodZOH)
 	if err != nil {
 		t.Fatal(err)
 	}

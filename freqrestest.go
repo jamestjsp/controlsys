@@ -14,7 +14,7 @@ type FreqRespEstOpts struct {
 	NFFT     int
 	Window   func([]float64) []float64
 	NOverlap int
-	Method   string // "h1" (default), "h2", "fft"
+	Method   FreqRespEstMethod
 }
 
 type FreqRespEstMethod string
@@ -38,7 +38,7 @@ type freqRespEstPlan struct {
 	hop      int
 	nSeg     int
 	nFreq    int
-	method   string
+	method   FreqRespEstMethod
 	win      []float64
 	winPower float64
 }
@@ -68,7 +68,7 @@ func FreqRespEst(input, output *mat.Dense, dt float64, opts *FreqRespEstOpts) (*
 		return nil, err
 	}
 
-	if plan.method == "fft" {
+	if plan.method == FreqRespEstFFT {
 		return freqRespEstFFT(input, output, dt, m, p, N, plan.nfft, plan.win, plan.winPower)
 	}
 
@@ -88,23 +88,23 @@ func FreqRespEst(input, output *mat.Dense, dt float64, opts *FreqRespEstOpts) (*
 		dt, m, p, plan.nfft, plan.nFreq, plan.hop, plan.nSeg, plan.winPower, plan.method)
 }
 
-func validateFreqRespEstMethod(method string, m, p int) error {
+func validateFreqRespEstMethod(method FreqRespEstMethod, m, p int) error {
 	switch method {
-	case "h1", "h2", "fft":
+	case FreqRespEstH1, FreqRespEstH2, FreqRespEstFFT:
 	default:
 		return fmt.Errorf("FreqRespEst: unknown method %q: %w", method, ErrDimensionMismatch)
 	}
-	if method == "h2" && (m != 1 || p != 1) {
+	if method == FreqRespEstH2 && (m != 1 || p != 1) {
 		return fmt.Errorf("FreqRespEst: h2 estimator is only supported for SISO data: %w", ErrDimensionMismatch)
 	}
 	return nil
 }
 
-func resolveOpts(opts *FreqRespEstOpts, N int) (nfft int, winFunc func([]float64) []float64, noverlap int, method string) {
+func resolveOpts(opts *FreqRespEstOpts, N int) (nfft int, winFunc func([]float64) []float64, noverlap int, method FreqRespEstMethod) {
 	nfft = 256
 	winFunc = window.Hann
 	noverlap = -1
-	method = "h1"
+	method = FreqRespEstH1
 
 	if opts != nil {
 		if opts.NFFT > 0 {
@@ -142,7 +142,7 @@ func newFreqRespEstPlan(opts *FreqRespEstOpts, N, m, p int) (freqRespEstPlan, er
 
 	plan := freqRespEstPlan{nfft: nfft, noverlap: noverlap, method: method}
 	plan.rebuildWindow(winFunc)
-	if method == "fft" {
+	if method == FreqRespEstFFT {
 		return plan, nil
 	}
 
@@ -174,7 +174,7 @@ func (p *freqRespEstPlan) rebuildWindow(winFunc func([]float64) []float64) {
 
 func welchSISO(fft *fourier.FFT, seg []float64, _ []complex128, win []float64,
 	uData []float64, _ int, yData []float64, _ int,
-	dt float64, nfft, nFreq, hop, nSeg int, _ float64, method string,
+	dt float64, nfft, nFreq, hop, nSeg int, _ float64, method FreqRespEstMethod,
 ) (*FreqRespEstResult, error) {
 
 	Suu := make([]float64, nFreq)
@@ -226,7 +226,7 @@ func welchSISO(fft *fourier.FFT, seg []float64, _ []complex128, win []float64,
 		if Suu[f] < sthresh {
 			continue
 		}
-		if method == "h2" {
+		if method == FreqRespEstH2 {
 			if cmplx.Abs(Syu[f]) < eps()*math.Sqrt(Syy[f]*Suu[f]) {
 				continue
 			}
@@ -255,7 +255,7 @@ func welchSISO(fft *fourier.FFT, seg []float64, _ []complex128, win []float64,
 
 func welchMIMO(fft *fourier.FFT, seg []float64, _ []complex128, win []float64,
 	input, output *mat.Dense,
-	dt float64, m, p, nfft, nFreq, hop, nSeg int, _ float64, _ string,
+	dt float64, m, p, nfft, nFreq, hop, nSeg int, _ float64, _ FreqRespEstMethod,
 ) (*FreqRespEstResult, error) {
 	inR := input.RawMatrix()
 	outR := output.RawMatrix()
