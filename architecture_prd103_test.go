@@ -108,7 +108,7 @@ func TestPRD103DelayConversionPolicyPublicWorkflows(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	disc, err := cont.DiscretizeWithOpts(0.1, C2DOptions{Method: "zoh", ThiranOrder: 3})
+	disc, err := cont.DiscretizeWithOpts(0.1, C2DOptions{Method: C2DMethodZOH, ThiranOrder: 3})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -200,7 +200,7 @@ func TestPRD103FrequencyAnalysisSampledResponseParity(t *testing.T) {
 	if _, err := Margin(delayed); err != nil {
 		t.Fatalf("delayed SISO Margin failed: %v", err)
 	}
-	if _, err := Pidtune(delayed, "PI"); err != nil {
+	if _, err := Pidtune(delayed, PidtunePI); err != nil {
 		t.Fatalf("delayed SISO Pidtune failed: %v", err)
 	}
 }

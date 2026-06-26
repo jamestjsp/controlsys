@@ -191,7 +191,7 @@ func TestFreqRespEst_FFTMethod(t *testing.T) {
 	u := mat.NewDense(1, N, uData)
 	resp, _ := sys.Simulate(u, nil, nil)
 
-	est, err := FreqRespEst(u, resp.Y, dt, &FreqRespEstOpts{Method: "fft", NFFT: N})
+	est, err := FreqRespEst(u, resp.Y, dt, &FreqRespEstOpts{Method: FreqRespEstFFT, NFFT: N})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -318,7 +318,7 @@ func TestFreqRespEstRejectsUnknownMethod(t *testing.T) {
 	u := mat.NewDense(1, 16, []float64{1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0})
 	y := mat.NewDense(1, 16, []float64{0.5, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0.5, 0})
 
-	_, err := FreqRespEst(u, y, 0.1, &FreqRespEstOpts{Method: "bogus"})
+	_, err := FreqRespEst(u, y, 0.1, &FreqRespEstOpts{Method: FreqRespEstMethod("bogus")})
 	if err == nil {
 		t.Fatal("expected unknown method error")
 	}

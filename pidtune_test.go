@@ -89,7 +89,7 @@ func makePlant(t *testing.T, num, den []float64) *System {
 
 func TestPidtune_PI_FirstOrder(t *testing.T) {
 	plant := makePlant(t, []float64{1}, []float64{1, 1})
-	pid, err := Pidtune(plant, "PI")
+	pid, err := Pidtune(plant, PidtunePI)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,7 +102,7 @@ func TestPidtune_PI_FirstOrder(t *testing.T) {
 
 func TestPidtune_PID_SecondOrder(t *testing.T) {
 	plant := makePlant(t, []float64{1}, []float64{1, 2, 1})
-	pid, err := Pidtune(plant, "PID")
+	pid, err := Pidtune(plant, PidtunePID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,7 +115,7 @@ func TestPidtune_PID_SecondOrder(t *testing.T) {
 
 func TestPidtune_PI_Integrator(t *testing.T) {
 	plant := makePlant(t, []float64{1}, []float64{1, 0})
-	pid, err := Pidtune(plant, "PI")
+	pid, err := Pidtune(plant, PidtunePI)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,7 +126,7 @@ func TestPidtune_PI_Integrator(t *testing.T) {
 
 func TestPidtune_PI_Unstable(t *testing.T) {
 	plant := makePlant(t, []float64{1}, []float64{1, -1})
-	pid, err := Pidtune(plant, "PI")
+	pid, err := Pidtune(plant, PidtunePI)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -137,7 +137,7 @@ func TestPidtune_PI_Unstable(t *testing.T) {
 
 func TestPidtune_PI_CustomCrossover(t *testing.T) {
 	plant := makePlant(t, []float64{1}, []float64{1, 1})
-	pid, err := Pidtune(plant, "PI", PidtuneOptions{CrossoverFrequency: 10})
+	pid, err := Pidtune(plant, PidtunePI, PidtuneOptions{CrossoverFrequency: 10})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -159,7 +159,7 @@ func TestPidtune_PI_CustomCrossover(t *testing.T) {
 
 func TestPidtune_P(t *testing.T) {
 	plant := makePlant(t, []float64{1}, []float64{1, 1})
-	pid, err := Pidtune(plant, "P")
+	pid, err := Pidtune(plant, PidtuneP)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -175,7 +175,7 @@ func TestPidtune_P(t *testing.T) {
 
 func TestPidtune_I(t *testing.T) {
 	plant := makePlant(t, []float64{1}, []float64{1, 1})
-	pid, err := Pidtune(plant, "I")
+	pid, err := Pidtune(plant, PidtuneI)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -191,7 +191,7 @@ func TestPidtune_I(t *testing.T) {
 
 func TestPidtune_PD(t *testing.T) {
 	plant := makePlant(t, []float64{1}, []float64{1, 2, 1})
-	pid, err := Pidtune(plant, "PD")
+	pid, err := Pidtune(plant, PidtunePD)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -205,7 +205,7 @@ func TestPidtune_PD(t *testing.T) {
 
 func TestPidtune_PIDF(t *testing.T) {
 	plant := makePlant(t, []float64{1}, []float64{1, 2, 1})
-	pid, err := Pidtune(plant, "PIDF")
+	pid, err := Pidtune(plant, PidtunePIDF)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -221,7 +221,7 @@ func TestPidtune_PIDF(t *testing.T) {
 
 func TestPidtune_InvalidType(t *testing.T) {
 	plant := makePlant(t, []float64{1}, []float64{1, 1})
-	_, err := Pidtune(plant, "FOO")
+	_, err := Pidtune(plant, PidtuneType("FOO"))
 	if err == nil {
 		t.Fatal("expected error for invalid type")
 	}
@@ -236,7 +236,7 @@ func TestPidtune_MIMO_Rejected(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = Pidtune(res.Sys, "PI")
+	_, err = Pidtune(res.Sys, PidtunePI)
 	if err == nil {
 		t.Fatal("expected error for MIMO plant")
 	}
@@ -244,7 +244,7 @@ func TestPidtune_MIMO_Rejected(t *testing.T) {
 
 func TestPidtune_CustomPM(t *testing.T) {
 	plant := makePlant(t, []float64{1}, []float64{1, 1})
-	pid, err := Pidtune(plant, "PI", PidtuneOptions{PhaseMargin: 45})
+	pid, err := Pidtune(plant, PidtunePI, PidtuneOptions{PhaseMargin: 45})
 	if err != nil {
 		t.Fatal(err)
 	}

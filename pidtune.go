@@ -23,7 +23,7 @@ const (
 	PidtunePIDF PidtuneType = "PIDF"
 )
 
-func Pidtune(plant *System, pidType string, opts ...PidtuneOptions) (*PID, error) {
+func Pidtune(plant *System, pidType PidtuneType, opts ...PidtuneOptions) (*PID, error) {
 	if _, err := newSISOLoopModel(plant, "pidtune"); err != nil {
 		return nil, err
 	}
@@ -36,9 +36,9 @@ func Pidtune(plant *System, pidType string, opts ...PidtuneOptions) (*PID, error
 		opt.PhaseMargin = 60
 	}
 
-	pidType = strings.ToUpper(pidType)
+	pidType = PidtuneType(strings.ToUpper(string(pidType)))
 	switch pidType {
-	case "P", "I", "PI", "PD", "PID", "PIDF":
+	case PidtuneP, PidtuneI, PidtunePI, PidtunePD, PidtunePID, PidtunePIDF:
 	default:
 		return nil, fmt.Errorf("pidtune: unsupported type %q", pidType)
 	}
@@ -119,7 +119,7 @@ func evalPlantAt(plant *System, w float64) complex128 {
 	return resp.At(0, 0, 0)
 }
 
-func computePIDGains(plant *System, pidType string, wc, pmDeg float64) (*PID, error) {
+func computePIDGains(plant *System, pidType PidtuneType, wc, pmDeg float64) (*PID, error) {
 	h := evalPlantAt(plant, wc)
 	magP := cmplx.Abs(h)
 	phaseP := cmplx.Phase(h) * 180 / math.Pi
@@ -140,22 +140,22 @@ func computePIDGains(plant *System, pidType string, wc, pmDeg float64) (*PID, er
 	pid := &PID{}
 
 	switch pidType {
-	case "P":
+	case PidtuneP:
 		pid.Kp = 1.0 / magP
 
-	case "I":
+	case PidtuneI:
 		pid.Ki = wc / magP
 
-	case "PI":
+	case PidtunePI:
 		computePI(pid, wc, magP, phiC)
 
-	case "PD":
+	case PidtunePD:
 		computePD(pid, wc, magP, phiC)
 
-	case "PID":
+	case PidtunePID:
 		computePID(pid, wc, magP, phiC)
 
-	case "PIDF":
+	case PidtunePIDF:
 		computePIDF(pid, wc, magP, phiC)
 	}
 

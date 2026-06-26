@@ -52,7 +52,7 @@ func TestPRD95DelayBankPublicWorkflowsShareRules(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	disc, err := plant.DiscretizeWithOpts(0.1, C2DOptions{Method: "zoh", ThiranOrder: 3})
+	disc, err := plant.DiscretizeWithOpts(0.1, C2DOptions{Method: C2DMethodZOH, ThiranOrder: 3})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -279,7 +279,7 @@ func TestPRD95FrequencyResponseLayoutPublicWorkflowsAgree(t *testing.T) {
 		u.Set(0, k, math.Sin(0.17*float64(k)))
 		u.Set(1, k, math.Cos(0.11*float64(k)))
 	}
-	disc, err := sys.D2D(dt, C2DOptions{Method: "tustin"})
+	disc, err := sys.D2D(dt, C2DOptions{Method: C2DMethodTustin})
 	if err != nil {
 		t.Fatal(err)
 	}

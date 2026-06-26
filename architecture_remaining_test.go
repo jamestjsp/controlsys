@@ -156,7 +156,7 @@ func TestRemainingArchitectureConversionPlannerBehavior(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	discZOH, err := sys.DiscretizeWithOpts(0.1, C2DOptions{Method: "zoh"})
+	discZOH, err := sys.DiscretizeWithOpts(0.1, C2DOptions{Method: C2DMethodZOH})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -169,7 +169,7 @@ func TestRemainingArchitectureConversionPlannerBehavior(t *testing.T) {
 		t.Fatalf("InputDelay = %v, want [2 3]", discDefault.InputDelay)
 	}
 
-	resampled, err := discDefault.D2D(0.05, C2DOptions{Method: "tustin"})
+	resampled, err := discDefault.D2D(0.05, C2DOptions{Method: C2DMethodTustin})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -180,10 +180,10 @@ func TestRemainingArchitectureConversionPlannerBehavior(t *testing.T) {
 		t.Fatalf("state names = %v, want %v", resampled.StateName, sys.StateName)
 	}
 
-	if _, err := sys.DiscretizeWithOpts(0.1, C2DOptions{Method: "unknown"}); err == nil {
+	if _, err := sys.DiscretizeWithOpts(0.1, C2DOptions{Method: C2DMethod("unknown")}); err == nil {
 		t.Fatal("expected unknown C2D method to fail")
 	}
-	if _, err := discDefault.D2C("unknown"); err == nil {
+	if _, err := discDefault.D2C(C2DMethod("unknown")); err == nil {
 		t.Fatal("expected unknown D2C method to fail")
 	}
 }
@@ -222,7 +222,7 @@ func TestRemainingArchitectureTimeDomainPolicyPublicConsumers(t *testing.T) {
 		}
 	}
 
-	contAgain, err := disc.D2C("tustin")
+	contAgain, err := disc.D2C(C2DMethodTustin)
 	if err != nil {
 		t.Fatal(err)
 	}

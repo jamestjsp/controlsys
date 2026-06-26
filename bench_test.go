@@ -474,7 +474,7 @@ func BenchmarkDiscretizeWithOpts_Thiran(b *testing.B) {
 	sys.InputDelay = []float64{0.35}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		sys.DiscretizeWithOpts(0.1, C2DOptions{Method: "zoh", ThiranOrder: 3})
+		sys.DiscretizeWithOpts(0.1, C2DOptions{Method: C2DMethodZOH, ThiranOrder: 3})
 	}
 }
 
@@ -489,7 +489,7 @@ func BenchmarkDiscretizeWithOpts_IODelayThiran(b *testing.B) {
 	sys.Delay = mat.NewDense(1, 1, []float64{0.35})
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		sys.DiscretizeWithOpts(0.1, C2DOptions{Method: "zoh", ThiranOrder: 3})
+		sys.DiscretizeWithOpts(0.1, C2DOptions{Method: C2DMethodZOH, ThiranOrder: 3})
 	}
 }
 
@@ -1364,7 +1364,7 @@ func BenchmarkD2C_ZOH_N2(b *testing.B) {
 	sys := benchD2CSystem(2, 1, 0.05)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		sys.D2C("zoh")
+		sys.D2C(C2DMethodZOH)
 	}
 }
 
@@ -1372,7 +1372,7 @@ func BenchmarkD2C_ZOH_N5(b *testing.B) {
 	sys := benchD2CSystem(5, 2, 0.05)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		sys.D2C("zoh")
+		sys.D2C(C2DMethodZOH)
 	}
 }
 
@@ -1380,7 +1380,7 @@ func BenchmarkD2C_ZOH_N20(b *testing.B) {
 	sys := benchD2CSystem(20, 5, 0.01)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		sys.D2C("zoh")
+		sys.D2C(C2DMethodZOH)
 	}
 }
 
@@ -1388,7 +1388,7 @@ func BenchmarkD2C_ZOH_N50(b *testing.B) {
 	sys := benchD2CSystem(50, 10, 0.01)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		sys.D2C("zoh")
+		sys.D2C(C2DMethodZOH)
 	}
 }
 
@@ -1396,7 +1396,7 @@ func BenchmarkD2C_Tustin_N20(b *testing.B) {
 	sys := benchD2CSystem(20, 5, 0.01)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		sys.D2C("tustin")
+		sys.D2C(C2DMethodTustin)
 	}
 }
 
