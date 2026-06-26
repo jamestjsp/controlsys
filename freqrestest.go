@@ -17,6 +17,14 @@ type FreqRespEstOpts struct {
 	Method   string // "h1" (default), "h2", "fft"
 }
 
+type FreqRespEstMethod string
+
+const (
+	FreqRespEstH1  FreqRespEstMethod = "h1"
+	FreqRespEstH2  FreqRespEstMethod = "h2"
+	FreqRespEstFFT FreqRespEstMethod = "fft"
+)
+
 type FreqRespEstResult struct {
 	H         *FreqResponseMatrix
 	Omega     []float64

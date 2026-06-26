@@ -73,11 +73,15 @@ func NewRiccatiWorkspace(n, m int) *RiccatiWorkspace {
 }
 
 type RiccatiOpts struct {
-	S         *mat.Dense
+	// S is the optional cross-term matrix. It is read during the call.
+	S *mat.Dense
+	// Workspace supplies reusable scratch storage. Results may share its storage
+	// until the next call that reuses the same workspace.
 	Workspace *RiccatiWorkspace
 }
 
 type RiccatiResult struct {
+	// X, K, and Eig are caller-owned unless a workspace was supplied.
 	X    *mat.Dense
 	K    *mat.Dense
 	Eig  []complex128

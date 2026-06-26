@@ -10,6 +10,29 @@ import (
 	"gonum.org/v1/gonum/mat"
 )
 
+func TestFRDCopyIsIndependent(t *testing.T) {
+	frd := &FRD{
+		Response:   [][][]complex128{{{1 + 2i}}},
+		Omega:      []float64{3},
+		Dt:         0.1,
+		InputName:  []string{"u"},
+		OutputName: []string{"y"},
+	}
+
+	cp := frd.Copy()
+	frd.Response[0][0][0] = 99
+	frd.Omega[0] = 99
+	frd.InputName[0] = "mutated"
+	frd.OutputName[0] = "mutated"
+
+	if cp.Response[0][0][0] != 1+2i || cp.Omega[0] != 3 {
+		t.Fatalf("Copy aliases response storage: %+v", cp)
+	}
+	if cp.InputName[0] != "u" || cp.OutputName[0] != "y" {
+		t.Fatalf("Copy aliases names: %+v", cp)
+	}
+}
+
 func TestFRD_SISOFromSystem(t *testing.T) {
 	sys, err := New(
 		mat.NewDense(1, 1, []float64{-1}),

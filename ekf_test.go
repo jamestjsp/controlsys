@@ -84,6 +84,54 @@ func TestEKF_LinearSystem(t *testing.T) {
 	}
 }
 
+func TestEKFCopyAndNoiseMatricesAreIndependent(t *testing.T) {
+	A := mat.NewDense(1, 1, []float64{1})
+	C := mat.NewDense(1, 1, []float64{1})
+	Q := mat.NewDense(1, 1, []float64{0.1})
+	R := mat.NewDense(1, 1, []float64{0.2})
+	model := &EKFModel{
+		F:    func(x, u *mat.VecDense) *mat.VecDense { return mat.VecDenseCopyOf(x) },
+		H:    func(x *mat.VecDense) *mat.VecDense { return mat.VecDenseCopyOf(x) },
+		FJac: func(x, u *mat.VecDense) *mat.Dense { return mat.DenseCopyOf(A) },
+		HJac: func(x *mat.VecDense) *mat.Dense { return mat.DenseCopyOf(C) },
+		Q:    Q,
+		R:    R,
+	}
+
+	ekf, err := NewEKF(model, mat.NewVecDense(1, []float64{1}), mat.NewDense(1, 1, []float64{1}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cp := ekf.Copy()
+
+	Q.Set(0, 0, 99)
+	R.Set(0, 0, 99)
+	if got := ekf.model.Q.At(0, 0); got != 0.1 {
+		t.Fatalf("NewEKF Q aliases caller matrix: got %v, want 0.1", got)
+	}
+	if got := ekf.model.R.At(0, 0); got != 0.2 {
+		t.Fatalf("NewEKF R aliases caller matrix: got %v, want 0.2", got)
+	}
+
+	ekf.X.SetVec(0, 99)
+	ekf.P.Set(0, 0, 99)
+	ekf.model.Q.Set(0, 0, 98)
+	ekf.model.R.Set(0, 0, 98)
+
+	if got := cp.model.Q.At(0, 0); got != 0.1 {
+		t.Fatalf("Copy Q = %v, want 0.1", got)
+	}
+	if got := cp.model.R.At(0, 0); got != 0.2 {
+		t.Fatalf("Copy R = %v, want 0.2", got)
+	}
+	if got := cp.X.AtVec(0); got != 1 {
+		t.Fatalf("Copy X = %v, want 1", got)
+	}
+	if got := cp.P.At(0, 0); got != 1 {
+		t.Fatalf("Copy P = %v, want 1", got)
+	}
+}
+
 func TestEKF_NonlinearPendulum(t *testing.T) {
 	const (
 		g  = 9.81

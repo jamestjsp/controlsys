@@ -12,6 +12,17 @@ type PidtuneOptions struct {
 	PhaseMargin        float64
 }
 
+type PidtuneType string
+
+const (
+	PidtuneP    PidtuneType = "P"
+	PidtuneI    PidtuneType = "I"
+	PidtunePI   PidtuneType = "PI"
+	PidtunePD   PidtuneType = "PD"
+	PidtunePID  PidtuneType = "PID"
+	PidtunePIDF PidtuneType = "PIDF"
+)
+
 func Pidtune(plant *System, pidType string, opts ...PidtuneOptions) (*PID, error) {
 	if _, err := newSISOLoopModel(plant, "pidtune"); err != nil {
 		return nil, err

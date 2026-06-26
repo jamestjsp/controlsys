@@ -18,6 +18,20 @@ type FRD struct {
 	OutputName []string
 }
 
+// Copy returns a deep copy of the frequency-response data model.
+func (f *FRD) Copy() *FRD {
+	if f == nil {
+		return nil
+	}
+	return &FRD{
+		Response:   copyComplexTensor(f.Response),
+		Omega:      copyFloatSlice(f.Omega),
+		Dt:         f.Dt,
+		InputName:  copyStringSlice(f.InputName),
+		OutputName: copyStringSlice(f.OutputName),
+	}
+}
+
 // NewFRD creates an FRD model from response data and frequency vector.
 // response[k] is the p*m complex response matrix at frequency omega[k].
 func NewFRD(response [][][]complex128, omega []float64, dt float64) (*FRD, error) {

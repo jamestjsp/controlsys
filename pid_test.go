@@ -60,6 +60,28 @@ func assertComplexSlice(t *testing.T, name string, got, want []complex128) {
 	}
 }
 
+func TestPIDCopyIsIndependent(t *testing.T) {
+	pid := NewPID(1, 2, 3, WithFilter(4), WithTs(0.1))
+
+	cp := pid.Copy()
+	pid.Kp = 99
+
+	if cp.Kp != 1 || cp.Ki != 2 || cp.Kd != 3 || cp.Tf != 4 || cp.Dt != 0.1 {
+		t.Fatalf("Copy = %+v, want original controller values", cp)
+	}
+}
+
+func TestPID2CopyIsIndependent(t *testing.T) {
+	pid := NewPID2(1, 2, 3, 4, 5, 6, WithTs(0.1))
+
+	cp := pid.Copy()
+	pid.Kp = 99
+
+	if cp.Kp != 1 || cp.Ki != 2 || cp.Kd != 3 || cp.Tf != 4 || cp.B != 5 || cp.C != 6 || cp.Dt != 0.1 {
+		t.Fatalf("Copy = %+v, want original controller values", cp)
+	}
+}
+
 func TestPID_PureP(t *testing.T) {
 	c := NewPID(2, 0, 0)
 	sys, err := c.System()

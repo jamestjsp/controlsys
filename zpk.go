@@ -14,6 +14,21 @@ type ZPK struct {
 	OutputName []string
 }
 
+// Copy returns a deep copy of the zero-pole-gain model.
+func (z *ZPK) Copy() *ZPK {
+	if z == nil {
+		return nil
+	}
+	return &ZPK{
+		Zeros:      copyComplexTensor(z.Zeros),
+		Poles:      copyComplexTensor(z.Poles),
+		Gain:       copyFloatRows(z.Gain),
+		Dt:         z.Dt,
+		InputName:  copyStringSlice(z.InputName),
+		OutputName: copyStringSlice(z.OutputName),
+	}
+}
+
 func NewZPK(zeros, poles []complex128, gain, dt float64) (*ZPK, error) {
 	if dt < 0 {
 		return nil, ErrInvalidSampleTime
@@ -225,6 +240,20 @@ func copyComplex(src []complex128) []complex128 {
 	}
 	dst := make([]complex128, len(src))
 	copy(dst, src)
+	return dst
+}
+
+func copyComplexTensor(src [][][]complex128) [][][]complex128 {
+	if src == nil {
+		return nil
+	}
+	dst := make([][][]complex128, len(src))
+	for i := range src {
+		dst[i] = make([][]complex128, len(src[i]))
+		for j := range src[i] {
+			dst[i][j] = copyComplex(src[i][j])
+		}
+	}
 	return dst
 }
 
