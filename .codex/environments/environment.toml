@@ -1,11 +1,16 @@
 version = 1
-name = "controlsys-macos"
-
-[env]
-GO_MACOS_PATH = "/opt/homebrew/bin:/usr/local/go/bin:/usr/local/bin"
+name = "controlsys"
 
 [setup]
 script = '''
+cd "${CODEX_WORKTREE_PATH:-.}"
+go mod download
+go list -m -f '{{if .Replace}}{{.Path}} => {{.Replace.Path}} {{.Replace.Version}}{{else}}{{.Path}} {{.Version}}{{end}}' gonum.org/v1/gonum
+'''
+
+[setup.darwin]
+script = '''
+GO_MACOS_PATH="/opt/homebrew/bin:/usr/local/go/bin:/usr/local/bin"
 export PATH="$GO_MACOS_PATH:$PATH"
 cd "${CODEX_WORKTREE_PATH:-.}"
 go mod download
@@ -14,6 +19,12 @@ go list -m -f '{{if .Replace}}{{.Path}} => {{.Replace.Path}} {{.Replace.Version}
 
 [cleanup]
 script = '''
+go clean -testcache
+'''
+
+[cleanup.darwin]
+script = '''
+GO_MACOS_PATH="/opt/homebrew/bin:/usr/local/go/bin:/usr/local/bin"
 export PATH="$GO_MACOS_PATH:$PATH"
 go clean -testcache
 '''
@@ -21,12 +32,15 @@ go clean -testcache
 [[actions]]
 name = "Download modules"
 icon = "tool"
-command = "PATH=\"$GO_MACOS_PATH:$PATH\" go mod download"
+platform = "darwin"
+command = "PATH=\"/opt/homebrew/bin:/usr/local/go/bin:/usr/local/bin:$PATH\" go mod download"
 
 [[actions]]
 name = "CI checks"
 icon = "test"
+platform = "darwin"
 command = '''
+GO_MACOS_PATH="/opt/homebrew/bin:/usr/local/go/bin:/usr/local/bin"
 export PATH="$GO_MACOS_PATH:$PATH"
 go fix ./...
 git diff --exit-code
@@ -37,27 +51,33 @@ go test -v -count=1 -race ./...
 [[actions]]
 name = "Test"
 icon = "test"
-command = "PATH=\"$GO_MACOS_PATH:$PATH\" go test -v -count=1 ./..."
+platform = "darwin"
+command = "PATH=\"/opt/homebrew/bin:/usr/local/go/bin:/usr/local/bin:$PATH\" go test -v -count=1 ./..."
 
 [[actions]]
 name = "Vet"
 icon = "test"
-command = "PATH=\"$GO_MACOS_PATH:$PATH\" go vet ./..."
+platform = "darwin"
+command = "PATH=\"/opt/homebrew/bin:/usr/local/go/bin:/usr/local/bin:$PATH\" go vet ./..."
 
 [[actions]]
 name = "Go fix"
 icon = "tool"
-command = "PATH=\"$GO_MACOS_PATH:$PATH\" go fix ./..."
+platform = "darwin"
+command = "PATH=\"/opt/homebrew/bin:/usr/local/go/bin:/usr/local/bin:$PATH\" go fix ./..."
 
 [[actions]]
 name = "Benchmarks"
 icon = "test"
-command = "PATH=\"$GO_MACOS_PATH:$PATH\" go test -bench=. -benchmem ./..."
+platform = "darwin"
+command = "PATH=\"/opt/homebrew/bin:/usr/local/go/bin:/usr/local/bin:$PATH\" go test -bench=. -benchmem ./..."
 
 [[actions]]
 name = "Downstream consumer"
 icon = "test"
+platform = "darwin"
 command = '''
+GO_MACOS_PATH="/opt/homebrew/bin:/usr/local/go/bin:/usr/local/bin"
 export PATH="$GO_MACOS_PATH:$PATH"
 repo_path="${CODEX_WORKTREE_PATH:-$PWD}"
 tmp="$(mktemp -d)"
