@@ -1,0 +1,90 @@
+version = 1
+name = "controlsys"
+
+[setup]
+script = '''
+export PATH="/opt/homebrew/bin:/usr/local/go/bin:/usr/local/bin:$PATH"
+cd "${CODEX_WORKTREE_PATH:-.}"
+go mod download
+go list -m -f '{{if .Replace}}{{.Path}} => {{.Replace.Path}} {{.Replace.Version}}{{else}}{{.Path}} {{.Version}}{{end}}' gonum.org/v1/gonum
+'''
+
+[cleanup]
+script = '''
+export PATH="/opt/homebrew/bin:/usr/local/go/bin:/usr/local/bin:$PATH"
+go clean -testcache
+'''
+
+[[actions]]
+name = "Download modules"
+icon = "tool"
+command = "PATH=\"/opt/homebrew/bin:/usr/local/go/bin:/usr/local/bin:$PATH\" go mod download"
+
+[[actions]]
+name = "CI checks"
+icon = "test"
+command = '''
+export PATH="/opt/homebrew/bin:/usr/local/go/bin:/usr/local/bin:$PATH"
+go fix ./...
+git diff --exit-code
+go vet ./...
+go test -v -count=1 -race ./...
+'''
+
+[[actions]]
+name = "Test"
+icon = "test"
+command = "PATH=\"/opt/homebrew/bin:/usr/local/go/bin:/usr/local/bin:$PATH\" go test -v -count=1 ./..."
+
+[[actions]]
+name = "Vet"
+icon = "test"
+command = "PATH=\"/opt/homebrew/bin:/usr/local/go/bin:/usr/local/bin:$PATH\" go vet ./..."
+
+[[actions]]
+name = "Go fix"
+icon = "tool"
+command = "PATH=\"/opt/homebrew/bin:/usr/local/go/bin:/usr/local/bin:$PATH\" go fix ./..."
+
+[[actions]]
+name = "Benchmarks"
+icon = "test"
+command = "PATH=\"/opt/homebrew/bin:/usr/local/go/bin:/usr/local/bin:$PATH\" go test -bench=. -benchmem ./..."
+
+[[actions]]
+name = "Downstream consumer"
+icon = "test"
+command = '''
+export PATH="/opt/homebrew/bin:/usr/local/go/bin:/usr/local/bin:$PATH"
+repo_path="${CODEX_WORKTREE_PATH:-$PWD}"
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+cd "$tmp"
+go mod init example.com/controlsys-consumer
+go mod edit -require=github.com/jamestjsp/controlsys@v0.0.0
+go mod edit -replace=github.com/jamestjsp/controlsys="$repo_path"
+go mod edit -replace=gonum.org/v1/gonum=github.com/jamestjsp/gonum@v0.17.3-fork
+cat > controlsys_consumer_test.go <<'EOF'
+package controlsysconsumer
+
+import (
+	"testing"
+
+	"github.com/jamestjsp/controlsys"
+	"gonum.org/v1/gonum/mat"
+)
+
+func TestConsumerCanConstructModel(t *testing.T) {
+	sys, err := controlsys.NewGain(mat.NewDense(1, 1, []float64{2}), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, m, p := sys.Dims()
+	if m != 1 || p != 1 {
+		t.Fatalf("dims = inputs %d outputs %d, want 1x1", m, p)
+	}
+}
+EOF
+go mod tidy
+go test ./...
+'''
