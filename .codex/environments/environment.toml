@@ -1,9 +1,12 @@
 version = 1
-name = "controlsys"
+name = "controlsys-macos"
+
+[env]
+GO_MACOS_PATH = "/opt/homebrew/bin:/usr/local/go/bin:/usr/local/bin"
 
 [setup]
 script = '''
-export PATH="/opt/homebrew/bin:/usr/local/go/bin:/usr/local/bin:$PATH"
+export PATH="$GO_MACOS_PATH:$PATH"
 cd "${CODEX_WORKTREE_PATH:-.}"
 go mod download
 go list -m -f '{{if .Replace}}{{.Path}} => {{.Replace.Path}} {{.Replace.Version}}{{else}}{{.Path}} {{.Version}}{{end}}' gonum.org/v1/gonum
@@ -11,20 +14,20 @@ go list -m -f '{{if .Replace}}{{.Path}} => {{.Replace.Path}} {{.Replace.Version}
 
 [cleanup]
 script = '''
-export PATH="/opt/homebrew/bin:/usr/local/go/bin:/usr/local/bin:$PATH"
+export PATH="$GO_MACOS_PATH:$PATH"
 go clean -testcache
 '''
 
 [[actions]]
 name = "Download modules"
 icon = "tool"
-command = "PATH=\"/opt/homebrew/bin:/usr/local/go/bin:/usr/local/bin:$PATH\" go mod download"
+command = "PATH=\"$GO_MACOS_PATH:$PATH\" go mod download"
 
 [[actions]]
 name = "CI checks"
 icon = "test"
 command = '''
-export PATH="/opt/homebrew/bin:/usr/local/go/bin:/usr/local/bin:$PATH"
+export PATH="$GO_MACOS_PATH:$PATH"
 go fix ./...
 git diff --exit-code
 go vet ./...
@@ -34,28 +37,28 @@ go test -v -count=1 -race ./...
 [[actions]]
 name = "Test"
 icon = "test"
-command = "PATH=\"/opt/homebrew/bin:/usr/local/go/bin:/usr/local/bin:$PATH\" go test -v -count=1 ./..."
+command = "PATH=\"$GO_MACOS_PATH:$PATH\" go test -v -count=1 ./..."
 
 [[actions]]
 name = "Vet"
 icon = "test"
-command = "PATH=\"/opt/homebrew/bin:/usr/local/go/bin:/usr/local/bin:$PATH\" go vet ./..."
+command = "PATH=\"$GO_MACOS_PATH:$PATH\" go vet ./..."
 
 [[actions]]
 name = "Go fix"
 icon = "tool"
-command = "PATH=\"/opt/homebrew/bin:/usr/local/go/bin:/usr/local/bin:$PATH\" go fix ./..."
+command = "PATH=\"$GO_MACOS_PATH:$PATH\" go fix ./..."
 
 [[actions]]
 name = "Benchmarks"
 icon = "test"
-command = "PATH=\"/opt/homebrew/bin:/usr/local/go/bin:/usr/local/bin:$PATH\" go test -bench=. -benchmem ./..."
+command = "PATH=\"$GO_MACOS_PATH:$PATH\" go test -bench=. -benchmem ./..."
 
 [[actions]]
 name = "Downstream consumer"
 icon = "test"
 command = '''
-export PATH="/opt/homebrew/bin:/usr/local/go/bin:/usr/local/bin:$PATH"
+export PATH="$GO_MACOS_PATH:$PATH"
 repo_path="${CODEX_WORKTREE_PATH:-$PWD}"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
