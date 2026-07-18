@@ -180,6 +180,8 @@ func passivityGrid(opts *PassivityOptions, dt float64) ([]float64, float64, erro
 	lower := math.Min(1e-2, upper*1e-4)
 	omega := make([]float64, 121)
 	copy(omega[1:], logspace(math.Log10(lower), math.Log10(upper), 120))
+	omega[1] = lower
+	omega[len(omega)-1] = upper
 	return omega, tol, nil
 }
 
