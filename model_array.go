@@ -80,16 +80,52 @@ func StackModelArrays(arrays ...*ModelArray) (*ModelArray, error) {
 		return nil, fmt.Errorf("StackModelArrays: no arrays: %w", ErrDimensionMismatch)
 	}
 	var ref *ModelArray
-	total := 0
 	for _, arr := range arrays {
 		if arr == nil {
 			return nil, fmt.Errorf("StackModelArrays: nil array: %w", ErrDimensionMismatch)
 		}
 		if ref == nil {
 			ref = arr
-		} else if err := validateModelArrayHeadersCompatible(ref, arr); err != nil {
+			continue
+		}
+		if !sameModelArrayShape(ref.shape, arr.shape) {
+			return nil, fmt.Errorf("StackModelArrays: shape %v != %v: %w", arr.shape, ref.shape, ErrDimensionMismatch)
+		}
+		if err := validateModelArrayHeadersCompatible(ref, arr); err != nil {
 			return nil, fmt.Errorf("StackModelArrays: %w", err)
 		}
+	}
+	shape := make([]int, len(ref.shape)+1)
+	shape[0] = len(arrays)
+	copy(shape[1:], ref.shape)
+	models := copyModelArrays(arrays)
+	return NewModelArray(shape, models)
+}
+
+func ConcatModelArrays(arrays ...*ModelArray) (*ModelArray, error) {
+	if len(arrays) == 0 {
+		return nil, fmt.Errorf("ConcatModelArrays: no arrays: %w", ErrDimensionMismatch)
+	}
+	var ref *ModelArray
+	total := 0
+	for _, arr := range arrays {
+		if arr == nil {
+			return nil, fmt.Errorf("ConcatModelArrays: nil array: %w", ErrDimensionMismatch)
+		}
+		if ref == nil {
+			ref = arr
+		} else if err := validateModelArrayHeadersCompatible(ref, arr); err != nil {
+			return nil, fmt.Errorf("ConcatModelArrays: %w", err)
+		}
+		total += arr.Len()
+	}
+	models := copyModelArrays(arrays)
+	return NewModelArray([]int{total}, models)
+}
+
+func copyModelArrays(arrays []*ModelArray) []*System {
+	total := 0
+	for _, arr := range arrays {
 		total += arr.Len()
 	}
 	models := make([]*System, 0, total)
@@ -102,7 +138,19 @@ func StackModelArrays(arrays ...*ModelArray) (*ModelArray, error) {
 			}
 		}
 	}
-	return NewModelArray([]int{total}, models)
+	return models
+}
+
+func sameModelArrayShape(a, b []int) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func (a *ModelArray) Shape() []int {

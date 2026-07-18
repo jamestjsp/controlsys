@@ -65,7 +65,7 @@ func TestModelArraySelectAndStack(t *testing.T) {
 	if err != nil {
 		t.Fatalf("left array: %v", err)
 	}
-	right, err := NewModelArray([]int{1}, []*System{b})
+	right, err := NewModelArray([]int{2}, []*System{b, c})
 	if err != nil {
 		t.Fatalf("right array: %v", err)
 	}
@@ -84,17 +84,61 @@ func TestModelArraySelectAndStack(t *testing.T) {
 	if err != nil {
 		t.Fatalf("StackModelArrays: %v", err)
 	}
-	if got, want := stacked.Shape(), []int{3}; !sameInts(got, want) {
+	if got, want := stacked.Shape(), []int{2, 2}; !sameInts(got, want) {
 		t.Fatalf("stacked Shape() = %v, want %v", got, want)
+	}
+	if got, ok, err := stacked.Model(0, 1); err != nil || ok || got != nil {
+		t.Fatalf("stacked void = (%v, %v, %v), want nil,false,nil", got, ok, err)
+	}
+	if got, ok, err := stacked.Model(1, 0); err != nil || !ok || got.A.At(0, 0) != b.A.At(0, 0) {
+		t.Fatalf("stacked Model(1,0) = (%v, %v, %v), want copied b", got, ok, err)
 	}
 
 	incompatible, err := NewModelArray([]int{1}, []*System{c})
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, err := StackModelArrays(left, incompatible); !errors.Is(err, ErrDimensionMismatch) {
+		t.Fatalf("StackModelArrays shape mismatch err = %v, want ErrDimensionMismatch", err)
+	}
+
+	incompatible, err = NewModelArray([]int{2}, []*System{b, c})
+	if err != nil {
+		t.Fatal(err)
+	}
 	incompatible.models[0].Dt = 0.2
 	if _, err := StackModelArrays(left, incompatible); !errors.Is(err, ErrDimensionMismatch) {
-		t.Fatalf("StackModelArrays incompatible err = %v, want ErrDimensionMismatch", err)
+		t.Fatalf("StackModelArrays header mismatch err = %v, want ErrDimensionMismatch", err)
+	}
+	if _, err := StackModelArrays(); !errors.Is(err, ErrDimensionMismatch) {
+		t.Fatalf("StackModelArrays empty err = %v, want ErrDimensionMismatch", err)
+	}
+	if _, err := StackModelArrays(left, nil); !errors.Is(err, ErrDimensionMismatch) {
+		t.Fatalf("StackModelArrays nil err = %v, want ErrDimensionMismatch", err)
+	}
+}
+
+func TestConcatModelArraysFlattensCompatibleArrays(t *testing.T) {
+	a := modelArrayTestSystem(t, 0, []float64{-1, 2, -3, -4})
+	b := modelArrayTestSystem(t, 0, []float64{-2, 1, -4, -5})
+	left, err := NewModelArray([]int{1, 2}, []*System{a, nil})
+	if err != nil {
+		t.Fatal(err)
+	}
+	right, err := NewModelArray([]int{1}, []*System{b})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	concatenated, err := ConcatModelArrays(left, right)
+	if err != nil {
+		t.Fatalf("ConcatModelArrays: %v", err)
+	}
+	if got, want := concatenated.Shape(), []int{3}; !sameInts(got, want) {
+		t.Fatalf("concatenated Shape() = %v, want %v", got, want)
+	}
+	if _, ok, err := concatenated.ModelFlat(2); err != nil || !ok {
+		t.Fatalf("concatenated final model ok=%v err=%v, want ok", ok, err)
 	}
 }
 

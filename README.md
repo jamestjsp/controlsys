@@ -90,7 +90,8 @@ func main() {
 | `NewZPKMIMO` | MIMO zero-pole-gain model |
 | `NewFRD` | Frequency-response data model from sampled complex responses |
 | `NewModelArray` | Compatible array of state-space models for sweeps or model grids |
-| `StackModelArrays` | Concatenate compatible model arrays along a new leading axis |
+| `StackModelArrays` | Stack equal-shaped compatible arrays along a new leading axis |
+| `ConcatModelArrays` | Flatten and concatenate compatible model arrays |
 | `NewGeneralizedModel` | Wrap a fixed or tunable block and attach analysis points |
 | `NewGeneralizedClosedLoop` | Build a plant/controller closed-loop model with an analysis point |
 | `NewPhysicalComponent` | Wrap a model with named physical ports |
@@ -334,7 +335,8 @@ func main() {
 | Function/Method | Description |
 |-----------------|-------------|
 | `NewModelArray` | Create a shaped array of compatible state-space models |
-| `StackModelArrays` | Stack compatible model arrays |
+| `StackModelArrays` | Stack equal-shaped compatible arrays along a new leading axis |
+| `ConcatModelArrays` | Flatten and concatenate compatible model arrays |
 | `(*ModelArray).Model` / `ModelFlat` | Retrieve a model by multidimensional or flat index |
 | `(*ModelArray).SelectFlat` | Select a flat-index subset of models |
 | `(*ModelArray).FreqResponse` | Frequency response for every model in the array |
