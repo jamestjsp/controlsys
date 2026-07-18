@@ -288,6 +288,7 @@ ownership clarity, and release readiness, not shrinking the toolbox shape.
 | `(*GeneralizedModel).AnalysisPoint` | `pure` | Returns value object. |
 | `(*GeneralizedModel).CurrentSystem` | `returns-mutable` | Returns current numeric model. |
 | `NewGeneralizedClosedLoop` | `copy-in`, `returns-mutable` | Copies plant; stores controller block. |
+| `(*GeneralizedClosedLoop).InsertAnalysisPoint` | `mutates` | Binds a named plant-input or plant-output loop break. |
 | `(*GeneralizedClosedLoop).AnalysisPoint` | `pure` | Returns value object. |
 | `(*GeneralizedClosedLoop).OpenLoop` | `returns-mutable` | Builds current open-loop model. |
 | `(*GeneralizedClosedLoop).ClosedLoop` | `returns-mutable` | Alias for complementary sensitivity. |
@@ -326,8 +327,9 @@ ownership clarity, and release readiness, not shrinking the toolbox shape.
 | `(*TunableSS).RandomSample` | `copy-out`, `returns-mutable` | Returns sampled block copy. |
 | `(*TunableSS).FreeParameters` | `alias-risk` | Returns pointers to internal free parameters. |
 | `(*TunableSS).SampleBlock` | `copy-out`, `returns-mutable` | Interface wrapper around `Sample`. |
-| `Systune` | `view-in`, `returns-mutable` | Returns mutable controller/closed-loop result. |
-| `Looptune` | `view-in`, `returns-mutable` | Same implementation as `Systune`. |
+| `GridTune` | `view-in`, `returns-mutable` | Returns a mutable result from a bounded Cartesian search. |
+| `Systune` | `view-in`, `returns-mutable` | Compatibility wrapper around `GridTune`. |
+| `Looptune` | `view-in`, `returns-mutable` | Compatibility wrapper around `GridTune`. |
 
 ## Controller, PID, EKF, Physical, and Goal APIs
 

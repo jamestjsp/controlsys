@@ -31,8 +31,19 @@ type GeneralizedModel struct {
 	analysisPoints map[string]AnalysisPoint
 }
 
+// AnalysisPointLocation identifies the signal where a feedback loop is broken.
+type AnalysisPointLocation uint8
+
+const (
+	AnalysisPointUnspecified AnalysisPointLocation = iota
+	AnalysisPointPlantOutput
+	AnalysisPointPlantInput
+)
+
+// AnalysisPoint binds a name to a loop location.
 type AnalysisPoint struct {
-	Name string
+	Name     string
+	Location AnalysisPointLocation
 }
 
 func NewGeneralizedModel(name string, block any) (*GeneralizedModel, error) {
@@ -125,6 +136,9 @@ func NewGeneralizedClosedLoop(name string, plant *System, controller any, analys
 	if plant == nil {
 		return nil, fmt.Errorf("NewGeneralizedClosedLoop: nil plant: %w", ErrDimensionMismatch)
 	}
+	if analysisPoint == "" {
+		return nil, fmt.Errorf("NewGeneralizedClosedLoop: analysis point is empty: %w", ErrDimensionMismatch)
+	}
 	g := &GeneralizedClosedLoop{
 		name:                 name,
 		plant:                plant.Copy(),
@@ -135,8 +149,26 @@ func NewGeneralizedClosedLoop(name string, plant *System, controller any, analys
 	if tunable, ok := controller.(TunableBlock); ok {
 		g.tunableController = tunable
 	}
-	g.analysisPoints[analysisPoint] = AnalysisPoint{Name: analysisPoint}
+	g.analysisPoints[analysisPoint] = AnalysisPoint{Name: analysisPoint, Location: AnalysisPointPlantOutput}
 	return g, nil
+}
+
+// InsertAnalysisPoint binds name to the plant-input or plant-output loop break.
+func (g *GeneralizedClosedLoop) InsertAnalysisPoint(name string, location AnalysisPointLocation) error {
+	if g == nil {
+		return fmt.Errorf("GeneralizedClosedLoop.InsertAnalysisPoint: nil model: %w", ErrDimensionMismatch)
+	}
+	if name == "" {
+		return fmt.Errorf("GeneralizedClosedLoop.InsertAnalysisPoint: name is empty: %w", ErrDimensionMismatch)
+	}
+	if location != AnalysisPointPlantOutput && location != AnalysisPointPlantInput {
+		return fmt.Errorf("GeneralizedClosedLoop.InsertAnalysisPoint: invalid location %d: %w", location, ErrDimensionMismatch)
+	}
+	if g.analysisPoints == nil {
+		g.analysisPoints = make(map[string]AnalysisPoint)
+	}
+	g.analysisPoints[name] = AnalysisPoint{Name: name, Location: location}
+	return nil
 }
 
 func (g *GeneralizedClosedLoop) AnalysisPoint(name string) (AnalysisPoint, error) {
@@ -151,14 +183,22 @@ func (g *GeneralizedClosedLoop) AnalysisPoint(name string) (AnalysisPoint, error
 }
 
 func (g *GeneralizedClosedLoop) OpenLoop(name string) (*System, error) {
-	if _, err := g.AnalysisPoint(name); err != nil {
+	point, err := g.AnalysisPoint(name)
+	if err != nil {
 		return nil, err
 	}
 	controller, err := g.controller.CurrentSystem()
 	if err != nil {
 		return nil, err
 	}
-	return Series(controller, g.plant)
+	switch point.Location {
+	case AnalysisPointPlantOutput:
+		return Series(controller, g.plant)
+	case AnalysisPointPlantInput:
+		return Series(g.plant, controller)
+	default:
+		return nil, fmt.Errorf("GeneralizedClosedLoop.OpenLoop: analysis point %q has no loop location: %w", name, ErrDimensionMismatch)
+	}
 }
 
 func (g *GeneralizedClosedLoop) ClosedLoop(name string) (*System, error) {
@@ -166,26 +206,23 @@ func (g *GeneralizedClosedLoop) ClosedLoop(name string) (*System, error) {
 }
 
 func (g *GeneralizedClosedLoop) ComplementarySensitivity(name string) (*System, error) {
-	L, err := g.OpenLoop(name)
+	loop, err := g.OpenLoop(name)
 	if err != nil {
 		return nil, err
 	}
-	return Feedback(L, nil, -1)
+	return Feedback(loop, nil, -1)
 }
 
 func (g *GeneralizedClosedLoop) Sensitivity(name string) (*System, error) {
-	T, err := g.ComplementarySensitivity(name)
+	loop, err := g.OpenLoop(name)
 	if err != nil {
 		return nil, err
 	}
-	one, err := NewGain(eyeDense(1), T.Dt)
-	if err != nil {
-		return nil, err
+	_, inputs, outputs := loop.Dims()
+	if inputs != outputs {
+		return nil, fmt.Errorf("GeneralizedClosedLoop.Sensitivity: loop at %q is %dx%d: %w", name, outputs, inputs, ErrDimensionMismatch)
 	}
-	negT := T.Copy()
-	negT.C.Scale(-1, negT.C)
-	negT.D.Scale(-1, negT.D)
-	return Parallel(one, negT)
+	return Feedback(makeIdentityGain(outputs, loop.Dt), loop, -1)
 }
 
 func (g *GeneralizedClosedLoop) primaryAnalysisPointName() string {

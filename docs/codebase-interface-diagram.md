@@ -229,6 +229,8 @@ classDiagram
     }
 
     class GeneralizedClosedLoop {
+        +InsertAnalysisPoint()
+        +AnalysisPoint()
         +OpenLoop()
         +ClosedLoop()
         +Sensitivity()

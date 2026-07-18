@@ -90,3 +90,65 @@ func TestGeneralizedClosedLoopAnalysisHelpers(t *testing.T) {
 		}
 	}
 }
+
+func TestGeneralizedClosedLoopAnalysisPointsBindDistinctMIMOBreaks(t *testing.T) {
+	plant, err := NewGain(mat.NewDense(2, 2, []float64{1, 2, 0, 1}), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	controller, err := NewGain(mat.NewDense(2, 2, []float64{1, 0, 3, 1}), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	loop, err := NewGeneralizedClosedLoop("mimo", plant, controller, "plant_output")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := loop.InsertAnalysisPoint("plant_input", AnalysisPointPlantInput); err != nil {
+		t.Fatalf("InsertAnalysisPoint: %v", err)
+	}
+
+	outputLoop, err := loop.OpenLoop("plant_output")
+	if err != nil {
+		t.Fatalf("output OpenLoop: %v", err)
+	}
+	inputLoop, err := loop.OpenLoop("plant_input")
+	if err != nil {
+		t.Fatalf("input OpenLoop: %v", err)
+	}
+	wantOutput := mat.NewDense(2, 2, []float64{7, 2, 3, 1})
+	wantInput := mat.NewDense(2, 2, []float64{1, 2, 3, 7})
+	if !mat.EqualApprox(outputLoop.D, wantOutput, 1e-14) {
+		t.Fatalf("plant-output loop =\n%v\nwant\n%v", mat.Formatted(outputLoop.D), mat.Formatted(wantOutput))
+	}
+	if !mat.EqualApprox(inputLoop.D, wantInput, 1e-14) {
+		t.Fatalf("plant-input loop =\n%v\nwant\n%v", mat.Formatted(inputLoop.D), mat.Formatted(wantInput))
+	}
+
+	for _, name := range []string{"plant_output", "plant_input"} {
+		sensitivity, err := loop.Sensitivity(name)
+		if err != nil {
+			t.Fatalf("Sensitivity(%q): %v", name, err)
+		}
+		complementary, err := loop.ComplementarySensitivity(name)
+		if err != nil {
+			t.Fatalf("ComplementarySensitivity(%q): %v", name, err)
+		}
+		sum := mat.NewDense(2, 2, nil)
+		sum.Add(sensitivity.D, complementary.D)
+		if !mat.EqualApprox(sum, eyeDense(2), 1e-12) {
+			t.Fatalf("S+T at %q =\n%v\nwant identity", name, mat.Formatted(sum))
+		}
+	}
+}
+
+func TestGeneralizedClosedLoopRejectsInvalidAnalysisPointLocation(t *testing.T) {
+	plant := makeSISO(-1, 1, 1, 0)
+	loop, err := NewGeneralizedClosedLoop("loop", plant, plant, "output")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := loop.InsertAnalysisPoint("bad", AnalysisPointUnspecified); !errors.Is(err, ErrDimensionMismatch) {
+		t.Fatalf("InsertAnalysisPoint error = %v, want ErrDimensionMismatch", err)
+	}
+}

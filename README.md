@@ -93,7 +93,7 @@ func main() {
 | `StackModelArrays` | Stack equal-shaped compatible arrays along a new leading axis |
 | `ConcatModelArrays` | Flatten and concatenate compatible model arrays |
 | `NewGeneralizedModel` | Wrap a fixed or tunable block and attach analysis points |
-| `NewGeneralizedClosedLoop` | Build a plant/controller closed-loop model with an analysis point |
+| `NewGeneralizedClosedLoop` | Build a plant/controller closed-loop model with a plant-output analysis point |
 | `NewPhysicalComponent` | Wrap a model with named physical ports |
 | `AssemblePhysical` | Assemble connected across/through port equations into a descriptor model |
 | `NewDescriptor` | Descriptor state-space model with explicit E matrix |
@@ -119,7 +119,8 @@ func main() {
 | Function/Type | Description |
 |---------------|-------------|
 | `NewGeneralizedModel` | Wrap a fixed or tunable block and attach analysis points |
-| `NewGeneralizedClosedLoop` | Build a plant/controller closed-loop model with an analysis point |
+| `NewGeneralizedClosedLoop` | Build a plant/controller closed-loop model with a plant-output analysis point |
+| `(*GeneralizedClosedLoop).InsertAnalysisPoint` | Bind another named break to the plant input or output |
 | `TunableReal` | Bounded scalar parameter used by tunable blocks |
 | `TunableGain` | Tunable static-gain block |
 | `TunablePID` | Tunable PID controller block |
@@ -129,7 +130,8 @@ func main() {
 | `NewSensitivityGoal` / `NewWeightedGainGoal` | Tuning-goal constructors for gain and sensitivity limits |
 | `NewLoopShapeGoal` / `NewMarginGoal` | Tuning-goal constructors for loop-shape and robustness constraints |
 | `NewPoleGoal` / `NewOvershootGoal` | Tuning-goal constructors for pole-location and step-response constraints |
-| `Systune` / `Looptune` | Fixed-structure tuning over free tunable parameters |
+| `GridTune` | Bounded Cartesian-grid tuning over free parameters and point-specific goals |
+| `Systune` / `Looptune` | Compatibility wrappers around `GridTune` |
 
 ### Frequency Response & Plotting
 
