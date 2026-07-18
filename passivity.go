@@ -211,8 +211,8 @@ func validatePassivityGrid(omega []float64, dt float64) error {
 		if frequency > upper*(1+1e-12) {
 			return fmt.Errorf("omega[%d]=%g exceeds Nyquist frequency %g: %w", i, frequency, upper, ErrDimensionMismatch)
 		}
-		if i > 0 && frequency < omega[i-1] {
-			return fmt.Errorf("frequency grid is not sorted at index %d: %w", i, ErrDimensionMismatch)
+		if i > 0 && frequency <= omega[i-1] {
+			return fmt.Errorf("frequency grid is not strictly increasing at index %d: %w", i, ErrDimensionMismatch)
 		}
 	}
 	return nil

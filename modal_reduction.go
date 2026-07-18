@@ -54,9 +54,15 @@ func ModalTruncate(sys *System, opts *ModalTruncateOptions) (*ModalReductionResu
 		return nil, err
 	}
 	poles := schurEigenvaluesRaw(t, n)
-	order := modalReductionOrder(t, poles, n, sys.Dt, opts)
-	if order < 1 || order > n || splitsSchurBlock(t, n, order) {
+	order, err := modalReductionOrder(t, poles, n, sys.Dt, opts)
+	if err != nil {
+		return nil, err
+	}
+	if order < 1 || order > n {
 		return nil, ErrInvalidOrder
+	}
+	if splitsSchurBlock(t, n, order) {
+		return nil, fmt.Errorf("ModalTruncate: order %d splits a complex-conjugate mode pair: %w", order, ErrInvalidOrder)
 	}
 	if order < unstableModalCount(poles, sys.Dt) {
 		return nil, fmt.Errorf("ModalTruncate: order %d would discard an unstable mode: %w", order, ErrInvalidOrder)
@@ -172,18 +178,19 @@ func modalBlockBefore(candidate, current complex128, dt, maxRealPart float64, th
 	return math.Abs(imag(candidate)) < math.Abs(imag(current))
 }
 
-func modalReductionOrder(t []float64, poles []complex128, n int, dt float64, opts *ModalTruncateOptions) int {
+func modalReductionOrder(t []float64, poles []complex128, n int, dt float64, opts *ModalTruncateOptions) (int, error) {
 	if opts.Order > 0 {
-		return opts.Order
+		return opts.Order, nil
 	}
 	if opts.MaxRealPart != 0 {
 		order := 0
 		for order < n && (real(poles[order]) >= opts.MaxRealPart || modalPoleUnstable(poles[order], dt)) {
 			order += schurBlockSize(t, n, order)
 		}
-		if order > 0 {
-			return order
+		if order == 0 {
+			return 0, fmt.Errorf("ModalTruncate: no modes satisfy MaxRealPart %g: %w", opts.MaxRealPart, ErrInvalidOrder)
 		}
+		return order, nil
 	}
 	order := n / 2
 	if order == 0 {
@@ -196,7 +203,7 @@ func modalReductionOrder(t []float64, poles []complex128, n int, dt float64, opt
 	if order < unstable {
 		order = unstable
 	}
-	return order
+	return order, nil
 }
 
 func separateSchurBlocks(t []float64, n, order int) ([]float64, error) {

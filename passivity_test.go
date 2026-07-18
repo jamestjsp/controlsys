@@ -83,6 +83,9 @@ func TestSampledPassiveValidatesGridAndUsesDiscreteNyquist(t *testing.T) {
 	if _, err := SampledPassive(discrete, &PassivityOptions{Omega: []float64{1, 0}}); !errors.Is(err, ErrDimensionMismatch) {
 		t.Fatalf("unsorted grid err = %v, want ErrDimensionMismatch", err)
 	}
+	if _, err := SampledPassive(discrete, &PassivityOptions{Omega: []float64{1, 1}}); !errors.Is(err, ErrDimensionMismatch) {
+		t.Fatalf("duplicate frequency err = %v, want ErrDimensionMismatch", err)
+	}
 	if _, err := SampledPassive(discrete, &PassivityOptions{Tol: -1}); !errors.Is(err, ErrDimensionMismatch) {
 		t.Fatalf("negative tolerance err = %v, want ErrDimensionMismatch", err)
 	}

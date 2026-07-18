@@ -74,14 +74,12 @@ func GridTune(model *GeneralizedClosedLoop, goals []TuningGoal, opts *SystuneOpt
 			if err != nil {
 				return err
 			}
-			candidate := *model
-			candidate.controller = sampled
-			candidate.tunableController = sampled
+			candidate := model.withSampledController(sampled)
 			closed, err := candidate.ClosedLoop(candidate.primaryAnalysisPointName())
 			if err != nil {
 				return err
 			}
-			goalResults, score, pass, err := evaluateTuningGoals(&candidate, closed, goals)
+			goalResults, score, pass, err := evaluateTuningGoals(candidate, closed, goals)
 			if err != nil {
 				return err
 			}

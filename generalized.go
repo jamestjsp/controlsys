@@ -1,6 +1,9 @@
 package controlsys
 
-import "fmt"
+import (
+	"fmt"
+	"maps"
+)
 
 type NumericBlock interface {
 	CurrentSystem() (*System, error)
@@ -169,6 +172,20 @@ func (g *GeneralizedClosedLoop) InsertAnalysisPoint(name string, location Analys
 	}
 	g.analysisPoints[name] = AnalysisPoint{Name: name, Location: location}
 	return nil
+}
+
+// withSampledController returns a model bound to sampled without sharing any
+// mutable state with the receiver; the plant is shared because it is never
+// mutated after construction.
+func (g *GeneralizedClosedLoop) withSampledController(sampled TunableBlock) *GeneralizedClosedLoop {
+	return &GeneralizedClosedLoop{
+		name:                 g.name,
+		plant:                g.plant,
+		controller:           sampled,
+		tunableController:    sampled,
+		analysisPoints:       maps.Clone(g.analysisPoints),
+		primaryAnalysisPoint: g.primaryAnalysisPoint,
+	}
 }
 
 func (g *GeneralizedClosedLoop) AnalysisPoint(name string) (AnalysisPoint, error) {

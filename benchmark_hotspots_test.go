@@ -546,6 +546,26 @@ func BenchmarkTuningGoalWeightedGain_MIMO(b *testing.B) {
 	}
 }
 
+func BenchmarkTuningGoalDynamicWeightedGain_MIMO(b *testing.B) {
+	sys := benchSysNonSym(8, 3, 3)
+	goal, err := NewTuningGoal(TuningGoalSpec{
+		Name:         "weighted",
+		Type:         TuningGoalWeightedGain,
+		Max:          10,
+		InputWeight:  benchSysNonSym(2, 3, 3),
+		OutputWeight: benchSysNonSym(2, 3, 3),
+	})
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := goal.Evaluate(sys); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
 func BenchmarkSystune_SISO(b *testing.B) {
 	plant := benchSysNonSym(2, 1, 1)
 	k, _ := NewTunableReal("K", 0.5, TunableBounds{Lower: 0.1, Upper: 3})

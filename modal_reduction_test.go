@@ -129,6 +129,9 @@ func TestModalTruncatePreservesUnstableModesAndAutoSelects(t *testing.T) {
 	if _, err := ModalTruncate(sys, &ModalTruncateOptions{Order: 5}); !errors.Is(err, ErrInvalidOrder) {
 		t.Fatalf("invalid order err = %v, want ErrInvalidOrder", err)
 	}
+	if _, err := ModalTruncate(modalTestSystem(t), &ModalTruncateOptions{MaxRealPart: 5}); !errors.Is(err, ErrInvalidOrder) {
+		t.Fatalf("empty threshold selection err = %v, want ErrInvalidOrder", err)
+	}
 }
 
 func modalTestSystem(t *testing.T) *System {

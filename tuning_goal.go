@@ -401,17 +401,28 @@ func frequencyGainRange(sys *System, omega []float64, outputWeight, inputWeight 
 	maxGain := 0.0
 	minGain := math.Inf(1)
 	responseData := make([]complex128, resp.P*resp.M)
+	var outputData, outputProduct, inputData, inputProduct []complex128
+	weightedRows := resp.P
+	if outputResponse != nil {
+		outputData = make([]complex128, outputResponse.P*outputResponse.M)
+		outputProduct = make([]complex128, outputResponse.P*resp.M)
+		weightedRows = outputResponse.P
+	}
+	if inputResponse != nil {
+		inputData = make([]complex128, inputResponse.P*inputResponse.M)
+		inputProduct = make([]complex128, weightedRows*inputResponse.M)
+	}
 	var singularValues complexSingularValueWorkspace
 	for k := range omega {
 		gain := complexResponseAt(resp, k, responseData)
 		if outputResponse != nil {
-			gain, err = multiplyComplexMatrices(complexResponseAt(outputResponse, k, nil), gain)
+			gain, err = multiplyComplexMatricesInto(outputProduct, complexResponseAt(outputResponse, k, outputData), gain)
 			if err != nil {
 				return 0, 0, fmt.Errorf("output weight: %w", err)
 			}
 		}
 		if inputResponse != nil {
-			gain, err = multiplyComplexMatrices(gain, complexResponseAt(inputResponse, k, nil))
+			gain, err = multiplyComplexMatricesInto(inputProduct, gain, complexResponseAt(inputResponse, k, inputData))
 			if err != nil {
 				return 0, 0, fmt.Errorf("input weight: %w", err)
 			}
@@ -448,11 +459,17 @@ func complexResponseAt(response *FreqResponseMatrix, frequency int, data []compl
 	return complexMatrix{rows: response.P, cols: response.M, data: data}
 }
 
-func multiplyComplexMatrices(a, b complexMatrix) (complexMatrix, error) {
+func multiplyComplexMatricesInto(dst []complex128, a, b complexMatrix) (complexMatrix, error) {
 	if a.cols != b.rows {
 		return complexMatrix{}, fmt.Errorf("matrix dimensions %dx%d and %dx%d: %w", a.rows, a.cols, b.rows, b.cols, ErrDimensionMismatch)
 	}
-	result := complexMatrix{rows: a.rows, cols: b.cols, data: make([]complex128, a.rows*b.cols)}
+	if len(dst) != a.rows*b.cols {
+		dst = make([]complex128, a.rows*b.cols)
+	}
+	result := complexMatrix{rows: a.rows, cols: b.cols, data: dst}
+	for i := range result.data {
+		result.data[i] = 0
+	}
 	for i := range a.rows {
 		for k := range a.cols {
 			aik := a.data[i*a.cols+k]
