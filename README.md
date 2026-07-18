@@ -35,7 +35,7 @@ This package is intended to be usable in production control and estimation code,
 - **State estimation:** Extended Kalman Filter (EKF) for nonlinear systems
 - **System identification:** Eigensystem Realization Algorithm (ERA) and frequency-response estimation from I/O data
 - **Nonlinear systems:** Jacobian linearization around operating points; Smith predictor for time-delay plants
-- **Model arrays and physical assembly:** compatible model grids for parameter sweeps and port-checked physical component assembly
+- **Model arrays and physical assembly:** compatible model grids for parameter sweeps and descriptor assembly of connected physical ports
 - **Model reduction & decomposition:** controllability/observability staircase, balanced realization, balanced truncation, stable/unstable and modal separation, modal truncation
 - **System norms & covariance:** H2/H-infinity norms, Hankel singular values, state covariance
 - **Interconnection:** series, parallel, feedback, safe feedback, append, block diagonal, named/indexed connect, FRD interconnections, sum blocks, and LFT
@@ -95,7 +95,7 @@ func main() {
 | `NewGeneralizedModel` | Wrap a fixed or tunable block and attach analysis points |
 | `NewGeneralizedClosedLoop` | Build a plant/controller closed-loop model with an analysis point |
 | `NewPhysicalComponent` | Wrap a model with named physical ports |
-| `AssemblePhysical` | Validate physical port compatibility and append component models |
+| `AssemblePhysical` | Assemble connected across/through port equations into a descriptor model |
 | `NewDescriptor` | Descriptor state-space model with explicit E matrix |
 | `Rss` | Random stable continuous-time state-space model |
 | `Drss` | Random stable discrete-time state-space model |
@@ -348,8 +348,8 @@ func main() {
 | Function/Type | Description |
 |---------------|-------------|
 | `NewPhysicalComponent` | Wrap a model with named physical ports |
-| `AssemblePhysical` | Validate physical port compatibility and append component models |
-| `PhysicalPort` / `PhysicalConnection` | Port and connection metadata for physical assembly |
+| `AssemblePhysical` | Assemble connected across/through port equations into a descriptor model |
+| `PhysicalPort` / `PhysicalConnection` | Bind component input/output channels to physical ports and node connections |
 
 ### Transport Delays
 
