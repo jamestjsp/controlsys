@@ -457,6 +457,17 @@ func BenchmarkDescriptorToExplicit_N10(b *testing.B) {
 	}
 }
 
+func BenchmarkDescriptorFreqResponse_MIMO_N10x200(b *testing.B) {
+	sys := benchDescriptorSystem(b, 10, 3, 3)
+	omega := logspace(-2, 3, 200)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := sys.FreqResponse(omega); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
 func BenchmarkFixedInputReduction_N10(b *testing.B) {
 	sys := benchSysNonSym(10, 4, 2)
 	fixed := map[int]float64{1: 0.5, 3: -2}

@@ -107,6 +107,37 @@ func TestPhysicalAssemblyPreservesUnconnectedDescriptorComponent(t *testing.T) {
 	}
 }
 
+func TestPhysicalAssemblyImplicitPortsSkipExplicitBindings(t *testing.T) {
+	explicit := PhysicalPort{Name: "external", Kind: PhysicalPortDisplacement, Dimension: 1, Input: []int{0}, Output: []int{0}}
+	implicit := PhysicalPort{Name: "mount", Kind: PhysicalPortDisplacement, Dimension: 2}
+	for _, test := range []struct {
+		name  string
+		ports []PhysicalPort
+	}{
+		{name: "explicit first", ports: []PhysicalPort{explicit, implicit}},
+		{name: "explicit last", ports: []PhysicalPort{implicit, explicit}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			component := physicalMixedBindingComponent(t, "mixed", test.ports)
+			assembled, err := AssemblePhysical("grounded", []PhysicalComponent{component}, []PhysicalConnection{
+				{FromComponent: "mixed", FromPort: "mount", Grounded: true},
+			})
+			if err != nil {
+				t.Fatalf("AssemblePhysical: %v", err)
+			}
+			if n, m, p := assembled.Dims(); n != 3 || m != 1 || p != 1 {
+				t.Fatalf("dims = (%d,%d,%d), want (3,1,1)", n, m, p)
+			}
+			if !sameStrings(assembled.InputName, []string{"mixed.external.force"}) {
+				t.Fatalf("input names = %v", assembled.InputName)
+			}
+			if !sameStrings(assembled.OutputName, []string{"mixed.external.position"}) {
+				t.Fatalf("output names = %v", assembled.OutputName)
+			}
+		})
+	}
+}
+
 func TestPhysicalAssemblyRejectsInvalidTopologies(t *testing.T) {
 	left := physicalCoupledComponent(t, "left", 1)
 	right := physicalCoupledComponent(t, "right", 2)
@@ -166,4 +197,21 @@ func physicalDescriptorComponent(t *testing.T, name string) PhysicalComponent {
 	sys.OutputName = []string{"position"}
 	sys.StateName = []string{"x1", "x2"}
 	return NewPhysicalComponent(name, sys, []PhysicalPort{{Name: "mount", Kind: PhysicalPortDisplacement, Dimension: 1}})
+}
+
+func physicalMixedBindingComponent(t *testing.T, name string, ports []PhysicalPort) PhysicalComponent {
+	t.Helper()
+	sys, err := New(
+		mat.NewDense(1, 1, []float64{-1}),
+		mat.NewDense(1, 3, []float64{1, 2, 3}),
+		mat.NewDense(3, 1, []float64{1, 2, 3}),
+		mat.NewDense(3, 3, nil),
+		0,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sys.InputName = []string{"external.force", "mount.force[0]", "mount.force[1]"}
+	sys.OutputName = []string{"external.position", "mount.position[0]", "mount.position[1]"}
+	return NewPhysicalComponent(name, sys, ports)
 }

@@ -171,11 +171,13 @@ func (e frequencyEvaluator) response(omega []float64) (*FreqResponseMatrix, erro
 	pm := e.p * e.m
 	data := make([]complex128, nw*pm)
 	if e.sys.IsDescriptor() {
+		ws := newSSEvalWorkspace(e.n, e.p, e.m)
 		for k, w := range omega {
 			s := e.sAt(w)
-			if err := e.evalStateSpaceInto(s, data[k*pm:(k+1)*pm]); err != nil {
+			if err := evalFrSSInto(ws, e.sys, s, e.n, e.p, e.m); err != nil {
 				return nil, err
 			}
+			copy(data[k*pm:(k+1)*pm], ws.g[:pm])
 		}
 		applyIODelayPhase(e.sys, omega, data, e.p, e.m, true)
 		return e.matrix(data, omega), nil

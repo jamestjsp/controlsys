@@ -135,10 +135,9 @@ func (p *physicalAssemblyPlan) bindPorts() (map[string]int, error) {
 	portIndex := make(map[string]int)
 	for componentIndex, component := range p.components {
 		_, m, outputs := component.System.Dims()
-		inputCursor := 0
-		outputCursor := 0
 		usedInputs := make([]bool, m)
 		usedOutputs := make([]bool, outputs)
+		seenPorts := make(map[string]struct{}, len(component.Ports))
 		for _, port := range component.Ports {
 			if port.Name == "" || port.Dimension <= 0 {
 				return nil, fmt.Errorf("AssemblePhysical: invalid port on %q: %w", component.Name, ErrDimensionMismatch)
@@ -147,31 +146,36 @@ func (p *physicalAssemblyPlan) bindPorts() (map[string]int, error) {
 				return nil, fmt.Errorf("AssemblePhysical: invalid port kind on %s.%s: %w", component.Name, port.Name, ErrDimensionMismatch)
 			}
 			key := component.Name + "." + port.Name
-			if _, exists := portIndex[key]; exists {
+			if _, exists := seenPorts[key]; exists {
 				return nil, fmt.Errorf("AssemblePhysical: duplicate port %q: %w", key, ErrDimensionMismatch)
 			}
+			seenPorts[key] = struct{}{}
+			if len(port.Input) == 0 && len(port.Output) == 0 {
+				continue
+			}
+			if len(port.Input) != port.Dimension || len(port.Output) != port.Dimension {
+				return nil, fmt.Errorf("AssemblePhysical: port %q must bind %d input and output channels: %w", key, port.Dimension, ErrDimensionMismatch)
+			}
+			if err := reservePhysicalChannels(usedInputs, port.Input, "input", key); err != nil {
+				return nil, err
+			}
+			if err := reservePhysicalChannels(usedOutputs, port.Output, "output", key); err != nil {
+				return nil, err
+			}
+		}
+		for _, port := range component.Ports {
+			key := component.Name + "." + port.Name
 			inputs := copyIntSlice(port.Input)
 			outputsForPort := copyIntSlice(port.Output)
 			if len(inputs) == 0 && len(outputsForPort) == 0 {
-				inputs = integerRange(inputCursor, port.Dimension)
-				outputsForPort = integerRange(outputCursor, port.Dimension)
-				inputCursor += port.Dimension
-				outputCursor += port.Dimension
-			}
-			if len(inputs) != port.Dimension || len(outputsForPort) != port.Dimension {
-				return nil, fmt.Errorf("AssemblePhysical: port %q must bind %d input and output channels: %w", key, port.Dimension, ErrDimensionMismatch)
-			}
-			for _, channel := range inputs {
-				if channel < 0 || channel >= m || usedInputs[channel] {
-					return nil, fmt.Errorf("AssemblePhysical: invalid or reused input channel %d on %q: %w", channel, key, ErrDimensionMismatch)
+				inputs = claimUnusedPhysicalChannels(usedInputs, port.Dimension)
+				if len(inputs) != port.Dimension {
+					return nil, fmt.Errorf("AssemblePhysical: not enough unused input channels for %q: %w", key, ErrDimensionMismatch)
 				}
-				usedInputs[channel] = true
-			}
-			for _, channel := range outputsForPort {
-				if channel < 0 || channel >= outputs || usedOutputs[channel] {
-					return nil, fmt.Errorf("AssemblePhysical: invalid or reused output channel %d on %q: %w", channel, key, ErrDimensionMismatch)
+				outputsForPort = claimUnusedPhysicalChannels(usedOutputs, port.Dimension)
+				if len(outputsForPort) != port.Dimension {
+					return nil, fmt.Errorf("AssemblePhysical: not enough unused output channels for %q: %w", key, ErrDimensionMismatch)
 				}
-				usedOutputs[channel] = true
 			}
 			binding := physicalPortBinding{key: key, component: componentIndex, port: port, inputs: make([]int, port.Dimension), outputs: make([]int, port.Dimension)}
 			for i := range port.Dimension {
@@ -533,12 +537,29 @@ func physicalSignalNames(names []string, count int, prefix, kind string) []strin
 	return out
 }
 
-func integerRange(start, count int) []int {
-	values := make([]int, count)
-	for i := range count {
-		values[i] = start + i
+func reservePhysicalChannels(used []bool, channels []int, signal, key string) error {
+	for _, channel := range channels {
+		if channel < 0 || channel >= len(used) || used[channel] {
+			return fmt.Errorf("AssemblePhysical: invalid or reused %s channel %d on %q: %w", signal, channel, key, ErrDimensionMismatch)
+		}
+		used[channel] = true
 	}
-	return values
+	return nil
+}
+
+func claimUnusedPhysicalChannels(used []bool, count int) []int {
+	channels := make([]int, 0, count)
+	for channel, reserved := range used {
+		if reserved {
+			continue
+		}
+		used[channel] = true
+		channels = append(channels, channel)
+		if len(channels) == count {
+			break
+		}
+	}
+	return channels
 }
 
 func prefixSystemMetadata(sys *System, prefix string) {
