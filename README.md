@@ -178,7 +178,8 @@ func main() {
 | `Bandwidth` | -3 dB bandwidth |
 | `RootLocus` | Root locus as a function of loop gain |
 | `Pzmap` | Poles and transmission zeros for plotting/inspection |
-| `Passive` / `FRDPassive` | Passivity check from a state-space model or FRD samples |
+| `SampledPassive` / `FRDPassive` | Passivity evidence on an explicit frequency grid; passing samples are not an analytic certificate |
+| `Passive` | Compatibility alias for `SampledPassive` |
 | `SpectralFactor` | Spectral factor for supported static-gain models |
 
 ### Control Design
