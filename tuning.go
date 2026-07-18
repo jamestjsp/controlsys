@@ -7,10 +7,12 @@ import (
 )
 
 type SystuneOptions struct {
-	GridPoints int
+	GridPoints     int
+	MaxEvaluations int
 }
 
 type SystuneResult struct {
+	Method     string
 	Pass       bool
 	Score      float64
 	Iterations int
@@ -21,34 +23,47 @@ type SystuneResult struct {
 }
 
 func Systune(model *GeneralizedClosedLoop, goals []TuningGoal, opts *SystuneOptions) (*SystuneResult, error) {
-	return tuneFixedStructure(model, goals, opts)
+	return GridTune(model, goals, opts)
 }
 
 func Looptune(model *GeneralizedClosedLoop, goals []TuningGoal, opts *SystuneOptions) (*SystuneResult, error) {
-	return tuneFixedStructure(model, goals, opts)
+	return GridTune(model, goals, opts)
 }
 
-func tuneFixedStructure(model *GeneralizedClosedLoop, goals []TuningGoal, opts *SystuneOptions) (*SystuneResult, error) {
+// GridTune searches a bounded Cartesian grid of the controller's free parameters.
+func GridTune(model *GeneralizedClosedLoop, goals []TuningGoal, opts *SystuneOptions) (*SystuneResult, error) {
 	if model == nil {
-		return nil, fmt.Errorf("Systune: nil model: %w", ErrDimensionMismatch)
+		return nil, fmt.Errorf("GridTune: nil model: %w", ErrDimensionMismatch)
 	}
 	controller := model.tunableController
 	if controller == nil {
-		return nil, fmt.Errorf("Systune: controller is not tunable: %w", ErrDimensionMismatch)
+		return nil, fmt.Errorf("GridTune: controller is not tunable: %w", ErrDimensionMismatch)
 	}
 	if len(goals) == 0 {
-		return nil, fmt.Errorf("Systune: no goals: %w", ErrDimensionMismatch)
+		return nil, fmt.Errorf("GridTune: no goals: %w", ErrDimensionMismatch)
 	}
 	gridPoints := 5
+	maxEvaluations := 100_000
 	if opts != nil && opts.GridPoints > 0 {
 		gridPoints = opts.GridPoints
 	}
+	if opts != nil && opts.MaxEvaluations > 0 {
+		maxEvaluations = opts.MaxEvaluations
+	}
 	params := controller.FreeParameters()
 	if len(params) == 0 {
-		return nil, fmt.Errorf("Systune: no free tunable parameters: %w", ErrDimensionMismatch)
+		return nil, fmt.Errorf("GridTune: no free tunable parameters: %w", ErrDimensionMismatch)
+	}
+	evaluationCount := 1
+	for _, param := range params {
+		count := len(parameterGrid(param, gridPoints))
+		if evaluationCount > maxEvaluations/count {
+			return nil, fmt.Errorf("GridTune: Cartesian grid exceeds %d evaluations: %w", maxEvaluations, ErrDimensionMismatch)
+		}
+		evaluationCount *= count
 	}
 
-	best := &SystuneResult{Score: math.Inf(1)}
+	best := &SystuneResult{Method: "cartesian-grid", Score: math.Inf(1)}
 	iterations := 0
 	values := make(map[string]float64, len(params))
 	var search func(int) error
@@ -59,14 +74,12 @@ func tuneFixedStructure(model *GeneralizedClosedLoop, goals []TuningGoal, opts *
 			if err != nil {
 				return err
 			}
-			candidate := *model
-			candidate.controller = sampled
-			candidate.tunableController = sampled
+			candidate := model.withSampledController(sampled)
 			closed, err := candidate.ClosedLoop(candidate.primaryAnalysisPointName())
 			if err != nil {
 				return err
 			}
-			goalResults, score, pass, err := evaluateTuningGoals(closed, goals)
+			goalResults, score, pass, err := evaluateTuningGoals(candidate, closed, goals)
 			if err != nil {
 				return err
 			}
@@ -76,6 +89,7 @@ func tuneFixedStructure(model *GeneralizedClosedLoop, goals []TuningGoal, opts *
 					return err
 				}
 				best = &SystuneResult{
+					Method:     "cartesian-grid",
 					Pass:       pass,
 					Score:      score,
 					Parameters: copyStringFloatMap(values),
@@ -103,12 +117,30 @@ func tuneFixedStructure(model *GeneralizedClosedLoop, goals []TuningGoal, opts *
 	return best, nil
 }
 
-func evaluateTuningGoals(sys *System, goals []TuningGoal) ([]TuningGoalResult, float64, bool, error) {
+func evaluateTuningGoals(model *GeneralizedClosedLoop, primaryClosedLoop *System, goals []TuningGoal) ([]TuningGoalResult, float64, bool, error) {
 	results := make([]TuningGoalResult, len(goals))
 	score := 0.0
 	pass := true
+	primary := model.primaryAnalysisPointName()
+	cache := map[tuningGoalResponseKey]*System{
+		{point: primary, response: tuningGoalClosedLoopResponse}: primaryClosedLoop,
+	}
 	for i, goal := range goals {
-		result, err := goal.Evaluate(sys)
+		point := goal.spec.AnalysisPoint
+		if point == "" {
+			point = primary
+		}
+		key := tuningGoalResponseKey{point: point, response: tuningGoalResponseForType(goal.spec.Type)}
+		sys := cache[key]
+		if sys == nil {
+			var err error
+			sys, err = tuningGoalSystem(model, goal.spec)
+			if err != nil {
+				return nil, 0, false, err
+			}
+			cache[key] = sys
+		}
+		result, err := goal.evaluateSystem(sys)
 		if err != nil {
 			return nil, 0, false, err
 		}
@@ -121,14 +153,13 @@ func evaluateTuningGoals(sys *System, goals []TuningGoal) ([]TuningGoalResult, f
 	return results, score, pass, nil
 }
 
+type tuningGoalResponseKey struct {
+	point    string
+	response tuningGoalResponse
+}
+
 func goalViolation(result TuningGoalResult) float64 {
-	if result.Pass {
-		return 0
-	}
-	if result.Limit == 0 {
-		return math.Abs(result.Value)
-	}
-	return math.Abs((result.Value - result.Limit) / result.Limit)
+	return result.Violation
 }
 
 func uniqueFreeTunableReals(params [][]*TunableReal) []*TunableReal {

@@ -110,9 +110,6 @@ func unwrapBodePhase(phase []float64, p, m, nw int) {
 }
 
 func (sys *System) FreqResponse(omega []float64) (*FreqResponseMatrix, error) {
-	if err := newDescriptorPolicy(sys).requireStandard("FreqResponse"); err != nil {
-		return nil, err
-	}
 	return newFrequencyEvaluator(sys).response(omega)
 }
 
@@ -137,9 +134,6 @@ func (sys *System) Bode(omega []float64, nPoints int) (*BodeResult, error) {
 }
 
 func (sys *System) EvalFr(s complex128) ([][]complex128, error) {
-	if err := newDescriptorPolicy(sys).requireStandard("EvalFr"); err != nil {
-		return nil, err
-	}
 	return newFrequencyEvaluator(sys).eval(s)
 }
 
@@ -160,6 +154,9 @@ func (e frequencyEvaluator) response(omega []float64) (*FreqResponseMatrix, erro
 		return nil, nil
 	}
 	if e.sys.HasInternalDelay() {
+		if e.sys.IsDescriptor() {
+			return nil, fmt.Errorf("FreqResponse: descriptor models with internal delays are not supported: %w", ErrDescriptorUnsupported)
+		}
 		resp, err := freqResponseLFT(e.sys, omega, e.p, e.m)
 		if err != nil {
 			return nil, err
@@ -173,6 +170,18 @@ func (e frequencyEvaluator) response(omega []float64) (*FreqResponseMatrix, erro
 	nw := len(omega)
 	pm := e.p * e.m
 	data := make([]complex128, nw*pm)
+	if e.sys.IsDescriptor() {
+		ws := newSSEvalWorkspace(e.n, e.p, e.m)
+		for k, w := range omega {
+			s := e.sAt(w)
+			if err := evalFrSSInto(ws, e.sys, s, e.n, e.p, e.m); err != nil {
+				return nil, err
+			}
+			copy(data[k*pm:(k+1)*pm], ws.g[:pm])
+		}
+		applyIODelayPhase(e.sys, omega, data, e.p, e.m, true)
+		return e.matrix(data, omega), nil
+	}
 	if nw == 1 {
 		s := e.sAt(omega[0])
 		if err := e.evalStateSpaceInto(s, data); err != nil {
@@ -197,6 +206,9 @@ func (e frequencyEvaluator) eval(s complex128) ([][]complex128, error) {
 	pm := e.p * e.m
 
 	if e.sys.HasInternalDelay() {
+		if e.sys.IsDescriptor() {
+			return nil, fmt.Errorf("EvalFr: descriptor models with internal delays are not supported: %w", ErrDescriptorUnsupported)
+		}
 		g, err := evalFrLFT(e.sys, s, e.p, e.m)
 		if err != nil {
 			return nil, err
@@ -373,7 +385,14 @@ func evalFrSSInto(ws *ssEvalWorkspace, sys *System, s complex128, n, p, m int) e
 	}
 
 	aRaw := sys.A.RawMatrix()
-	if err := cResolventInto(ws.resolvent, ws.sIA, ws.invBuf, aRaw.Data, aRaw.Stride, s, n); err != nil {
+	var err error
+	if sys.E == nil {
+		err = cResolventInto(ws.resolvent, ws.sIA, ws.invBuf, aRaw.Data, aRaw.Stride, s, n)
+	} else {
+		eRaw := sys.E.RawMatrix()
+		err = cDescriptorResolventInto(ws.resolvent, ws.sIA, ws.invBuf, aRaw.Data, aRaw.Stride, eRaw.Data, eRaw.Stride, s, n)
+	}
+	if err != nil {
 		return err
 	}
 	bRaw := sys.B.RawMatrix()
@@ -547,6 +566,21 @@ func cResolventInto(dst, sIA, invBuf []complex128, aData []float64, aStride int,
 		sIA[row+i] += s
 	}
 	return cInvertInto(dst, invBuf, sIA, n)
+}
+
+func cDescriptorResolventInto(dst, sEA, invBuf []complex128, aData []float64, aStride int, eData []float64, eStride int, s complex128, n int) error {
+	if n == 0 {
+		return nil
+	}
+	for i := range n {
+		row := i * n
+		aRow := i * aStride
+		eRow := i * eStride
+		for j := range n {
+			sEA[row+j] = s*complex(eData[eRow+j], 0) - complex(aData[aRow+j], 0)
+		}
+	}
+	return cInvertInto(dst, invBuf, sEA, n)
 }
 
 func cComputeHInto(dst, temp, resolvent []complex128, cData []float64, cStride int, bData []float64, bStride int, dData []float64, dStride, n, rows, cols int) {

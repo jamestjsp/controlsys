@@ -1,6 +1,9 @@
 package controlsys
 
-import "testing"
+import (
+	"errors"
+	"testing"
+)
 
 func TestSystuneTunesSISOTunableGain(t *testing.T) {
 	plant := makeSISO(-2, 1, 1, 0)
@@ -18,11 +21,29 @@ func TestSystuneTunesSISOTunableGain(t *testing.T) {
 	if !result.Pass {
 		t.Fatalf("expected tuned result to pass, got %#v", result)
 	}
+	if result.Method != "cartesian-grid" {
+		t.Fatalf("method = %q, want cartesian-grid", result.Method)
+	}
 	if result.Parameters["K"] <= 0.1 {
 		t.Fatalf("K was not increased: %#v", result.Parameters)
 	}
 	if len(result.Goals) != 1 || !result.Goals[0].Pass {
 		t.Fatalf("goal diagnostics = %#v", result.Goals)
+	}
+}
+
+func TestGridTuneLimitsCartesianSearch(t *testing.T) {
+	plant := benchSysNonSym(2, 2, 2)
+	k1, _ := NewTunableReal("K1", 0.1, TunableBounds{Lower: 0.1, Upper: 2})
+	k2, _ := NewTunableReal("K2", 0.1, TunableBounds{Lower: 0.1, Upper: 2})
+	controller := NewTunableGain("Kblock", [][]*TunableReal{{k1, fixedReal(t, "z12_limit", 0)}, {fixedReal(t, "z21_limit", 0), k2}}, 0)
+	closed, err := NewGeneralizedClosedLoop("loop", plant, controller, "u")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = GridTune(closed, []TuningGoal{NewWeightedGainGoal("bounded", 10)}, &SystuneOptions{GridPoints: 5, MaxEvaluations: 24})
+	if !errors.Is(err, ErrDimensionMismatch) {
+		t.Fatalf("GridTune error = %v, want ErrDimensionMismatch", err)
 	}
 }
 

@@ -3,7 +3,8 @@ package controlsys
 import (
 	"fmt"
 	"math"
-	"math/cmplx"
+
+	"gonum.org/v1/gonum/mat"
 )
 
 type TuningGoalType int
@@ -20,10 +21,14 @@ const (
 )
 
 type TuningGoalSpec struct {
-	Name string
-	Type TuningGoalType
-	Max  float64
-	Min  float64
+	Name          string
+	Type          TuningGoalType
+	Max           float64
+	Min           float64
+	AnalysisPoint string
+	Omega         []float64
+	InputWeight   *System
+	OutputWeight  *System
 }
 
 type TuningGoal struct {
@@ -35,6 +40,7 @@ type TuningGoalResult struct {
 	Pass        bool
 	Value       float64
 	Limit       float64
+	Violation   float64
 	Diagnostics map[string]float64
 }
 
@@ -44,6 +50,28 @@ func NewTuningGoal(spec TuningGoalSpec) (TuningGoal, error) {
 	}
 	if spec.Type != TuningGoalPole && (spec.Max < 0 || spec.Min < 0) {
 		return TuningGoal{}, fmt.Errorf("NewTuningGoal: negative bound: %w", ErrDimensionMismatch)
+	}
+	if spec.Type < TuningGoalTracking || spec.Type > TuningGoalOvershoot {
+		return TuningGoal{}, fmt.Errorf("NewTuningGoal: unsupported goal type %d: %w", spec.Type, ErrDimensionMismatch)
+	}
+	if spec.Type == TuningGoalLoopShape && spec.Min > spec.Max {
+		return TuningGoal{}, fmt.Errorf("NewTuningGoal: loop-shape minimum %g exceeds maximum %g: %w", spec.Min, spec.Max, ErrDimensionMismatch)
+	}
+	if spec.Omega != nil && !tuningGoalUsesFrequencyGrid(spec.Type) {
+		return TuningGoal{}, fmt.Errorf("NewTuningGoal: goal type %d does not use a frequency grid: %w", spec.Type, ErrDimensionMismatch)
+	}
+	if err := validateTuningGoalFrequencyGrid(spec.Omega); err != nil {
+		return TuningGoal{}, err
+	}
+	if (spec.InputWeight != nil || spec.OutputWeight != nil) && spec.Type != TuningGoalWeightedGain {
+		return TuningGoal{}, fmt.Errorf("NewTuningGoal: weights require a weighted-gain goal: %w", ErrDimensionMismatch)
+	}
+	spec.Omega = copyFloatSlice(spec.Omega)
+	if spec.InputWeight != nil {
+		spec.InputWeight = spec.InputWeight.Copy()
+	}
+	if spec.OutputWeight != nil {
+		spec.OutputWeight = spec.OutputWeight.Copy()
 	}
 	return TuningGoal{spec: spec}, nil
 }
@@ -109,10 +137,14 @@ func (g TuningGoal) Name() string {
 }
 
 func (g TuningGoal) Evaluate(model any) (TuningGoalResult, error) {
-	sys, err := tuningGoalSystem(model)
+	sys, err := tuningGoalSystem(model, g.spec)
 	if err != nil {
 		return TuningGoalResult{}, err
 	}
+	return g.evaluateSystem(sys)
+}
+
+func (g TuningGoal) evaluateSystem(sys *System) (TuningGoalResult, error) {
 	switch g.spec.Type {
 	case TuningGoalTracking:
 		return g.evaluateTracking(sys)
@@ -131,16 +163,55 @@ func (g TuningGoal) Evaluate(model any) (TuningGoalResult, error) {
 	}
 }
 
-func tuningGoalSystem(model any) (*System, error) {
+func tuningGoalSystem(model any, spec TuningGoalSpec) (*System, error) {
 	switch v := model.(type) {
 	case *System:
 		return v.Copy(), nil
 	case *GeneralizedModel:
 		return v.CurrentSystem()
 	case *GeneralizedClosedLoop:
-		return v.ClosedLoop(v.primaryAnalysisPointName())
+		point := spec.AnalysisPoint
+		if point == "" {
+			point = v.primaryAnalysisPointName()
+		}
+		switch tuningGoalResponseForType(spec.Type) {
+		case tuningGoalSensitivityResponse:
+			return v.Sensitivity(point)
+		case tuningGoalOpenLoopResponse:
+			return v.OpenLoop(point)
+		default:
+			return v.ClosedLoop(point)
+		}
 	default:
 		return nil, fmt.Errorf("TuningGoal.Evaluate: unsupported model %T: %w", model, ErrDimensionMismatch)
+	}
+}
+
+type tuningGoalResponse uint8
+
+const (
+	tuningGoalClosedLoopResponse tuningGoalResponse = iota
+	tuningGoalSensitivityResponse
+	tuningGoalOpenLoopResponse
+)
+
+func tuningGoalResponseForType(goalType TuningGoalType) tuningGoalResponse {
+	switch goalType {
+	case TuningGoalRejection, TuningGoalSensitivity:
+		return tuningGoalSensitivityResponse
+	case TuningGoalLoopShape, TuningGoalMargin:
+		return tuningGoalOpenLoopResponse
+	default:
+		return tuningGoalClosedLoopResponse
+	}
+}
+
+func tuningGoalUsesFrequencyGrid(goalType TuningGoalType) bool {
+	switch goalType {
+	case TuningGoalRejection, TuningGoalSensitivity, TuningGoalWeightedGain, TuningGoalLoopShape:
+		return true
+	default:
+		return false
 	}
 }
 
@@ -161,7 +232,7 @@ func (g TuningGoal) evaluateTracking(sys *System) (TuningGoalResult, error) {
 }
 
 func (g TuningGoal) evaluateMaxGain(sys *System) (TuningGoalResult, error) {
-	value, err := maxFrequencyGain(sys, nil)
+	value, err := maxFrequencyGain(sys, g.spec.Omega, g.spec.OutputWeight, g.spec.InputWeight)
 	if err != nil {
 		return TuningGoalResult{}, err
 	}
@@ -169,12 +240,18 @@ func (g TuningGoal) evaluateMaxGain(sys *System) (TuningGoalResult, error) {
 }
 
 func (g TuningGoal) evaluateLoopShape(sys *System) (TuningGoalResult, error) {
-	value, err := maxFrequencyGain(sys, nil)
+	minimum, maximum, err := frequencyGainRange(sys, g.spec.Omega, nil, nil)
 	if err != nil {
 		return TuningGoalResult{}, err
 	}
-	pass := value >= g.spec.Min && value <= g.spec.Max
-	return g.scalarResult(value, g.spec.Max, pass, map[string]float64{"max_gain": value, "min_gain": g.spec.Min}), nil
+	pass := minimum >= g.spec.Min && maximum <= g.spec.Max
+	result := g.scalarResult(maximum, g.spec.Max, pass, map[string]float64{
+		"sampled_min_gain":  minimum,
+		"sampled_max_gain":  maximum,
+		"required_min_gain": g.spec.Min,
+	})
+	result.Violation = math.Max(normalizedLowerViolation(minimum, g.spec.Min), normalizedUpperViolation(maximum, g.spec.Max))
+	return result, nil
 }
 
 func (g TuningGoal) evaluateMargin(sys *System) (TuningGoalResult, error) {
@@ -184,7 +261,9 @@ func (g TuningGoal) evaluateMargin(sys *System) (TuningGoalResult, error) {
 	}
 	pass := margin.GainMargin >= g.spec.Min && margin.PhaseMargin >= g.spec.Max
 	diag := map[string]float64{"gain_margin_db": margin.GainMargin, "phase_margin_deg": margin.PhaseMargin}
-	return g.scalarResult(math.Min(margin.GainMargin, margin.PhaseMargin), g.spec.Max, pass, diag), nil
+	result := g.scalarResult(math.Min(margin.GainMargin, margin.PhaseMargin), g.spec.Max, pass, diag)
+	result.Violation = math.Max(normalizedLowerViolation(margin.GainMargin, g.spec.Min), normalizedLowerViolation(margin.PhaseMargin, g.spec.Max))
+	return result, nil
 }
 
 func (g TuningGoal) evaluatePole(sys *System) (TuningGoalResult, error) {
@@ -219,7 +298,34 @@ func (g TuningGoal) evaluateOvershoot(sys *System) (TuningGoalResult, error) {
 }
 
 func (g TuningGoal) scalarResult(value, limit float64, pass bool, diag map[string]float64) TuningGoalResult {
-	return TuningGoalResult{GoalName: g.spec.Name, Pass: pass, Value: value, Limit: limit, Diagnostics: diag}
+	return TuningGoalResult{
+		GoalName:    g.spec.Name,
+		Pass:        pass,
+		Value:       value,
+		Limit:       limit,
+		Violation:   normalizedUpperViolation(value, limit),
+		Diagnostics: diag,
+	}
+}
+
+func normalizedUpperViolation(value, limit float64) float64 {
+	if value <= limit {
+		return 0
+	}
+	if limit == 0 {
+		return value - limit
+	}
+	return (value - limit) / math.Abs(limit)
+}
+
+func normalizedLowerViolation(value, limit float64) float64 {
+	if value >= limit {
+		return 0
+	}
+	if limit == 0 {
+		return limit - value
+	}
+	return (limit - value) / math.Abs(limit)
 }
 
 func maxDCErrorFromOne(dc interface {
@@ -242,23 +348,199 @@ func maxDCErrorFromOne(dc interface {
 	return maxErr
 }
 
-func maxFrequencyGain(sys *System, omega []float64) (float64, error) {
+func validateTuningGoalFrequencyGrid(omega []float64) error {
+	if omega != nil && len(omega) == 0 {
+		return fmt.Errorf("NewTuningGoal: frequency grid is empty: %w", ErrDimensionMismatch)
+	}
+	for i, w := range omega {
+		if math.IsNaN(w) || math.IsInf(w, 0) || w < 0 {
+			return fmt.Errorf("NewTuningGoal: invalid frequency omega[%d]=%g: %w", i, w, ErrDimensionMismatch)
+		}
+		if i > 0 && w <= omega[i-1] {
+			return fmt.Errorf("NewTuningGoal: frequencies must be strictly increasing: %w", ErrDimensionMismatch)
+		}
+	}
+	return nil
+}
+
+func maxFrequencyGain(sys *System, omega []float64, outputWeight, inputWeight *System) (float64, error) {
+	_, maximum, err := frequencyGainRange(sys, omega, outputWeight, inputWeight)
+	return maximum, err
+}
+
+func frequencyGainRange(sys *System, omega []float64, outputWeight, inputWeight *System) (float64, float64, error) {
 	if omega == nil {
 		omega = logspace(-2, 2, 80)
 	}
+	if len(omega) == 0 {
+		return 0, 0, fmt.Errorf("frequency gain: empty grid: %w", ErrDimensionMismatch)
+	}
 	resp, err := sys.FreqResponse(omega)
 	if err != nil {
-		return 0, err
+		return 0, 0, err
+	}
+	var outputResponse, inputResponse *FreqResponseMatrix
+	if outputWeight != nil {
+		if err := domainMatch(sys, outputWeight); err != nil {
+			return 0, 0, fmt.Errorf("output weight: %w", err)
+		}
+		outputResponse, err = outputWeight.FreqResponse(omega)
+		if err != nil {
+			return 0, 0, err
+		}
+	}
+	if inputWeight != nil {
+		if err := domainMatch(sys, inputWeight); err != nil {
+			return 0, 0, fmt.Errorf("input weight: %w", err)
+		}
+		inputResponse, err = inputWeight.FreqResponse(omega)
+		if err != nil {
+			return 0, 0, err
+		}
 	}
 	maxGain := 0.0
+	minGain := math.Inf(1)
+	responseData := make([]complex128, resp.P*resp.M)
+	var outputData, outputProduct, inputData, inputProduct []complex128
+	weightedRows := resp.P
+	if outputResponse != nil {
+		outputData = make([]complex128, outputResponse.P*outputResponse.M)
+		outputProduct = make([]complex128, outputResponse.P*resp.M)
+		weightedRows = outputResponse.P
+	}
+	if inputResponse != nil {
+		inputData = make([]complex128, inputResponse.P*inputResponse.M)
+		inputProduct = make([]complex128, weightedRows*inputResponse.M)
+	}
+	var singularValues complexSingularValueWorkspace
 	for k := range omega {
-		for i := 0; i < resp.P; i++ {
-			for j := 0; j < resp.M; j++ {
-				if gain := cmplx.Abs(resp.At(k, i, j)); gain > maxGain {
-					maxGain = gain
-				}
+		gain := complexResponseAt(resp, k, responseData)
+		if outputResponse != nil {
+			gain, err = multiplyComplexMatricesInto(outputProduct, complexResponseAt(outputResponse, k, outputData), gain)
+			if err != nil {
+				return 0, 0, fmt.Errorf("output weight: %w", err)
+			}
+		}
+		if inputResponse != nil {
+			gain, err = multiplyComplexMatricesInto(inputProduct, gain, complexResponseAt(inputResponse, k, inputData))
+			if err != nil {
+				return 0, 0, fmt.Errorf("input weight: %w", err)
+			}
+		}
+		sigma, err := singularValues.maximum(gain)
+		if err != nil {
+			return 0, 0, err
+		}
+		if sigma > maxGain {
+			maxGain = sigma
+		}
+		if sigma < minGain {
+			minGain = sigma
+		}
+	}
+	return minGain, maxGain, nil
+}
+
+type complexMatrix struct {
+	rows int
+	cols int
+	data []complex128
+}
+
+func complexResponseAt(response *FreqResponseMatrix, frequency int, data []complex128) complexMatrix {
+	if len(data) != response.P*response.M {
+		data = make([]complex128, response.P*response.M)
+	}
+	for i := range response.P {
+		for j := range response.M {
+			data[i*response.M+j] = response.At(frequency, i, j)
+		}
+	}
+	return complexMatrix{rows: response.P, cols: response.M, data: data}
+}
+
+func multiplyComplexMatricesInto(dst []complex128, a, b complexMatrix) (complexMatrix, error) {
+	if a.cols != b.rows {
+		return complexMatrix{}, fmt.Errorf("matrix dimensions %dx%d and %dx%d: %w", a.rows, a.cols, b.rows, b.cols, ErrDimensionMismatch)
+	}
+	if len(dst) != a.rows*b.cols {
+		dst = make([]complex128, a.rows*b.cols)
+	}
+	result := complexMatrix{rows: a.rows, cols: b.cols, data: dst}
+	for i := range result.data {
+		result.data[i] = 0
+	}
+	for i := range a.rows {
+		for k := range a.cols {
+			aik := a.data[i*a.cols+k]
+			for j := range b.cols {
+				result.data[i*result.cols+j] += aik * b.data[k*b.cols+j]
 			}
 		}
 	}
-	return maxGain, nil
+	return result, nil
+}
+
+type complexSingularValueWorkspace struct {
+	realForm *mat.Dense
+	svd      mat.SVD
+}
+
+func (w *complexSingularValueWorkspace) maximum(a complexMatrix) (float64, error) {
+	if a.rows == 0 || a.cols == 0 {
+		return 0, nil
+	}
+	if a.rows == 1 || a.cols == 1 {
+		norm := 0.0
+		for _, value := range a.data {
+			norm = math.Hypot(norm, math.Hypot(real(value), imag(value)))
+		}
+		return norm, nil
+	}
+	if a.rows == 2 && a.cols == 2 {
+		return maximumComplex2x2SingularValue(a), nil
+	}
+	rows, cols := 2*a.rows, 2*a.cols
+	if w.realForm == nil {
+		w.realForm = mat.NewDense(rows, cols, nil)
+	} else if r, c := w.realForm.Dims(); r != rows || c != cols {
+		w.realForm.Reset()
+		w.realForm.ReuseAs(rows, cols)
+	}
+	for i := range a.rows {
+		for j := range a.cols {
+			value := a.data[i*a.cols+j]
+			w.realForm.Set(i, j, real(value))
+			w.realForm.Set(i, j+a.cols, -imag(value))
+			w.realForm.Set(i+a.rows, j, imag(value))
+			w.realForm.Set(i+a.rows, j+a.cols, real(value))
+		}
+	}
+	if ok := w.svd.Factorize(w.realForm, mat.SVDNone); !ok {
+		return 0, fmt.Errorf("maximum singular value: decomposition failed: %w", ErrSingularTransform)
+	}
+	values := w.svd.Values(nil)
+	return values[0], nil
+}
+
+func maximumComplex2x2SingularValue(a complexMatrix) float64 {
+	scale := 0.0
+	for _, value := range a.data {
+		scale = math.Max(scale, math.Hypot(real(value), imag(value)))
+	}
+	if scale == 0 {
+		return 0
+	}
+	a00 := a.data[0] / complex(scale, 0)
+	a01 := a.data[1] / complex(scale, 0)
+	a10 := a.data[2] / complex(scale, 0)
+	a11 := a.data[3] / complex(scale, 0)
+	frobeniusSquared := complexMagnitudeSquared(a00) + complexMagnitudeSquared(a01) + complexMagnitudeSquared(a10) + complexMagnitudeSquared(a11)
+	determinantSquared := complexMagnitudeSquared(a00*a11 - a01*a10)
+	discriminant := math.Max(0, frobeniusSquared*frobeniusSquared-4*determinantSquared)
+	return scale * math.Sqrt((frobeniusSquared+math.Sqrt(discriminant))/2)
+}
+
+func complexMagnitudeSquared(value complex128) float64 {
+	return real(value)*real(value) + imag(value)*imag(value)
 }

@@ -1,6 +1,6 @@
 # Controlsys Codebase Interface Diagram
 
-This diagram shows the current module interfaces on `main`. It is a codebase-level view, not a complete call graph: the public model interfaces are centered, and the internal seams show where recurring rules are localized.
+This diagram shows the current package interfaces. It is a codebase-level view, not a complete call graph: the public model interfaces are centered, and the internal seams show where recurring rules are localized.
 
 ## Public Interface Map
 
@@ -28,12 +28,12 @@ flowchart LR
         realizeTransferFunc["TransferFunc.StateSpace"]
         constructZPK["NewZPK / NewZPKMIMO"]
         constructFRD["NewFRD"]
-        constructModelArray["NewModelArray / StackModelArrays"]
+        constructModelArray["NewModelArray / StackModelArrays<br/>ConcatModelArrays"]
         constructGeneralized["NewGeneralizedModel<br/>NewGeneralizedClosedLoop"]
         identifyERA["ERA<br/>Markov parameters to state-space model"]
         estimateFreqResponse["FreqRespEst<br/>sampled input/output to response estimate"]
         linearizeNonlinear["Linearize / NewEKF<br/>local nonlinear approximation"]
-        assemblePhysical["NewPhysicalComponent / AssemblePhysical<br/>port-checked component assembly"]
+        assemblePhysical["NewPhysicalComponent / AssemblePhysical<br/>constraint-based descriptor assembly"]
     end
 
     subgraph interconnection["Interconnection interfaces"]
@@ -62,7 +62,7 @@ flowchart LR
         energyAnalysis["Gram / HSV / Norm<br/>H2Norm / HinfNorm / Covar"]
         structureAnalysis["Ctrb / Obsv / IsStabilizable / IsDetectable"]
         loopAnalysis["Loopsens / RootLocus / FRDMargin"]
-        passivityAnalysis["Passive / FRDPassive / SpectralFactor"]
+        passivityAnalysis["SampledPassive / FRDPassive<br/>Passive compatibility alias / SpectralFactor"]
     end
 
     subgraph transforms["Transformation and reduction"]
@@ -78,7 +78,7 @@ flowchart LR
         observerDesign["Kalman / Kalmd / Lqe / Lqg<br/>Estim / Reg"]
         robustSynthesis["H2Syn / HinfSyn"]
         pidDesign["NewPID / NewPIDStd / Pidtune<br/>PID / PID2 / SmithPredictor"]
-        fixedStructureTuning["Systune / Looptune<br/>tuning goals"]
+        fixedStructureTuning["GridTune / Systune / Looptune<br/>point-specific tuning goals"]
     end
 
     caller --> constructStateSpace
@@ -229,6 +229,8 @@ classDiagram
     }
 
     class GeneralizedClosedLoop {
+        +InsertAnalysisPoint()
+        +AnalysisPoint()
         +OpenLoop()
         +ClosedLoop()
         +Sensitivity()
@@ -320,38 +322,37 @@ classDiagram
     class generalizedTuningSeam {
         +numericBlockFromAny()
         +primaryAnalysisPointName()
-        +tuneFixedStructure()
+        +GridTune()
         +evaluateTuningGoals()
     }
 
     class tuningGoalEvaluator {
-        +tracking()
-        +maxGain()
-        +loopShape()
-        +margin()
-        +pole()
-        +overshoot()
+        +evaluateSystem()
+        +tuningGoalSystem()
+        +frequencyGainRange()
+        +maximumComplexSingularValue()
     }
 
     class passivitySeam {
+        +SampledPassive()
         +Passive()
         +FRDPassive()
         +SpectralFactor()
     }
 
-    class physicalAssemblySeam {
-        +NewPhysicalComponent()
-        +lookupPhysicalPort()
-        +prefixSystemMetadata()
-        +AssemblePhysical()
+    class physicalAssemblyPlan {
+        +bindPorts()
+        +bindConnections()
+        +assemble()
+        +aggregateMatrices()
     }
 
     class modelArraySeam {
         +validateModelArrayCompatible()
+        +validateModelArrayHeadersCompatible()
+        +StackModelArrays()
+        +ConcatModelArrays()
         +flatIndex()
-        +ModelFlat()
-        +FreqResponse()
-        +Step()
     }
 
     class controllerObserverPolicy {
@@ -376,7 +377,7 @@ classDiagram
     System --> timeResponsePlanner : time response
     System --> simulationDispatcher : sampled simulation
     System --> passivitySeam : passivity and spectral factor
-    System --> physicalAssemblySeam : physical component assembly
+    System --> physicalAssemblyPlan : physical constraint assembly
     System --> ModelArray : compatible model arrays
 
     TransferFunc --> System : realization
@@ -390,7 +391,7 @@ classDiagram
 
     generalizedPlantPartition --> System : H2/Hinf controller synthesis
     generalizedTuningSeam --> tuningGoalEvaluator : fixed-structure tuning
-    tuningGoalEvaluator --> System : evaluates closed-loop model
+    tuningGoalEvaluator --> System : evaluates point-specific loop responses
     controllerObserverPolicy --> System : regulator and estimator assembly
     matrixEquationProblem --> controllerObserverPolicy : Riccati and Lyapunov validation
 ```
@@ -402,5 +403,5 @@ classDiagram
 - Interconnection routines concentrate compatibility checks, direct feedthrough handling, delay movement, and metadata propagation behind a small caller-facing interface.
 - Delay behavior is intentionally split between topology and conversion seams: topology answers what delay structure exists; conversion decides whether it remains explicit, becomes a delay bank, or moves into LFT form.
 - Analysis routines share sampled-response layouts so frequency-response data, Bode results, singular-value analysis, and frequency-response estimates use the same output/input/frequency indexing.
-- Model-array, physical-assembly, and state-space utility seams support model-grid, port-checked assembly, and signal-selection workflows while keeping compatibility checks and metadata rules localized.
-- Synthesis routines route generalized-plant, generalized tuning, and controller/observer rules through policy modules before returning controller or closed-loop state-space models.
+- Model-array, physical-assembly, and state-space utility seams support model-grid semantics, across/through descriptor constraints, and signal-selection workflows while keeping compatibility checks and metadata rules localized.
+- Synthesis routines route generalized-plant, point-specific tuning, and controller/observer rules through policy modules before returning controller or closed-loop state-space models.

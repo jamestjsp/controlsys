@@ -147,14 +147,6 @@ func TestDescriptorSystem_UnsupportedOperationsRejectExplicitly(t *testing.T) {
 			_, err := sys.TransferFunction(nil)
 			return err
 		}},
-		{name: "FreqResponse", run: func() error {
-			_, err := sys.FreqResponse([]float64{1})
-			return err
-		}},
-		{name: "EvalFr", run: func() error {
-			_, err := sys.EvalFr(1i)
-			return err
-		}},
 		{name: "Simulate", run: func() error {
 			discrete := sys.Copy()
 			discrete.Dt = 0.1
@@ -173,6 +165,38 @@ func TestDescriptorSystem_UnsupportedOperationsRejectExplicitly(t *testing.T) {
 				t.Fatalf("got %v, want ErrDescriptorUnsupported", err)
 			}
 		})
+	}
+}
+
+func TestDescriptorSystem_FrequencyResponseUsesDescriptorPencil(t *testing.T) {
+	sys, err := NewDescriptor(
+		mat.NewDense(1, 1, []float64{-1}),
+		mat.NewDense(1, 1, []float64{3}),
+		mat.NewDense(1, 1, []float64{4}),
+		mat.NewDense(1, 1, []float64{0.5}),
+		mat.NewDense(1, 1, []float64{2}),
+		0,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	omega := []float64{0, 1, 5}
+	response, err := sys.FreqResponse(omega)
+	if err != nil {
+		t.Fatalf("FreqResponse: %v", err)
+	}
+	for k, frequency := range omega {
+		want := 12/complex(1, 2*frequency) + 0.5
+		if got := response.At(k, 0, 0); cmplx.Abs(got-want) > 1e-12 {
+			t.Fatalf("response at %g = %v, want %v", frequency, got, want)
+		}
+	}
+	evaluated, err := sys.EvalFr(1i)
+	if err != nil {
+		t.Fatalf("EvalFr: %v", err)
+	}
+	if want := 12/complex(1, 2) + 0.5; cmplx.Abs(evaluated[0][0]-want) > 1e-12 {
+		t.Fatalf("EvalFr = %v, want %v", evaluated[0][0], want)
 	}
 }
 

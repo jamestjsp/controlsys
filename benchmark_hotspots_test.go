@@ -457,6 +457,17 @@ func BenchmarkDescriptorToExplicit_N10(b *testing.B) {
 	}
 }
 
+func BenchmarkDescriptorFreqResponse_MIMO_N10x200(b *testing.B) {
+	sys := benchDescriptorSystem(b, 10, 3, 3)
+	omega := logspace(-2, 3, 200)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := sys.FreqResponse(omega); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
 func BenchmarkFixedInputReduction_N10(b *testing.B) {
 	sys := benchSysNonSym(10, 4, 2)
 	fixed := map[int]float64{1: 0.5, 3: -2}
@@ -538,6 +549,26 @@ func BenchmarkTuningGoalWeightedGain_SISO(b *testing.B) {
 func BenchmarkTuningGoalWeightedGain_MIMO(b *testing.B) {
 	sys := benchSysNonSym(8, 3, 3)
 	goal := NewWeightedGainGoal("gain", 10)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := goal.Evaluate(sys); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkTuningGoalDynamicWeightedGain_MIMO(b *testing.B) {
+	sys := benchSysNonSym(8, 3, 3)
+	goal, err := NewTuningGoal(TuningGoalSpec{
+		Name:         "weighted",
+		Type:         TuningGoalWeightedGain,
+		Max:          10,
+		InputWeight:  benchSysNonSym(2, 3, 3),
+		OutputWeight: benchSysNonSym(2, 3, 3),
+	})
+	if err != nil {
+		b.Fatal(err)
+	}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		if _, err := goal.Evaluate(sys); err != nil {

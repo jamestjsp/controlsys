@@ -35,7 +35,7 @@ This package is intended to be usable in production control and estimation code,
 - **State estimation:** Extended Kalman Filter (EKF) for nonlinear systems
 - **System identification:** Eigensystem Realization Algorithm (ERA) and frequency-response estimation from I/O data
 - **Nonlinear systems:** Jacobian linearization around operating points; Smith predictor for time-delay plants
-- **Model arrays and physical assembly:** compatible model grids for parameter sweeps and port-checked physical component assembly
+- **Model arrays and physical assembly:** compatible model grids for parameter sweeps and descriptor assembly of connected physical ports
 - **Model reduction & decomposition:** controllability/observability staircase, balanced realization, balanced truncation, stable/unstable and modal separation, modal truncation
 - **System norms & covariance:** H2/H-infinity norms, Hankel singular values, state covariance
 - **Interconnection:** series, parallel, feedback, safe feedback, append, block diagonal, named/indexed connect, FRD interconnections, sum blocks, and LFT
@@ -90,11 +90,12 @@ func main() {
 | `NewZPKMIMO` | MIMO zero-pole-gain model |
 | `NewFRD` | Frequency-response data model from sampled complex responses |
 | `NewModelArray` | Compatible array of state-space models for sweeps or model grids |
-| `StackModelArrays` | Concatenate compatible model arrays along a new leading axis |
+| `StackModelArrays` | Stack equal-shaped compatible arrays along a new leading axis |
+| `ConcatModelArrays` | Flatten and concatenate compatible model arrays |
 | `NewGeneralizedModel` | Wrap a fixed or tunable block and attach analysis points |
-| `NewGeneralizedClosedLoop` | Build a plant/controller closed-loop model with an analysis point |
+| `NewGeneralizedClosedLoop` | Build a plant/controller closed-loop model with a plant-output analysis point |
 | `NewPhysicalComponent` | Wrap a model with named physical ports |
-| `AssemblePhysical` | Validate physical port compatibility and append component models |
+| `AssemblePhysical` | Assemble connected across/through port equations into a descriptor model |
 | `NewDescriptor` | Descriptor state-space model with explicit E matrix |
 | `Rss` | Random stable continuous-time state-space model |
 | `Drss` | Random stable discrete-time state-space model |
@@ -118,7 +119,8 @@ func main() {
 | Function/Type | Description |
 |---------------|-------------|
 | `NewGeneralizedModel` | Wrap a fixed or tunable block and attach analysis points |
-| `NewGeneralizedClosedLoop` | Build a plant/controller closed-loop model with an analysis point |
+| `NewGeneralizedClosedLoop` | Build a plant/controller closed-loop model with a plant-output analysis point |
+| `(*GeneralizedClosedLoop).InsertAnalysisPoint` | Bind another named break to the plant input or output |
 | `TunableReal` | Bounded scalar parameter used by tunable blocks |
 | `TunableGain` | Tunable static-gain block |
 | `TunablePID` | Tunable PID controller block |
@@ -128,7 +130,8 @@ func main() {
 | `NewSensitivityGoal` / `NewWeightedGainGoal` | Tuning-goal constructors for gain and sensitivity limits |
 | `NewLoopShapeGoal` / `NewMarginGoal` | Tuning-goal constructors for loop-shape and robustness constraints |
 | `NewPoleGoal` / `NewOvershootGoal` | Tuning-goal constructors for pole-location and step-response constraints |
-| `Systune` / `Looptune` | Fixed-structure tuning over free tunable parameters |
+| `GridTune` | Bounded Cartesian-grid tuning over free parameters and point-specific goals |
+| `Systune` / `Looptune` | Compatibility wrappers around `GridTune` |
 
 ### Frequency Response & Plotting
 
@@ -177,7 +180,8 @@ func main() {
 | `Bandwidth` | -3 dB bandwidth |
 | `RootLocus` | Root locus as a function of loop gain |
 | `Pzmap` | Poles and transmission zeros for plotting/inspection |
-| `Passive` / `FRDPassive` | Passivity check from a state-space model or FRD samples |
+| `SampledPassive` / `FRDPassive` | Passivity evidence on an explicit frequency grid; passing samples are not an analytic certificate. The grid must be strictly increasing, finite, non-negative, and at or below the Nyquist frequency for sampled models |
+| `Passive` | Compatibility alias for `SampledPassive` |
 | `SpectralFactor` | Spectral factor for supported static-gain models |
 
 ### Control Design
@@ -240,7 +244,7 @@ func main() {
 | `Sminreal` | Minimal realization via staircase reduction |
 | `Stabsep` | Stable/unstable decomposition |
 | `Modsep` | Modal decomposition around a cutoff |
-| `ModalTruncate` | Modal truncation result with kept-state metadata |
+| `ModalTruncate` | Basis-invariant real-Schur modal truncation with retained poles and projection bases |
 | `Canon` | Modal or companion canonical form |
 | `SS2SS` | Similarity transform with a user-supplied state basis |
 | `StateTransform` | Alias-style state-basis transform helper |
@@ -334,7 +338,8 @@ func main() {
 | Function/Method | Description |
 |-----------------|-------------|
 | `NewModelArray` | Create a shaped array of compatible state-space models |
-| `StackModelArrays` | Stack compatible model arrays |
+| `StackModelArrays` | Stack equal-shaped compatible arrays along a new leading axis |
+| `ConcatModelArrays` | Flatten and concatenate compatible model arrays |
 | `(*ModelArray).Model` / `ModelFlat` | Retrieve a model by multidimensional or flat index |
 | `(*ModelArray).SelectFlat` | Select a flat-index subset of models |
 | `(*ModelArray).FreqResponse` | Frequency response for every model in the array |
@@ -345,8 +350,8 @@ func main() {
 | Function/Type | Description |
 |---------------|-------------|
 | `NewPhysicalComponent` | Wrap a model with named physical ports |
-| `AssemblePhysical` | Validate physical port compatibility and append component models |
-| `PhysicalPort` / `PhysicalConnection` | Port and connection metadata for physical assembly |
+| `AssemblePhysical` | Assemble connected across/through port equations into a descriptor model |
+| `PhysicalPort` / `PhysicalConnection` | Bind component input/output channels to physical ports and node connections |
 
 ### Transport Delays
 
