@@ -228,6 +228,9 @@ func BenchmarkFRDFeedback_SISO_2000(b *testing.B)  { benchFRDFeedback(b, 2, 1, 1
 func BenchmarkFRDFeedback_MIMO_200(b *testing.B)   { benchFRDFeedback(b, 10, 3, 3, 200) }
 func BenchmarkFRDFeedback_MIMO_2000(b *testing.B)  { benchFRDFeedback(b, 10, 3, 3, 2000) }
 func BenchmarkFRDFeedback_MIMO_10000(b *testing.B) { benchFRDFeedback(b, 10, 3, 3, 10000) }
+func BenchmarkFRDFeedback_MIMO8x8_2000(b *testing.B) {
+	benchFRDFeedback(b, 20, 8, 8, 2000)
+}
 
 func benchFRDFeedback(b *testing.B, n, m, p, nw int) {
 	plant := benchSysNonSym(n, m, p)
@@ -458,8 +461,16 @@ func BenchmarkDescriptorToExplicit_N10(b *testing.B) {
 }
 
 func BenchmarkDescriptorFreqResponse_MIMO_N10x200(b *testing.B) {
-	sys := benchDescriptorSystem(b, 10, 3, 3)
-	omega := logspace(-2, 3, 200)
+	benchDescriptorFreqResponse(b, 10, 3, 3, 200)
+}
+
+func BenchmarkDescriptorFreqResponse_MIMO_N50x200(b *testing.B) {
+	benchDescriptorFreqResponse(b, 50, 5, 5, 200)
+}
+
+func benchDescriptorFreqResponse(b *testing.B, n, m, p, nw int) {
+	sys := benchDescriptorSystem(b, n, m, p)
+	omega := logspace(-2, 3, nw)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		if _, err := sys.FreqResponse(omega); err != nil {
