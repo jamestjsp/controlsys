@@ -242,7 +242,7 @@ func main() {
 | `Sminreal` | Minimal realization via staircase reduction |
 | `Stabsep` | Stable/unstable decomposition |
 | `Modsep` | Modal decomposition around a cutoff |
-| `ModalTruncate` | Modal truncation result with kept-state metadata |
+| `ModalTruncate` | Basis-invariant real-Schur modal truncation with retained poles and projection bases |
 | `Canon` | Modal or companion canonical form |
 | `SS2SS` | Similarity transform with a user-supplied state basis |
 | `StateTransform` | Alias-style state-basis transform helper |
