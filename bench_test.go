@@ -273,6 +273,53 @@ func BenchmarkFreqResponse(b *testing.B) {
 	}
 }
 
+func BenchmarkFreqResponse_ShortSweep(b *testing.B) {
+	sys := benchSys(10, 2, 3)
+	omega := logspace(-2, 2, 8)
+	b.ResetTimer()
+	for b.Loop() {
+		sys.FreqResponse(omega)
+	}
+}
+
+func BenchmarkFrequencySweepKernels(b *testing.B) {
+	tests := []struct {
+		name        string
+		n, m, p, nw int
+	}{
+		{name: "N4_W2", n: 4, m: 2, p: 2, nw: 2},
+		{name: "N4_W8", n: 4, m: 2, p: 2, nw: 8},
+		{name: "N4_W32", n: 4, m: 2, p: 2, nw: 32},
+		{name: "N4_W100", n: 4, m: 2, p: 2, nw: 100},
+		{name: "N10_W2", n: 10, m: 2, p: 3, nw: 2},
+		{name: "N10_W8", n: 10, m: 2, p: 3, nw: 8},
+		{name: "N10_W32", n: 10, m: 2, p: 3, nw: 32},
+		{name: "N10_W100", n: 10, m: 2, p: 3, nw: 100},
+	}
+	for _, test := range tests {
+		sys := benchSys(test.n, test.m, test.p)
+		evaluator := newFrequencyEvaluator(sys)
+		omega := logspace(-2, 2, test.nw)
+		size := test.nw * test.p * test.m
+		b.Run(test.name+"/StateSpace", func(b *testing.B) {
+			for b.Loop() {
+				data := make([]complex128, size)
+				if err := evaluator.evalStateSpaceSweepInto(omega, data); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+		b.Run(test.name+"/TransferFunction", func(b *testing.B) {
+			for b.Loop() {
+				data := make([]complex128, size)
+				if err := evaluator.evalTransferFunctionSweepInto(omega, data); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
 func BenchmarkBode(b *testing.B) {
 	sys := benchSys(10, 2, 3)
 	b.ResetTimer()
