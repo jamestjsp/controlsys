@@ -3,8 +3,6 @@ package controlsys
 import (
 	"fmt"
 	"math"
-
-	"gonum.org/v1/gonum/mat"
 )
 
 type TuningGoalType int
@@ -400,36 +398,38 @@ func frequencyGainRange(sys *System, omega []float64, outputWeight, inputWeight 
 	}
 	maxGain := 0.0
 	minGain := math.Inf(1)
-	responseData := make([]complex128, resp.P*resp.M)
-	var outputData, outputProduct, inputData, inputProduct []complex128
+	var outputProduct, inputProduct []complex128
 	weightedRows := resp.P
+	weightedCols := resp.M
 	if outputResponse != nil {
-		outputData = make([]complex128, outputResponse.P*outputResponse.M)
 		outputProduct = make([]complex128, outputResponse.P*resp.M)
 		weightedRows = outputResponse.P
 	}
 	if inputResponse != nil {
-		inputData = make([]complex128, inputResponse.P*inputResponse.M)
 		inputProduct = make([]complex128, weightedRows*inputResponse.M)
+		weightedCols = inputResponse.M
 	}
-	var singularValues complexSingularValueWorkspace
+	var singularValues *complexSVDWorkspace
+	if weightedRows > 1 && weightedCols > 1 && (weightedRows != 2 || weightedCols != 2) {
+		singularValues = newComplexSVDWorkspace(weightedRows, weightedCols)
+	}
 	for k := range omega {
-		gain := complexResponseAt(resp, k, responseData)
+		gain := complexResponseAt(resp, k)
 		if outputResponse != nil {
-			gain, err = multiplyComplexMatricesInto(outputProduct, complexResponseAt(outputResponse, k, outputData), gain)
+			gain, err = multiplyComplexMatricesInto(outputProduct, complexResponseAt(outputResponse, k), gain)
 			if err != nil {
 				return 0, 0, fmt.Errorf("output weight: %w", err)
 			}
 		}
 		if inputResponse != nil {
-			gain, err = multiplyComplexMatricesInto(inputProduct, gain, complexResponseAt(inputResponse, k, inputData))
+			gain, err = multiplyComplexMatricesInto(inputProduct, gain, complexResponseAt(inputResponse, k))
 			if err != nil {
 				return 0, 0, fmt.Errorf("input weight: %w", err)
 			}
 		}
-		sigma, err := singularValues.maximum(gain)
-		if err != nil {
-			return 0, 0, err
+		sigma, ok := singularValues.maximumFromFlat(gain.data, 0, gain.rows, gain.cols)
+		if !ok {
+			return 0, 0, fmt.Errorf("maximum singular value: decomposition failed: %w", ErrSingularTransform)
 		}
 		if sigma > maxGain {
 			maxGain = sigma
@@ -447,16 +447,10 @@ type complexMatrix struct {
 	data []complex128
 }
 
-func complexResponseAt(response *FreqResponseMatrix, frequency int, data []complex128) complexMatrix {
-	if len(data) != response.P*response.M {
-		data = make([]complex128, response.P*response.M)
-	}
-	for i := range response.P {
-		for j := range response.M {
-			data[i*response.M+j] = response.At(frequency, i, j)
-		}
-	}
-	return complexMatrix{rows: response.P, cols: response.M, data: data}
+func complexResponseAt(response *FreqResponseMatrix, frequency int) complexMatrix {
+	blockSize := response.P * response.M
+	base := frequency * blockSize
+	return complexMatrix{rows: response.P, cols: response.M, data: response.Data[base : base+blockSize]}
 }
 
 func multiplyComplexMatricesInto(dst []complex128, a, b complexMatrix) (complexMatrix, error) {
@@ -479,68 +473,4 @@ func multiplyComplexMatricesInto(dst []complex128, a, b complexMatrix) (complexM
 		}
 	}
 	return result, nil
-}
-
-type complexSingularValueWorkspace struct {
-	realForm *mat.Dense
-	svd      mat.SVD
-}
-
-func (w *complexSingularValueWorkspace) maximum(a complexMatrix) (float64, error) {
-	if a.rows == 0 || a.cols == 0 {
-		return 0, nil
-	}
-	if a.rows == 1 || a.cols == 1 {
-		norm := 0.0
-		for _, value := range a.data {
-			norm = math.Hypot(norm, math.Hypot(real(value), imag(value)))
-		}
-		return norm, nil
-	}
-	if a.rows == 2 && a.cols == 2 {
-		return maximumComplex2x2SingularValue(a), nil
-	}
-	rows, cols := 2*a.rows, 2*a.cols
-	if w.realForm == nil {
-		w.realForm = mat.NewDense(rows, cols, nil)
-	} else if r, c := w.realForm.Dims(); r != rows || c != cols {
-		w.realForm.Reset()
-		w.realForm.ReuseAs(rows, cols)
-	}
-	for i := range a.rows {
-		for j := range a.cols {
-			value := a.data[i*a.cols+j]
-			w.realForm.Set(i, j, real(value))
-			w.realForm.Set(i, j+a.cols, -imag(value))
-			w.realForm.Set(i+a.rows, j, imag(value))
-			w.realForm.Set(i+a.rows, j+a.cols, real(value))
-		}
-	}
-	if ok := w.svd.Factorize(w.realForm, mat.SVDNone); !ok {
-		return 0, fmt.Errorf("maximum singular value: decomposition failed: %w", ErrSingularTransform)
-	}
-	values := w.svd.Values(nil)
-	return values[0], nil
-}
-
-func maximumComplex2x2SingularValue(a complexMatrix) float64 {
-	scale := 0.0
-	for _, value := range a.data {
-		scale = math.Max(scale, math.Hypot(real(value), imag(value)))
-	}
-	if scale == 0 {
-		return 0
-	}
-	a00 := a.data[0] / complex(scale, 0)
-	a01 := a.data[1] / complex(scale, 0)
-	a10 := a.data[2] / complex(scale, 0)
-	a11 := a.data[3] / complex(scale, 0)
-	frobeniusSquared := complexMagnitudeSquared(a00) + complexMagnitudeSquared(a01) + complexMagnitudeSquared(a10) + complexMagnitudeSquared(a11)
-	determinantSquared := complexMagnitudeSquared(a00*a11 - a01*a10)
-	discriminant := math.Max(0, frobeniusSquared*frobeniusSquared-4*determinantSquared)
-	return scale * math.Sqrt((frobeniusSquared+math.Sqrt(discriminant))/2)
-}
-
-func complexMagnitudeSquared(value complex128) float64 {
-	return real(value)*real(value) + imag(value)*imag(value)
 }
