@@ -355,20 +355,16 @@ func applyIODelayMatrixAtS(sys *System, s complex128, data []complex128, p, m in
 }
 
 type ssEvalWorkspace struct {
-	sIA       []complex128
-	resolvent []complex128
-	invBuf    []complex128
-	temp      []complex128
-	g         []complex128
+	pencil []complex128
+	rhs    []complex128
+	g      []complex128
 }
 
 func newSSEvalWorkspace(n, p, m int) *ssEvalWorkspace {
 	return &ssEvalWorkspace{
-		sIA:       make([]complex128, n*n),
-		resolvent: make([]complex128, n*n),
-		invBuf:    make([]complex128, n*2*n),
-		temp:      make([]complex128, n*max(m, p)),
-		g:         make([]complex128, p*m),
+		pencil: make([]complex128, n*n),
+		rhs:    make([]complex128, n*m),
+		g:      make([]complex128, p*m),
 	}
 }
 
@@ -380,24 +376,145 @@ func evalFrSSInto(ws *ssEvalWorkspace, sys *System, s complex128, n, p, m int) e
 		dData, dStride = dRaw.Data, dRaw.Stride
 	}
 	if n == 0 {
-		cComputeHInto(ws.g, ws.temp, ws.resolvent, nil, 0, nil, 0, dData, dStride, n, p, m)
+		copyRealMatrixToComplex(ws.g, dData, dStride, p, m)
 		return nil
 	}
 
 	aRaw := sys.A.RawMatrix()
-	var err error
 	if sys.E == nil {
-		err = cResolventInto(ws.resolvent, ws.sIA, ws.invBuf, aRaw.Data, aRaw.Stride, s, n)
+		fillComplexPencil(ws.pencil, aRaw.Data, aRaw.Stride, nil, 0, s, n)
 	} else {
 		eRaw := sys.E.RawMatrix()
-		err = cDescriptorResolventInto(ws.resolvent, ws.sIA, ws.invBuf, aRaw.Data, aRaw.Stride, eRaw.Data, eRaw.Stride, s, n)
-	}
-	if err != nil {
-		return err
+		fillComplexPencil(ws.pencil, aRaw.Data, aRaw.Stride, eRaw.Data, eRaw.Stride, s, n)
 	}
 	bRaw := sys.B.RawMatrix()
+	copyRealMatrixToComplex(ws.rhs, bRaw.Data, bRaw.Stride, n, m)
+	if err := cSolveInPlace(ws.pencil, ws.rhs, n, m); err != nil {
+		return err
+	}
 	cRaw := sys.C.RawMatrix()
-	cComputeHInto(ws.g, ws.temp, ws.resolvent, cRaw.Data, cRaw.Stride, bRaw.Data, bRaw.Stride, dData, dStride, n, p, m)
+	cRealMulComplexInto(ws.g, cRaw.Data, cRaw.Stride, ws.rhs, dData, dStride, n, p, m)
+	return nil
+}
+
+func fillComplexPencil(dst []complex128, a []float64, aStride int, e []float64, eStride int, s complex128, n int) {
+	for i := range n {
+		row := i * n
+		aRow := i * aStride
+		if e == nil {
+			for j := range n {
+				dst[row+j] = -complex(a[aRow+j], 0)
+			}
+			dst[row+i] += s
+			continue
+		}
+		eRow := i * eStride
+		for j := range n {
+			dst[row+j] = s*complex(e[eRow+j], 0) - complex(a[aRow+j], 0)
+		}
+	}
+}
+
+func copyRealMatrixToComplex(dst []complex128, src []float64, stride, rows, cols int) {
+	if src == nil {
+		clear(dst[:rows*cols])
+		return
+	}
+	for i := range rows {
+		for j := range cols {
+			dst[i*cols+j] = complex(src[i*stride+j], 0)
+		}
+	}
+}
+
+func cRealMulComplexInto(dst []complex128, a []float64, aStride int, b []complex128, d []float64, dStride, inner, rows, cols int) {
+	for i := range rows {
+		for j := range cols {
+			var sum complex128
+			for k := range inner {
+				sum += complex(a[i*aStride+k], 0) * b[k*cols+j]
+			}
+			if d != nil {
+				sum += complex(d[i*dStride+j], 0)
+			}
+			dst[i*cols+j] = sum
+		}
+	}
+}
+
+func cSolveInPlace(a, b []complex128, n, nrhs int) error {
+	if n == 1 {
+		if a[0] == 0 {
+			return fmt.Errorf("controlsys: singular complex matrix: %w", ErrSingularTransform)
+		}
+		for j := range nrhs {
+			b[j] /= a[0]
+		}
+		return nil
+	}
+
+	maxAbs := 0.0
+	for _, v := range a[:n*n] {
+		if av := cmplx.Abs(v); av > maxAbs {
+			maxAbs = av
+		}
+	}
+	tol := float64(n) * maxAbs * eps()
+	if tol == 0 {
+		tol = 1e-15
+	}
+
+	for k := range n {
+		pivot := k
+		best := cmplx.Abs(a[k*n+k])
+		for i := k + 1; i < n; i++ {
+			if candidate := cmplx.Abs(a[i*n+k]); candidate > best {
+				best = candidate
+				pivot = i
+			}
+		}
+		if best < tol {
+			return fmt.Errorf("controlsys: singular complex matrix: %w", ErrSingularTransform)
+		}
+		if pivot != k {
+			for j := range n {
+				a[k*n+j], a[pivot*n+j] = a[pivot*n+j], a[k*n+j]
+			}
+			for j := range nrhs {
+				b[k*nrhs+j], b[pivot*nrhs+j] = b[pivot*nrhs+j], b[k*nrhs+j]
+			}
+		}
+
+		akk := a[k*n+k]
+		for i := k + 1; i < n; i++ {
+			factor := a[i*n+k] / akk
+			a[i*n+k] = factor
+			for j := k + 1; j < n; j++ {
+				a[i*n+j] -= factor * a[k*n+j]
+			}
+		}
+	}
+
+	for i := 1; i < n; i++ {
+		for k := 0; k < i; k++ {
+			factor := a[i*n+k]
+			for j := range nrhs {
+				b[i*nrhs+j] -= factor * b[k*nrhs+j]
+			}
+		}
+	}
+	for i := n - 1; i >= 0; i-- {
+		for k := i + 1; k < n; k++ {
+			factor := a[i*n+k]
+			for j := range nrhs {
+				b[i*nrhs+j] -= factor * b[k*nrhs+j]
+			}
+		}
+		diag := a[i*n+i]
+		for j := range nrhs {
+			b[i*nrhs+j] /= diag
+		}
+	}
 	return nil
 }
 

@@ -700,18 +700,28 @@ func FRDFeedback(plant, controller *FRD, sign float64) (*FRD, error) {
 		copyComplexMatrixInto(ws.k, controller.Response[w], cp, pp)
 		cMulInto(ws.kg, ws.k, ws.g, cp, pp, pm)
 
-		for i := range ws.kg {
-			ws.ipkg[i] = complex(-sign, 0) * ws.kg[i]
+		for i := range ws.n {
+			for j := range ws.n {
+				ws.ipkg[j*ws.n+i] = complex(-sign, 0) * ws.kg[i*ws.n+j]
+			}
 		}
 		for i := 0; i < ws.n; i++ {
 			ws.ipkg[i*ws.n+i] += 1
 		}
-
-		err := cInvertInto(ws.inv, ws.aug, ws.ipkg, ws.n)
-		if err != nil {
+		for i := range pp {
+			for j := range ws.n {
+				ws.rhs[j*pp+i] = ws.g[i*ws.n+j]
+			}
+		}
+		if err := cSolveInPlace(ws.ipkg, ws.rhs, ws.n, pp); err != nil {
 			return nil, fmt.Errorf("frd feedback: singular at freq index %d", w)
 		}
-		cMulInto(data[w*pp*pm:(w+1)*pp*pm], ws.g, ws.inv, pp, ws.n, pm)
+		dst := data[w*pp*pm : (w+1)*pp*pm]
+		for i := range pp {
+			for j := range ws.n {
+				dst[i*ws.n+j] = ws.rhs[j*pp+i]
+			}
+		}
 	}
 
 	return result, nil
@@ -722,8 +732,7 @@ type frdFeedbackWorkspace struct {
 	k    []complex128
 	kg   []complex128
 	ipkg []complex128
-	inv  []complex128
-	aug  []complex128
+	rhs  []complex128
 	n    int
 }
 
@@ -734,8 +743,7 @@ func newFRDFeedbackWorkspace(pp, pm int) *frdFeedbackWorkspace {
 		k:    make([]complex128, pm*pp),
 		kg:   make([]complex128, n*n),
 		ipkg: make([]complex128, n*n),
-		inv:  make([]complex128, n*n),
-		aug:  make([]complex128, n*2*n),
+		rhs:  make([]complex128, n*pp),
 		n:    n,
 	}
 }

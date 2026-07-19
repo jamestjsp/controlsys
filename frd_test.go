@@ -715,6 +715,47 @@ func TestFRDFeedback_MIMO(t *testing.T) {
 	}
 }
 
+func TestFRDFeedback_CoupledRectangularMIMO(t *testing.T) {
+	plant, err := NewFRD([][][]complex128{{
+		{1 + 0.2i, -0.5i, 0.25},
+		{0.3 - 0.1i, 2, -0.4 + 0.6i},
+	}}, []float64{1}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	controller, err := NewFRD([][][]complex128{{
+		{0.5, -0.1 + 0.2i},
+		{0.3i, 0.4},
+		{-0.2, 0.1 - 0.1i},
+	}}, []float64{1}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := FRDFeedback(plant, controller, -1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range 2 {
+		for j := range 3 {
+			var product complex128
+			for l := range 3 {
+				m := complex(0, 0)
+				if l == j {
+					m = 1
+				}
+				for k := range 2 {
+					m += controller.At(0, l, k) * plant.At(0, k, j)
+				}
+				product += got.At(0, i, l) * m
+			}
+			if diff := cmplx.Abs(product - plant.At(0, i, j)); diff > 1e-12 {
+				t.Fatalf("closed-loop residual (%d,%d) = %g", i, j, diff)
+			}
+		}
+	}
+}
+
 func TestFRDFeedback_Singular(t *testing.T) {
 	plant, err := NewFRD([][][]complex128{{{1}}}, []float64{1}, 0)
 	if err != nil {

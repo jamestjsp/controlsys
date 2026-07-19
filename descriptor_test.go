@@ -200,6 +200,59 @@ func TestDescriptorSystem_FrequencyResponseUsesDescriptorPencil(t *testing.T) {
 	}
 }
 
+func TestDescriptorSystem_FrequencyResponsePivotsNonSymmetricPencil(t *testing.T) {
+	a := mat.NewDense(2, 2, []float64{0, -2, 3, -1})
+	e := mat.NewDense(2, 2, []float64{0, 1, 1, 0.5})
+	b := mat.NewDense(2, 2, []float64{1, -1, 2, 0.5})
+	c := mat.NewDense(2, 2, []float64{1, 0.25, -0.5, 2})
+	d := mat.NewDense(2, 2, []float64{0.1, 0.2, -0.3, 0.4})
+	sys, err := NewDescriptor(a, b, c, d, e, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	s := complex(0, 1)
+	pencil := [4]complex128{
+		s*complex(e.At(0, 0), 0) - complex(a.At(0, 0), 0),
+		s*complex(e.At(0, 1), 0) - complex(a.At(0, 1), 0),
+		s*complex(e.At(1, 0), 0) - complex(a.At(1, 0), 0),
+		s*complex(e.At(1, 1), 0) - complex(a.At(1, 1), 0),
+	}
+	det := pencil[0]*pencil[3] - pencil[1]*pencil[2]
+	inv := [4]complex128{pencil[3] / det, -pencil[1] / det, -pencil[2] / det, pencil[0] / det}
+	want := make([][]complex128, 2)
+	for i := range 2 {
+		want[i] = make([]complex128, 2)
+		for j := range 2 {
+			for k := range 2 {
+				for l := range 2 {
+					want[i][j] += complex(c.At(i, k), 0) * inv[k*2+l] * complex(b.At(l, j), 0)
+				}
+			}
+			want[i][j] += complex(d.At(i, j), 0)
+		}
+	}
+
+	got, err := sys.EvalFr(s)
+	if err != nil {
+		t.Fatalf("EvalFr: %v", err)
+	}
+	response, err := sys.FreqResponse([]float64{1})
+	if err != nil {
+		t.Fatalf("FreqResponse: %v", err)
+	}
+	for i := range 2 {
+		for j := range 2 {
+			if diff := cmplx.Abs(got[i][j] - want[i][j]); diff > 1e-12 {
+				t.Fatalf("EvalFr(%d,%d) diff=%g: got %v, want %v", i, j, diff, got[i][j], want[i][j])
+			}
+			if diff := cmplx.Abs(response.At(0, i, j) - want[i][j]); diff > 1e-12 {
+				t.Fatalf("FreqResponse(%d,%d) diff=%g: got %v, want %v", i, j, diff, response.At(0, i, j), want[i][j])
+			}
+		}
+	}
+}
+
 func TestDescriptorSystem_IdentityDescriptorUsesStandardOperations(t *testing.T) {
 	sys, err := New(
 		mat.NewDense(2, 2, []float64{-1, 2, 0.5, -3}),
