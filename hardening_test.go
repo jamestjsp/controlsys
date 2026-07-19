@@ -12,7 +12,7 @@ import (
 func TestStateSpace_RejectsImproperTF(t *testing.T) {
 	tf := &TransferFunc{
 		Num: [][][]float64{{{1, 0}}}, // s (degree 1)
-		Den: [][]float64{{1}},         // 1 (degree 0)
+		Den: [][]float64{{1}},        // 1 (degree 0)
 	}
 	_, err := tf.StateSpace(nil)
 	if !errors.Is(err, ErrImproperTF) {
@@ -224,7 +224,7 @@ func TestDare_GeneralizedWithCrossTerm(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if r := dareResidual(A, B, Q, R, res.X); r > 1e-9 {
+	if r := dareResidualWithCrossTerm(A, B, Q, R, S, res.X); r > 1e-9 {
 		t.Errorf("DARE residual = %e", r)
 	}
 	checkSymmetric(t, res.X, 1e-10)
@@ -254,6 +254,71 @@ func TestDare_IllConditionedA(t *testing.T) {
 	for _, e := range res.Eig {
 		if cmplx.Abs(e) >= 1.0 {
 			t.Errorf("unstable closed-loop eigenvalue: %v (|λ|=%v)", e, cmplx.Abs(e))
+		}
+	}
+}
+
+func TestDare_SingularA_SciPyOracle(t *testing.T) {
+	A := mat.NewDense(2, 2, []float64{0, 1, 0, 0.2})
+	B := mat.NewDense(2, 1, []float64{0.2, 1})
+	Q := mat.NewDense(2, 2, []float64{2, 0.1, 0.1, 1})
+	R := mat.NewDense(1, 1, []float64{1.5})
+	S := mat.NewDense(2, 1, []float64{0.1, 0.2})
+	wantX := mat.NewDense(2, 2, []float64{
+		1.9977280744658075, 0.07198755827337247,
+		0.07198755827337247, 2.7928485672615015,
+	})
+	wantK := mat.NewDense(1, 2, []float64{0.022719255341908287, 0.2801244172662588})
+
+	res, err := Dare(A, B, Q, R, &RiccatiOpts{S: S})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !mat.EqualApprox(res.X, wantX, 2e-12) {
+		t.Errorf("X differs from SciPy oracle:\ngot:\n%v\nwant:\n%v", mat.Formatted(res.X), mat.Formatted(wantX))
+	}
+	if !mat.EqualApprox(res.K, wantK, 2e-12) {
+		t.Errorf("K differs from SciPy oracle:\ngot:\n%v\nwant:\n%v", mat.Formatted(res.K), mat.Formatted(wantK))
+	}
+	if residual := dareResidualWithCrossTerm(A, B, Q, R, S, res.X); residual > 2e-14 {
+		t.Errorf("residual = %e", residual)
+	}
+	checkSymmetric(t, res.X, 1e-13)
+	for _, eig := range res.Eig {
+		if cmplx.Abs(eig) >= 1 {
+			t.Errorf("non-stable closed-loop eigenvalue: %v", eig)
+		}
+	}
+}
+
+func TestDare_IllConditionedNonSymmetricA_SciPyOracle(t *testing.T) {
+	A := mat.NewDense(2, 2, []float64{1.05, 0.4, 0, 1e-12})
+	B := mat.NewDense(2, 1, []float64{1, 0.3})
+	Q := mat.NewDense(2, 2, []float64{2, 0.25, 0.25, 1})
+	R := mat.NewDense(1, 1, []float64{0.75})
+	wantX := mat.NewDense(2, 2, []float64{
+		2.64626274734184, 0.49619533232058405,
+		0.49619533232058405, 1.0937886980268443,
+	})
+	wantK := mat.NewDense(1, 2, []float64{0.7738796586414393, 0.2948112985302894})
+
+	res, err := Dare(A, B, Q, R, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !mat.EqualApprox(res.X, wantX, 2e-12) {
+		t.Errorf("X differs from SciPy oracle:\ngot:\n%v\nwant:\n%v", mat.Formatted(res.X), mat.Formatted(wantX))
+	}
+	if !mat.EqualApprox(res.K, wantK, 2e-12) {
+		t.Errorf("K differs from SciPy oracle:\ngot:\n%v\nwant:\n%v", mat.Formatted(res.K), mat.Formatted(wantK))
+	}
+	if residual := dareResidual(A, B, Q, R, res.X); residual > 1e-13 {
+		t.Errorf("residual = %e", residual)
+	}
+	checkSymmetric(t, res.X, 1e-13)
+	for _, eig := range res.Eig {
+		if cmplx.Abs(eig) >= 1 {
+			t.Errorf("non-stable closed-loop eigenvalue: %v", eig)
 		}
 	}
 }

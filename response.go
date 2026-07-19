@@ -27,6 +27,13 @@ type timeResponsePlanner struct {
 	sys *System
 }
 
+type standardInputResponse uint8
+
+const (
+	stepResponse standardInputResponse = iota
+	impulseResponse
+)
+
 func newTimeResponsePlanner(sys *System) timeResponsePlanner {
 	return timeResponsePlanner{sys: sys}
 }
@@ -171,6 +178,119 @@ func makeTimeVector(steps int, dt float64) []float64 {
 
 func (p timeResponsePlan) response(Y *mat.Dense) *TimeResponse {
 	return &TimeResponse{T: p.t, Y: Y, OutputName: copyStringSlice(p.original.OutputName)}
+}
+
+func (p timeResponsePlan) allInputResponse(kind standardInputResponse) (*TimeResponse, error) {
+	_, m, outputs := p.sim.Dims()
+	if m <= 1 || outputs == 0 || p.sim.HasDelay() || p.sim.IsDescriptor() {
+		return p.simulatedInputResponse(kind)
+	}
+	if err := p.sim.Validate(); err != nil {
+		return nil, fmt.Errorf("input 0: %w", err)
+	}
+	return p.batchedInputResponse(kind), nil
+}
+
+func (p timeResponsePlan) simulatedInputResponse(kind standardInputResponse) (*TimeResponse, error) {
+	_, m, outputs := p.sim.Dims()
+	Y := mat.NewDense(outputs*m, p.steps, nil)
+	amplitude := kind.amplitude(p)
+
+	for input := range m {
+		u := mat.NewDense(m, p.steps, nil)
+		if kind == stepResponse {
+			uRaw := u.RawMatrix()
+			for sample := range p.steps {
+				uRaw.Data[input*uRaw.Stride+sample] = amplitude
+			}
+		} else {
+			u.Set(input, 0, amplitude)
+		}
+		resp, err := p.sim.Simulate(u, nil, nil)
+		if err != nil {
+			return nil, fmt.Errorf("input %d: %w", input, err)
+		}
+		if resp.Y == nil {
+			continue
+		}
+		yRaw := Y.RawMatrix()
+		responseRaw := resp.Y.RawMatrix()
+		for output := range outputs {
+			dstBase := (input*outputs + output) * yRaw.Stride
+			srcBase := output * responseRaw.Stride
+			copy(yRaw.Data[dstBase:dstBase+p.steps], responseRaw.Data[srcBase:srcBase+p.steps])
+		}
+	}
+
+	return p.response(Y), nil
+}
+
+func (p timeResponsePlan) batchedInputResponse(kind standardInputResponse) *TimeResponse {
+	states, inputs, outputs := p.sim.Dims()
+	Y := mat.NewDense(outputs*inputs, p.steps, nil)
+	yRaw := Y.RawMatrix()
+	dRaw := p.sim.D.RawMatrix()
+	amplitude := kind.amplitude(p)
+
+	if states == 0 {
+		for sample := range p.steps {
+			if kind == impulseResponse && sample > 0 {
+				break
+			}
+			for input := range inputs {
+				for output := range outputs {
+					yRaw.Data[(input*outputs+output)*yRaw.Stride+sample] = amplitude * dRaw.Data[output*dRaw.Stride+input]
+				}
+			}
+		}
+		return p.response(Y)
+	}
+
+	x := make([]float64, states*inputs)
+	nextX := make([]float64, states*inputs)
+	aRaw := p.sim.A.RawMatrix()
+	bRaw := p.sim.B.RawMatrix()
+	cRaw := p.sim.C.RawMatrix()
+
+	for sample := range p.steps {
+		inputActive := kind == stepResponse || sample == 0
+		for input := range inputs {
+			xInput := x[input*states : (input+1)*states]
+			nextInput := nextX[input*states : (input+1)*states]
+			for output := range outputs {
+				value := 0.0
+				if inputActive {
+					value = amplitude * dRaw.Data[output*dRaw.Stride+input]
+				}
+				cRow := cRaw.Data[output*cRaw.Stride : output*cRaw.Stride+states]
+				for state, coefficient := range cRow {
+					value += coefficient * xInput[state]
+				}
+				yRaw.Data[(input*outputs+output)*yRaw.Stride+sample] = value
+			}
+			for state := range states {
+				value := 0.0
+				if inputActive {
+					value = amplitude * bRaw.Data[state*bRaw.Stride+input]
+				}
+				aRow := aRaw.Data[state*aRaw.Stride : state*aRaw.Stride+states]
+				for column, coefficient := range aRow {
+					value += coefficient * xInput[column]
+				}
+				nextInput[state] = value
+			}
+		}
+		x, nextX = nextX, x
+	}
+
+	return p.response(Y)
+}
+
+func (kind standardInputResponse) amplitude(p timeResponsePlan) float64 {
+	if kind == impulseResponse && p.wasContinuous {
+		return 1 / p.dt
+	}
+	return 1
 }
 
 func prepareLsimResponse(sys *System, u *mat.Dense, t []float64) (timeResponsePlan, *mat.Dense, error) {
@@ -544,30 +664,11 @@ func Step(sys *System, tFinal float64) (*TimeResponse, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	_, m, p := plan.sim.Dims()
-	rows := p * m
-	Y := mat.NewDense(rows, plan.steps, nil)
-
-	for j := range m {
-		u := mat.NewDense(m, plan.steps, nil)
-		for k := 0; k < plan.steps; k++ {
-			u.Set(j, k, 1)
-		}
-		resp, err := plan.sim.Simulate(u, nil, nil)
-		if err != nil {
-			return nil, fmt.Errorf("Step: input %d: %w", j, err)
-		}
-		if resp.Y != nil {
-			for i := range p {
-				for k := 0; k < plan.steps; k++ {
-					Y.Set(j*p+i, k, resp.Y.At(i, k))
-				}
-			}
-		}
+	resp, err := plan.allInputResponse(stepResponse)
+	if err != nil {
+		return nil, fmt.Errorf("Step: %w", err)
 	}
-
-	return plan.response(Y), nil
+	return resp, nil
 }
 
 func Impulse(sys *System, tFinal float64) (*TimeResponse, error) {
@@ -576,32 +677,11 @@ func Impulse(sys *System, tFinal float64) (*TimeResponse, error) {
 		return nil, err
 	}
 
-	_, m, p := plan.sim.Dims()
-	rows := p * m
-	Y := mat.NewDense(rows, plan.steps, nil)
-
-	amp := 1.0
-	if plan.wasContinuous {
-		amp = 1.0 / plan.dt
+	resp, err := plan.allInputResponse(impulseResponse)
+	if err != nil {
+		return nil, fmt.Errorf("Impulse: %w", err)
 	}
-
-	for j := range m {
-		u := mat.NewDense(m, plan.steps, nil)
-		u.Set(j, 0, amp)
-		resp, err := plan.sim.Simulate(u, nil, nil)
-		if err != nil {
-			return nil, fmt.Errorf("Impulse: input %d: %w", j, err)
-		}
-		if resp.Y != nil {
-			for i := range p {
-				for k := 0; k < plan.steps; k++ {
-					Y.Set(j*p+i, k, resp.Y.At(i, k))
-				}
-			}
-		}
-	}
-
-	return plan.response(Y), nil
+	return resp, nil
 }
 
 func Initial(sys *System, x0 *mat.VecDense, tFinal float64) (*TimeResponse, error) {

@@ -107,6 +107,35 @@ func TestPhysicalAssemblyPreservesUnconnectedDescriptorComponent(t *testing.T) {
 	}
 }
 
+func TestPhysicalAssemblyOwnsConnectedResult(t *testing.T) {
+	left := physicalCoupledComponent(t, "left", 1)
+	right := physicalCoupledComponent(t, "right", 2)
+	assembled, err := AssemblePhysical("pair", []PhysicalComponent{left, right}, []PhysicalConnection{
+		{FromComponent: "left", FromPort: "mount", ToComponent: "right", ToPort: "mount"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assembledA := assembled.A.At(0, 0)
+	assembledInputName := assembled.InputName[0]
+	left.System.A.Set(0, 0, 99)
+	left.System.InputName[0] = "changed"
+	left.Ports[0].Name = "changed"
+	left.Ports[0].Input[0] = 0
+	if assembled.A.At(0, 0) != assembledA || assembled.InputName[0] != assembledInputName {
+		t.Fatal("source mutation changed assembled result")
+	}
+
+	sourceA := left.System.A.At(0, 0)
+	sourceInputName := left.System.InputName[0]
+	assembled.A.Set(0, 0, -123)
+	assembled.InputName[0] = "result.changed"
+	if left.System.A.At(0, 0) != sourceA || left.System.InputName[0] != sourceInputName {
+		t.Fatal("assembled result mutation changed source component")
+	}
+}
+
 func TestPhysicalAssemblyImplicitPortsSkipExplicitBindings(t *testing.T) {
 	explicit := PhysicalPort{Name: "external", Kind: PhysicalPortDisplacement, Dimension: 1, Input: []int{0}, Output: []int{0}}
 	implicit := PhysicalPort{Name: "mount", Kind: PhysicalPortDisplacement, Dimension: 2}

@@ -1,6 +1,8 @@
 package controlsys
 
 import (
+	"math"
+
 	"gonum.org/v1/gonum/blas"
 	"gonum.org/v1/gonum/blas/blas64"
 	"gonum.org/v1/gonum/lapack"
@@ -8,67 +10,65 @@ import (
 )
 
 type RiccatiWorkspace struct {
-	rChol  []float64
-	aWork  []float64
-	qWork  []float64
-	rinvBt []float64
-	rinvSt []float64
-	g      []float64
-	h      []float64
-	wr     []float64
-	wi     []float64
-	vs     []float64
-	bwork  []bool
-	work   []float64
-	u11    []float64
-	u21    []float64
-	ipiv   []int
-	xData  []float64
-	eig    []complex128
-	kData  []float64
-	ait    []float64
-	aipiv  []int
-	aiWork []float64
-	aitq   []float64
-	gait   []float64
-	gaitq  []float64
-	z      []float64
-	btx    []float64
-	rbar   []float64
-	iwork  []int
+	rChol       []float64
+	aWork       []float64
+	qWork       []float64
+	rinvBt      []float64
+	rinvSt      []float64
+	g           []float64
+	h           []float64
+	wr          []float64
+	wi          []float64
+	vs          []float64
+	bwork       []bool
+	work        []float64
+	u11         []float64
+	u21         []float64
+	ipiv        []int
+	xData       []float64
+	eig         []complex128
+	kData       []float64
+	z           []float64
+	beta        []float64
+	pencilH     []float64
+	pencilJ     []float64
+	pencilInput []float64
+	tau         []float64
+	btx         []float64
+	rbar        []float64
+	iwork       []int
 }
 
 func NewRiccatiWorkspace(n, m int) *RiccatiWorkspace {
 	nn := 2 * n
 	return &RiccatiWorkspace{
-		rChol:  make([]float64, m*m),
-		aWork:  make([]float64, n*n),
-		qWork:  make([]float64, n*n),
-		rinvBt: make([]float64, m*n),
-		rinvSt: make([]float64, m*n),
-		g:      make([]float64, n*n),
-		h:      make([]float64, nn*nn),
-		wr:     make([]float64, nn),
-		wi:     make([]float64, nn),
-		vs:     make([]float64, nn*nn),
-		bwork:  make([]bool, nn),
-		work:   make([]float64, nn*50),
-		u11:    make([]float64, n*n),
-		u21:    make([]float64, n*n),
-		ipiv:   make([]int, n),
-		xData:  make([]float64, n*n),
-		eig:    make([]complex128, n),
-		kData:  make([]float64, m*n),
-		ait:    make([]float64, n*n),
-		aipiv:  make([]int, n),
-		aiWork: make([]float64, n*50),
-		aitq:   make([]float64, n*n),
-		gait:   make([]float64, n*n),
-		gaitq:  make([]float64, n*n),
-		z:      make([]float64, nn*nn),
-		btx:    make([]float64, m*n),
-		rbar:   make([]float64, m*m),
-		iwork:  make([]int, n),
+		rChol:       make([]float64, m*m),
+		aWork:       make([]float64, n*n),
+		qWork:       make([]float64, n*n),
+		rinvBt:      make([]float64, m*n),
+		rinvSt:      make([]float64, m*n),
+		g:           make([]float64, n*n),
+		h:           make([]float64, nn*nn),
+		wr:          make([]float64, nn),
+		wi:          make([]float64, nn),
+		vs:          make([]float64, nn*nn),
+		bwork:       make([]bool, nn),
+		work:        make([]float64, nn*50),
+		u11:         make([]float64, n*n),
+		u21:         make([]float64, n*n),
+		ipiv:        make([]int, n),
+		xData:       make([]float64, n*n),
+		eig:         make([]complex128, n),
+		kData:       make([]float64, m*n),
+		z:           make([]float64, nn*nn),
+		beta:        make([]float64, nn),
+		pencilH:     make([]float64, (nn+m)*nn),
+		pencilJ:     make([]float64, (nn+m)*nn),
+		pencilInput: make([]float64, (nn+m)*m),
+		tau:         make([]float64, m),
+		btx:         make([]float64, m*n),
+		rbar:        make([]float64, m*m),
+		iwork:       make([]int, n),
 	}
 }
 
@@ -291,148 +291,28 @@ func Dare(A, B, Q, R *mat.Dense, opts *RiccatiOpts) (*RiccatiResult, error) {
 		return nil, ErrSingularR
 	}
 
-	aWork := ws.aWork[:n*n]
 	aRaw := A.RawMatrix()
-	copyStrided(aWork, n, aRaw.Data, aRaw.Stride, n, n)
-	qWork := ws.qWork[:n*n]
-	qRaw := Q.RawMatrix()
-	copyStrided(qWork, n, qRaw.Data, qRaw.Stride, n, n)
-
 	bRaw := B.RawMatrix()
 
-	// R⁻¹*B' (m×n)
-	rinvBt := ws.rinvBt[:m*n]
-	for i := range n {
-		for j := range m {
-			rinvBt[j*n+i] = bRaw.Data[i*bRaw.Stride+j]
-		}
+	subspace, err := problem.discreteStableSubspace()
+	if err != nil {
+		return nil, err
 	}
-	impl.Dpotrs(blas.Upper, m, n, rChol, m, rinvBt, n)
-
-	if S != nil {
-		rinvSt := ws.rinvSt[:m*n]
-		sRaw := S.RawMatrix()
-		for i := range n {
-			for j := range m {
-				rinvSt[j*n+i] = sRaw.Data[i*sRaw.Stride+j]
-			}
-		}
-		impl.Dpotrs(blas.Upper, m, n, rChol, m, rinvSt, n)
-
-		blas64.Gemm(blas.NoTrans, blas.NoTrans,
-			-1, blas64.General{Rows: n, Cols: m, Data: bRaw.Data, Stride: bRaw.Stride},
-			blas64.General{Rows: m, Cols: n, Data: rinvSt, Stride: n},
-			1, blas64.General{Rows: n, Cols: n, Data: aWork, Stride: n})
-
-		blas64.Gemm(blas.NoTrans, blas.NoTrans,
-			-1, blas64.General{Rows: n, Cols: m, Data: sRaw.Data, Stride: sRaw.Stride},
-			blas64.General{Rows: m, Cols: n, Data: rinvSt, Stride: n},
-			1, blas64.General{Rows: n, Cols: n, Data: qWork, Stride: n})
-		symmetrize(qWork, n, n)
-	}
-
-	// G = B * R⁻¹ * B'
-	g := ws.g[:n*n]
-	blas64.Gemm(blas.NoTrans, blas.NoTrans,
-		1, blas64.General{Rows: n, Cols: m, Data: bRaw.Data, Stride: bRaw.Stride},
-		blas64.General{Rows: m, Cols: n, Data: rinvBt, Stride: n},
-		0, blas64.General{Rows: n, Cols: n, Data: g, Stride: n})
-	symmetrize(g, n, n)
-
-	// Form symplectic matrix Z = M⁻¹*L (requires A invertible):
-	// Z = [[A + G*Ait*Q, -G*Ait], [-Ait*Q, Ait]]  where Ait = (A')⁻¹
-	// Compute Ait = (A')⁻¹ via LU factorization of A'
-	ait := ws.ait[:n*n]
-	for i := range n {
-		for j := range n {
-			ait[i*n+j] = aWork[j*n+i]
-		}
-	}
-	aipiv := ws.aipiv[:n]
-	if !impl.Dgetrf(n, n, ait, n, aipiv) {
-		return nil, ErrNoStabilizing
-	}
-	var aiWorkQ [1]float64
-	impl.Dgetri(n, ait, n, aipiv, aiWorkQ[:], -1)
-	aiWork := ws.aiWork
-	if len(aiWork) < int(aiWorkQ[0]) {
-		aiWork = make([]float64, int(aiWorkQ[0]))
-		ws.aiWork = aiWork
-	}
-	impl.Dgetri(n, ait, n, aipiv, aiWork, len(aiWork))
-
-	// Ait*Q (n×n)
-	aitq := ws.aitq[:n*n]
-	blas64.Gemm(blas.NoTrans, blas.NoTrans,
-		1, blas64.General{Rows: n, Cols: n, Data: ait, Stride: n},
-		blas64.General{Rows: n, Cols: n, Data: qWork, Stride: n},
-		0, blas64.General{Rows: n, Cols: n, Data: aitq, Stride: n})
-
-	// G*Ait (n×n)
-	gait := ws.gait[:n*n]
-	blas64.Gemm(blas.NoTrans, blas.NoTrans,
-		1, blas64.General{Rows: n, Cols: n, Data: g, Stride: n},
-		blas64.General{Rows: n, Cols: n, Data: ait, Stride: n},
-		0, blas64.General{Rows: n, Cols: n, Data: gait, Stride: n})
-
-	gaitq := ws.gaitq[:n*n]
-	blas64.Gemm(blas.NoTrans, blas.NoTrans,
-		1, blas64.General{Rows: n, Cols: n, Data: gait, Stride: n},
-		blas64.General{Rows: n, Cols: n, Data: qWork, Stride: n},
-		0, blas64.General{Rows: n, Cols: n, Data: gaitq, Stride: n})
-
-	nn := 2 * n
-	z := ws.z[:nn*nn]
-	for i := range n {
-		for j := range n {
-			z[i*nn+j] = aWork[i*n+j] + gaitq[i*n+j]
-			z[i*nn+n+j] = -gait[i*n+j]
-			z[(n+i)*nn+j] = -aitq[i*n+j]
-			z[(n+i)*nn+n+j] = ait[i*n+j]
-		}
-	}
-
-	// Schur decomposition with sorting: |λ| < 1 to top-left
-	wr := ws.wr[:nn]
-	wi := ws.wi[:nn]
-	vs := ws.vs[:nn*nn]
-	bwork := ws.bwork[:nn]
-
-	selctg := func(wr, wi float64) bool {
-		return wr*wr+wi*wi < 1
-	}
-
-	var workQuery2 [1]float64
-	impl.Dgees(lapack.SchurHess, lapack.SortSelected, selctg,
-		nn, z, nn, wr, wi, vs, nn, workQuery2[:], -1, bwork)
-	lwork := int(workQuery2[0])
-	work := ws.work
-	if len(work) < lwork {
-		work = make([]float64, lwork)
-		ws.work = work
-	}
-
-	sdim, ok := impl.Dgees(lapack.SchurHess, lapack.SortSelected, selctg,
-		nn, z, nn, wr, wi, vs, nn, work, lwork, bwork)
-	if !ok {
-		return nil, ErrSchurFailed
-	}
-	if sdim != n {
-		return nil, ErrNoStabilizing
-	}
+	vs := subspace.vectors
 
 	// Extract U11 = vs[0:n, 0:n], U21 = vs[n:2n, 0:n]
 	u11 := ws.u11[:n*n]
 	u21 := ws.u21[:n*n]
-	copyStrided(u11, n, vs, nn, n, n)
-	copyBlock(u21, n, 0, 0, vs, nn, n, 0, n, n)
+	copyStrided(u11, n, vs, 2*n, n, n)
+	copyBlock(u21, n, 0, 0, vs, 2*n, n, 0, n, n)
 
+	work := ws.work
+	anorm := impl.Dlange(lapack.MaxColumnSum, n, n, u11, n, work[:n])
 	ipiv := ws.ipiv[:n]
 	if !impl.Dgetrf(n, n, u11, n, ipiv) {
 		return nil, ErrNoStabilizing
 	}
 
-	anorm := impl.Dlange(lapack.MaxColumnSum, n, n, u11, n, work[:n])
 	iwork2 := ws.iwork[:n]
 	rcnd := impl.Dgecon(lapack.MaxColumnSum, n, u11, n, anorm, work[:4*n], iwork2)
 
@@ -450,7 +330,7 @@ func Dare(A, B, Q, R *mat.Dense, opts *RiccatiOpts) (*RiccatiResult, error) {
 	// Closed-loop eigenvalues
 	eig := ws.eig[:n]
 	for i := range n {
-		eig[i] = complex(wr[i], wi[i])
+		eig[i] = complex(subspace.alphaR[i]/subspace.beta[i], subspace.alphaI[i]/subspace.beta[i])
 	}
 
 	// Gain K = (R + B'XB)⁻¹ * (B'XA + S')
@@ -490,4 +370,255 @@ func Dare(A, B, Q, R *mat.Dense, opts *RiccatiOpts) (*RiccatiResult, error) {
 	K := mat.NewDense(m, n, kData)
 
 	return &RiccatiResult{X: X, K: K, Eig: eig, Rcnd: rcnd}, nil
+}
+
+type discreteRiccatiSubspace struct {
+	vectors []float64
+	alphaR  []float64
+	alphaI  []float64
+	beta    []float64
+}
+
+func (problem riccatiProblem) discreteStableSubspace() (discreteRiccatiSubspace, error) {
+	if subspace, suitable, err := problem.regularDiscreteStableSubspace(); suitable || err != nil {
+		return subspace, err
+	}
+	return problem.generalizedDiscreteStableSubspace()
+}
+
+func (problem riccatiProblem) regularDiscreteStableSubspace() (subspace discreteRiccatiSubspace, suitable bool, err error) {
+	n, m, ws := problem.n, problem.m, problem.ws
+	nn := 2 * n
+	aRaw := problem.A.RawMatrix()
+	bRaw := problem.B.RawMatrix()
+
+	aWork := ws.aWork[:n*n]
+	copyStrided(aWork, n, aRaw.Data, aRaw.Stride, n, n)
+	qWork := ws.qWork[:n*n]
+	qRaw := problem.Q.RawMatrix()
+	copyStrided(qWork, n, qRaw.Data, qRaw.Stride, n, n)
+
+	rinvBt := ws.rinvBt[:m*n]
+	for i := range n {
+		for j := range m {
+			rinvBt[j*n+i] = bRaw.Data[i*bRaw.Stride+j]
+		}
+	}
+	impl.Dpotrs(blas.Upper, m, n, ws.rChol[:m*m], m, rinvBt, n)
+
+	if problem.S != nil {
+		rinvSt := ws.rinvSt[:m*n]
+		sRaw := problem.S.RawMatrix()
+		for i := range n {
+			for j := range m {
+				rinvSt[j*n+i] = sRaw.Data[i*sRaw.Stride+j]
+			}
+		}
+		impl.Dpotrs(blas.Upper, m, n, ws.rChol[:m*m], m, rinvSt, n)
+
+		blas64.Gemm(blas.NoTrans, blas.NoTrans,
+			-1, blas64.General{Rows: n, Cols: m, Data: bRaw.Data, Stride: bRaw.Stride},
+			blas64.General{Rows: m, Cols: n, Data: rinvSt, Stride: n},
+			1, blas64.General{Rows: n, Cols: n, Data: aWork, Stride: n})
+		blas64.Gemm(blas.NoTrans, blas.NoTrans,
+			-1, blas64.General{Rows: n, Cols: m, Data: sRaw.Data, Stride: sRaw.Stride},
+			blas64.General{Rows: m, Cols: n, Data: rinvSt, Stride: n},
+			1, blas64.General{Rows: n, Cols: n, Data: qWork, Stride: n})
+		symmetrize(qWork, n, n)
+	}
+
+	g := ws.g[:n*n]
+	blas64.Gemm(blas.NoTrans, blas.NoTrans,
+		1, blas64.General{Rows: n, Cols: m, Data: bRaw.Data, Stride: bRaw.Stride},
+		blas64.General{Rows: m, Cols: n, Data: rinvBt, Stride: n},
+		0, blas64.General{Rows: n, Cols: n, Data: g, Stride: n})
+	symmetrize(g, n, n)
+
+	scratch := ws.pencilH
+	ait := scratch[:n*n]
+	aitq := scratch[n*n : 2*n*n]
+	gait := scratch[2*n*n : 3*n*n]
+	gaitq := scratch[3*n*n : 4*n*n]
+	for i := range n {
+		for j := range n {
+			ait[i*n+j] = aWork[j*n+i]
+		}
+	}
+	work := ws.work
+	anorm := impl.Dlange(lapack.MaxColumnSum, n, n, ait, n, work[:n])
+	ipiv := ws.ipiv[:n]
+	if !impl.Dgetrf(n, n, ait, n, ipiv) {
+		return discreteRiccatiSubspace{}, false, nil
+	}
+	rcnd := impl.Dgecon(lapack.MaxColumnSum, n, ait, n, anorm, work[:4*n], ws.iwork[:n])
+	if rcnd < math.Sqrt(eps()) {
+		return discreteRiccatiSubspace{}, false, nil
+	}
+	var inverseQuery [1]float64
+	impl.Dgetri(n, ait, n, ipiv, inverseQuery[:], -1)
+	lwork := int(inverseQuery[0])
+	if len(ws.work) < lwork {
+		ws.work = make([]float64, lwork)
+	}
+	impl.Dgetri(n, ait, n, ipiv, ws.work, lwork)
+
+	blas64.Gemm(blas.NoTrans, blas.NoTrans,
+		1, blas64.General{Rows: n, Cols: n, Data: ait, Stride: n},
+		blas64.General{Rows: n, Cols: n, Data: qWork, Stride: n},
+		0, blas64.General{Rows: n, Cols: n, Data: aitq, Stride: n})
+	blas64.Gemm(blas.NoTrans, blas.NoTrans,
+		1, blas64.General{Rows: n, Cols: n, Data: g, Stride: n},
+		blas64.General{Rows: n, Cols: n, Data: ait, Stride: n},
+		0, blas64.General{Rows: n, Cols: n, Data: gait, Stride: n})
+	blas64.Gemm(blas.NoTrans, blas.NoTrans,
+		1, blas64.General{Rows: n, Cols: n, Data: gait, Stride: n},
+		blas64.General{Rows: n, Cols: n, Data: qWork, Stride: n},
+		0, blas64.General{Rows: n, Cols: n, Data: gaitq, Stride: n})
+
+	z := ws.z[:nn*nn]
+	for i := range n {
+		for j := range n {
+			z[i*nn+j] = aWork[i*n+j] + gaitq[i*n+j]
+			z[i*nn+n+j] = -gait[i*n+j]
+			z[(n+i)*nn+j] = -aitq[i*n+j]
+			z[(n+i)*nn+n+j] = ait[i*n+j]
+		}
+	}
+
+	alphaR := ws.wr[:nn]
+	alphaI := ws.wi[:nn]
+	beta := ws.beta[:nn]
+	vectors := ws.vs[:nn*nn]
+	bwork := ws.bwork[:nn]
+	insideUnitCircle := func(real, imag float64) bool {
+		return math.Hypot(real, imag) < 1
+	}
+
+	var workQuery [1]float64
+	impl.Dgees(lapack.SchurHess, lapack.SortSelected, insideUnitCircle,
+		nn, z, nn, alphaR, alphaI, vectors, nn, workQuery[:], -1, bwork)
+	lwork = int(workQuery[0])
+	if len(ws.work) < lwork {
+		ws.work = make([]float64, lwork)
+	}
+	sdim, ok := impl.Dgees(lapack.SchurHess, lapack.SortSelected, insideUnitCircle,
+		nn, z, nn, alphaR, alphaI, vectors, nn, ws.work, lwork, bwork)
+	if !ok {
+		return discreteRiccatiSubspace{}, true, ErrSchurFailed
+	}
+	if sdim != n {
+		return discreteRiccatiSubspace{}, true, ErrNoStabilizing
+	}
+	for i := range nn {
+		beta[i] = 1
+	}
+	return discreteRiccatiSubspace{
+		vectors: vectors,
+		alphaR:  alphaR,
+		alphaI:  alphaI,
+		beta:    beta,
+	}, true, nil
+}
+
+func (problem riccatiProblem) generalizedDiscreteStableSubspace() (discreteRiccatiSubspace, error) {
+	n, m, ws := problem.n, problem.m, problem.ws
+	nn := 2 * n
+	rows := nn + m
+
+	hLeft := ws.pencilH[:rows*nn]
+	jLeft := ws.pencilJ[:rows*nn]
+	input := ws.pencilInput[:rows*m]
+	clear(hLeft)
+	clear(jLeft)
+	clear(input)
+
+	aRaw := problem.A.RawMatrix()
+	bRaw := problem.B.RawMatrix()
+	qRaw := problem.Q.RawMatrix()
+	rRaw := problem.R.RawMatrix()
+	var sRaw blas64.General
+	if problem.S != nil {
+		sRaw = problem.S.RawMatrix()
+	}
+
+	for i := range n {
+		for j := range n {
+			hLeft[i*nn+j] = aRaw.Data[i*aRaw.Stride+j]
+			hLeft[(n+i)*nn+j] = -qRaw.Data[i*qRaw.Stride+j]
+			jLeft[(n+i)*nn+n+j] = aRaw.Data[j*aRaw.Stride+i]
+		}
+		hLeft[(n+i)*nn+n+i] = 1
+		jLeft[i*nn+i] = 1
+
+		for j := range m {
+			input[i*m+j] = bRaw.Data[i*bRaw.Stride+j]
+			if problem.S != nil {
+				input[(n+i)*m+j] = -sRaw.Data[i*sRaw.Stride+j]
+				hLeft[(nn+j)*nn+i] = sRaw.Data[i*sRaw.Stride+j]
+			}
+			jLeft[(nn+j)*nn+n+i] = -bRaw.Data[i*bRaw.Stride+j]
+		}
+	}
+	for i := range m {
+		for j := range m {
+			input[(nn+i)*m+j] = rRaw.Data[i*rRaw.Stride+j]
+		}
+	}
+
+	if m != 0 {
+		tau := ws.tau[:m]
+		var qrQuery, applyQuery [1]float64
+		impl.Dgeqrf(rows, m, nil, m, nil, qrQuery[:], -1)
+		impl.Dormqr(blas.Left, blas.Trans, rows, nn, m, nil, m, nil, nil, nn, applyQuery[:], -1)
+		lwork := max(int(qrQuery[0]), int(applyQuery[0]))
+		if len(ws.work) < lwork {
+			ws.work = make([]float64, lwork)
+		}
+		impl.Dgeqrf(rows, m, input, m, tau, ws.work, lwork)
+		impl.Dormqr(blas.Left, blas.Trans, rows, nn, m, input, m, tau, hLeft, nn, ws.work, lwork)
+		impl.Dormqr(blas.Left, blas.Trans, rows, nn, m, input, m, tau, jLeft, nn, ws.work, lwork)
+	}
+
+	h := ws.h[:nn*nn]
+	j := ws.z[:nn*nn]
+	copy(h, hLeft[m*nn:])
+	copy(j, jLeft[m*nn:])
+
+	alphaR := ws.wr[:nn]
+	alphaI := ws.wi[:nn]
+	beta := ws.beta[:nn]
+	vectors := ws.vs[:nn*nn]
+	bwork := ws.bwork[:nn]
+	insideUnitCircle := func(alphaR, alphaI, beta float64) bool {
+		return math.Hypot(alphaR, alphaI) < math.Abs(beta)
+	}
+
+	var workQuery [1]float64
+	impl.Dgges(lapack.SchurNone, lapack.SchurHess, lapack.SortSelected, insideUnitCircle,
+		nn, h, nn, j, nn, alphaR, alphaI, beta, nil, 1, vectors, nn, workQuery[:], -1, bwork)
+	lwork := int(workQuery[0])
+	if len(ws.work) < lwork {
+		ws.work = make([]float64, lwork)
+	}
+
+	sdim, ok := impl.Dgges(lapack.SchurNone, lapack.SchurHess, lapack.SortSelected, insideUnitCircle,
+		nn, h, nn, j, nn, alphaR, alphaI, beta, nil, 1, vectors, nn, ws.work, lwork, bwork)
+	if !ok {
+		return discreteRiccatiSubspace{}, ErrSchurFailed
+	}
+	if sdim != n {
+		return discreteRiccatiSubspace{}, ErrNoStabilizing
+	}
+	for i := range n {
+		if beta[i] == 0 {
+			return discreteRiccatiSubspace{}, ErrNoStabilizing
+		}
+	}
+
+	return discreteRiccatiSubspace{
+		vectors: vectors,
+		alphaR:  alphaR,
+		alphaI:  alphaI,
+		beta:    beta,
+	}, nil
 }

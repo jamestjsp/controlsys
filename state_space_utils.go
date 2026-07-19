@@ -20,6 +20,19 @@ func NewDescriptor(A, B, C, D, E *mat.Dense, dt float64) (*System, error) {
 	return sys, nil
 }
 
+func newDescriptorOwned(A, B, C, D, E *mat.Dense, dt float64) (*System, error) {
+	sys, err := newNoCopy(A, B, C, D, dt)
+	if err != nil {
+		return nil, err
+	}
+	n, _, _ := sys.Dims()
+	if err := (descriptorPolicy{E: E}).validate(n); err != nil {
+		return nil, err
+	}
+	sys.E = E
+	return sys, nil
+}
+
 func (sys *System) DescriptorE() *mat.Dense {
 	if sys == nil {
 		return nil

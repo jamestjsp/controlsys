@@ -92,7 +92,7 @@ func newPhysicalAssemblyPlan(name string, components []PhysicalComponent, connec
 	}
 	plan := &physicalAssemblyPlan{
 		name:          name,
-		components:    make([]PhysicalComponent, len(components)),
+		components:    components,
 		stateOffsets:  make([]int, len(components)),
 		inputOffsets:  make([]int, len(components)),
 		outputOffsets: make([]int, len(components)),
@@ -118,7 +118,6 @@ func newPhysicalAssemblyPlan(name string, components []PhysicalComponent, connec
 		plan.totalStates += n
 		plan.totalInputs += m
 		plan.totalOutputs += p
-		plan.components[i] = NewPhysicalComponent(component.Name, component.System, component.Ports)
 		byComponent[component.Name] = i
 	}
 	portIndex, err := plan.bindPorts()
@@ -288,12 +287,15 @@ func (p *physicalAssemblyPlan) assemble() (*System, error) {
 	bAugmented := newDense(nAugmented, len(p.externalInputs))
 	setBlock(aAugmented, 0, 0, a)
 	setBlock(eAugmented, 0, 0, e)
+	aAugmentedRaw := aAugmented.RawMatrix()
+	bAugmentedRaw := bAugmented.RawMatrix()
+	bRaw := b.RawMatrix()
 	for state := range n {
 		for position, channel := range p.internalInputs {
-			aAugmented.Set(state, n+position, b.At(state, channel))
+			aAugmentedRaw.Data[state*aAugmentedRaw.Stride+n+position] = bRaw.Data[state*bRaw.Stride+channel]
 		}
 		for position, channel := range p.externalInputs {
-			bAugmented.Set(state, position, b.At(state, channel))
+			bAugmentedRaw.Data[state*bAugmentedRaw.Stride+position] = bRaw.Data[state*bRaw.Stride+channel]
 		}
 	}
 	constraint := 0
@@ -321,7 +323,8 @@ func (p *physicalAssemblyPlan) assemble() (*System, error) {
 			row := n + constraint
 			for _, portIndex := range group.ports {
 				channel := p.ports[portIndex].inputs[coordinate]
-				aAugmented.Set(row, n+p.internalInputPos[channel], aAugmented.At(row, n+p.internalInputPos[channel])+1)
+				column := n + p.internalInputPos[channel]
+				aAugmentedRaw.Data[row*aAugmentedRaw.Stride+column]++
 			}
 			constraint++
 		}
@@ -331,15 +334,19 @@ func (p *physicalAssemblyPlan) assemble() (*System, error) {
 	}
 	cAugmented := newDense(len(p.externalOutputs), nAugmented)
 	dAugmented := newDense(len(p.externalOutputs), len(p.externalInputs))
+	cRaw := c.RawMatrix()
+	dRaw := d.RawMatrix()
+	cAugmentedRaw := cAugmented.RawMatrix()
+	dAugmentedRaw := dAugmented.RawMatrix()
 	for row, output := range p.externalOutputs {
 		for state := range n {
-			cAugmented.Set(row, state, c.At(output, state))
+			cAugmentedRaw.Data[row*cAugmentedRaw.Stride+state] = cRaw.Data[output*cRaw.Stride+state]
 		}
 		for position, input := range p.internalInputs {
-			cAugmented.Set(row, n+position, d.At(output, input))
+			cAugmentedRaw.Data[row*cAugmentedRaw.Stride+n+position] = dRaw.Data[output*dRaw.Stride+input]
 		}
 		for column, input := range p.externalInputs {
-			dAugmented.Set(row, column, d.At(output, input))
+			dAugmentedRaw.Data[row*dAugmentedRaw.Stride+column] = dRaw.Data[output*dRaw.Stride+input]
 		}
 	}
 	var constructorB, constructorC, constructorD *mat.Dense
@@ -352,7 +359,7 @@ func (p *physicalAssemblyPlan) assemble() (*System, error) {
 	if len(p.externalInputs) > 0 && len(p.externalOutputs) > 0 {
 		constructorD = dAugmented
 	}
-	result, err := NewDescriptor(aAugmented, constructorB, constructorC, constructorD, eAugmented, p.components[0].System.Dt)
+	result, err := newDescriptorOwned(aAugmented, constructorB, constructorC, constructorD, eAugmented, p.components[0].System.Dt)
 	if err != nil {
 		return nil, err
 	}
@@ -365,14 +372,19 @@ func (p *physicalAssemblyPlan) assemble() (*System, error) {
 
 func (p *physicalAssemblyPlan) addAcrossConstraint(a, b, c, d *mat.Dense, row, portIndex, coordinate int, factor float64) {
 	output := p.ports[portIndex].outputs[coordinate]
+	aRaw := a.RawMatrix()
+	bRaw := b.RawMatrix()
+	cRaw := c.RawMatrix()
+	dRaw := d.RawMatrix()
 	for state := range p.totalStates {
-		a.Set(row, state, a.At(row, state)+factor*c.At(output, state))
+		aRaw.Data[row*aRaw.Stride+state] += factor * cRaw.Data[output*cRaw.Stride+state]
 	}
 	for position, input := range p.internalInputs {
-		a.Set(row, p.totalStates+position, a.At(row, p.totalStates+position)+factor*d.At(output, input))
+		column := p.totalStates + position
+		aRaw.Data[row*aRaw.Stride+column] += factor * dRaw.Data[output*dRaw.Stride+input]
 	}
 	for position, input := range p.externalInputs {
-		b.Set(row, position, b.At(row, position)+factor*d.At(output, input))
+		bRaw.Data[row*bRaw.Stride+position] += factor * dRaw.Data[output*dRaw.Stride+input]
 	}
 }
 
@@ -382,6 +394,7 @@ func (p *physicalAssemblyPlan) aggregateMatrices() (a, b, c, d, e *mat.Dense) {
 	c = newDense(p.totalOutputs, p.totalStates)
 	d = newDense(p.totalOutputs, p.totalInputs)
 	e = newDense(p.totalStates, p.totalStates)
+	eRaw := e.RawMatrix()
 	for i, component := range p.components {
 		n, _, _ := component.System.Dims()
 		stateOffset := p.stateOffsets[i]
@@ -393,7 +406,7 @@ func (p *physicalAssemblyPlan) aggregateMatrices() (a, b, c, d, e *mat.Dense) {
 		setBlock(d, outputOffset, inputOffset, component.System.D)
 		if component.System.E == nil {
 			for state := range n {
-				e.Set(stateOffset+state, stateOffset+state, 1)
+				eRaw.Data[(stateOffset+state)*eRaw.Stride+stateOffset+state] = 1
 			}
 		} else {
 			setBlock(e, stateOffset, stateOffset, component.System.E)

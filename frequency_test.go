@@ -270,6 +270,88 @@ func TestEvalFr_MatchesFreqResponse(t *testing.T) {
 	}
 }
 
+func TestFrequencyEvaluatorSweepKernelParity(t *testing.T) {
+	sys, err := New(
+		mat.NewDense(4, 4, []float64{
+			-0.8, 0.4, 0, 0.1,
+			-0.2, -1.1, 0.3, 0,
+			0.1, 0, -1.5, 0.2,
+			0, -0.1, 0.25, -2,
+		}),
+		mat.NewDense(4, 2, []float64{1, 0.2, 0, 1, 0.4, -0.3, 0.1, 0.5}),
+		mat.NewDense(2, 4, []float64{1, 0, 0.3, -0.2, 0.1, 0.7, 0, 0.4}),
+		mat.NewDense(2, 2, []float64{0.1, 0, -0.05, 0.2}),
+		0,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sys.Delay = mat.NewDense(2, 2, []float64{0.02, 0.04, 0.01, 0.03})
+	sys.InputDelay = []float64{0.05, 0.02}
+	sys.OutputDelay = []float64{0.01, 0.03}
+	discrete := sys.Copy()
+	discrete.Dt = 0.1
+	discrete.Delay = mat.NewDense(2, 2, []float64{1, 2, 3, 1})
+	discrete.InputDelay = []float64{2, 1}
+	discrete.OutputDelay = []float64{1, 3}
+
+	tests := []struct {
+		name           string
+		system         *System
+		omega          []float64
+		wantStateSpace bool
+	}{
+		{name: "StateSpace", system: sys, omega: logspace(-2, 2, 8), wantStateSpace: true},
+		{name: "TransferFunction", system: sys, omega: logspace(-2, 2, 100), wantStateSpace: false},
+		{name: "DiscreteTransferFunction", system: discrete, omega: logspace(-2, 1, 100), wantStateSpace: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			evaluator := newFrequencyEvaluator(test.system)
+			if got := evaluator.useStateSpaceSweep(len(test.omega)); got != test.wantStateSpace {
+				t.Fatalf("useStateSpaceSweep = %t, want %t", got, test.wantStateSpace)
+			}
+			response, err := test.system.FreqResponse(test.omega)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for k, w := range test.omega {
+				want, err := test.system.EvalFr(evaluator.sAt(w))
+				if err != nil {
+					t.Fatal(err)
+				}
+				for i := range response.P {
+					for j := range response.M {
+						if diff := cmplx.Abs(response.At(k, i, j) - want[i][j]); diff > 2e-9 {
+							t.Fatalf("w=%g output=%d input=%d diff=%g", w, i, j, diff)
+						}
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestFreqResponse_ShortSweepFallsBackAtPole(t *testing.T) {
+	sys, err := New(
+		mat.NewDense(1, 1, []float64{0}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, nil),
+		0,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err := sys.FreqResponse([]float64{0, 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := response.At(1, 0, 0); cmplx.Abs(got+1i) > 1e-12 {
+		t.Fatalf("response at w=1 = %v, want -1i", got)
+	}
+}
+
 func TestFreqResponse_Empty(t *testing.T) {
 	sys, err := New(
 		mat.NewDense(1, 1, []float64{-1}),

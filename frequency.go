@@ -144,6 +144,8 @@ type frequencyEvaluator struct {
 	p   int
 }
 
+const directFrequencySweepWorkLimit = 80
+
 func newFrequencyEvaluator(sys *System) frequencyEvaluator {
 	n, m, p := sys.Dims()
 	return frequencyEvaluator{sys: sys, n: n, m: m, p: p}
@@ -171,32 +173,20 @@ func (e frequencyEvaluator) response(omega []float64) (*FreqResponseMatrix, erro
 	pm := e.p * e.m
 	data := make([]complex128, nw*pm)
 	if e.sys.IsDescriptor() {
-		ws := newSSEvalWorkspace(e.n, e.p, e.m)
-		for k, w := range omega {
-			s := e.sAt(w)
-			if err := evalFrSSInto(ws, e.sys, s, e.n, e.p, e.m); err != nil {
-				return nil, err
-			}
-			copy(data[k*pm:(k+1)*pm], ws.g[:pm])
+		if err := e.evalStateSpaceSweepInto(omega, data); err != nil {
+			return nil, err
 		}
 		applyIODelayPhase(e.sys, omega, data, e.p, e.m, true)
 		return e.matrix(data, omega), nil
 	}
-	if nw == 1 {
-		s := e.sAt(omega[0])
-		if err := e.evalStateSpaceInto(s, data); err != nil {
-			return nil, err
+	if e.useStateSpaceSweep(nw) {
+		if err := e.evalStateSpaceSweepInto(omega, data); err == nil {
+			applyIODelayPhase(e.sys, omega, data, e.p, e.m, true)
+			return e.matrix(data, omega), nil
 		}
-		applyIODelayAtS(e.sys, s, data, e.p, e.m, true)
-		return e.matrix(data, omega), nil
 	}
-
-	res, err := e.sys.TransferFunction(nil)
-	if err != nil {
+	if err := e.evalTransferFunctionSweepInto(omega, data); err != nil {
 		return nil, err
-	}
-	for k, w := range omega {
-		res.TF.evalInto(e.sAt(w), data[k*pm:(k+1)*pm])
 	}
 	applyIODelayPhase(e.sys, omega, data, e.p, e.m, false)
 	return e.matrix(data, omega), nil
@@ -235,6 +225,37 @@ func (e frequencyEvaluator) evalStateSpaceInto(s complex128, dst []complex128) e
 		return err
 	}
 	copy(dst, ws.g[:e.p*e.m])
+	return nil
+}
+
+func (e frequencyEvaluator) useStateSpaceSweep(nw int) bool {
+	if nw <= 1 || e.n == 0 {
+		return true
+	}
+	return nw <= directFrequencySweepWorkLimit/e.n
+}
+
+func (e frequencyEvaluator) evalStateSpaceSweepInto(omega []float64, dst []complex128) error {
+	pm := e.p * e.m
+	ws := newSSEvalWorkspace(e.n, e.p, e.m)
+	for k, w := range omega {
+		if err := evalFrSSInto(ws, e.sys, e.sAt(w), e.n, e.p, e.m); err != nil {
+			return err
+		}
+		copy(dst[k*pm:(k+1)*pm], ws.g[:pm])
+	}
+	return nil
+}
+
+func (e frequencyEvaluator) evalTransferFunctionSweepInto(omega []float64, dst []complex128) error {
+	res, err := e.sys.TransferFunction(nil)
+	if err != nil {
+		return err
+	}
+	pm := e.p * e.m
+	for k, w := range omega {
+		res.TF.evalInto(e.sAt(w), dst[k*pm:(k+1)*pm])
+	}
 	return nil
 }
 

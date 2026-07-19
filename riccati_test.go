@@ -32,6 +32,10 @@ func careResidual(A, B, Q, R, X *mat.Dense) float64 {
 }
 
 func dareResidual(A, B, Q, R, X *mat.Dense) float64 {
+	return dareResidualWithCrossTerm(A, B, Q, R, nil, X)
+}
+
+func dareResidualWithCrossTerm(A, B, Q, R, S, X *mat.Dense) float64 {
 	n, _ := A.Dims()
 	var atx, atxa, atxb, btx, btxb, rbar, btxa, mid, res mat.Dense
 
@@ -42,6 +46,10 @@ func dareResidual(A, B, Q, R, X *mat.Dense) float64 {
 	btx.Mul(B.T(), X)
 	btxb.Mul(&btx, B)
 	btxa.Mul(&btx, A)
+	if S != nil {
+		atxb.Add(&atxb, S)
+		btxa.Add(&btxa, S.T())
+	}
 
 	rbar.Add(R, &btxb)
 	var luRbar mat.LU
