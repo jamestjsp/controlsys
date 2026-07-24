@@ -84,15 +84,15 @@ func TestPRD95DelayBankPublicWorkflowsShareRules(t *testing.T) {
 		4.5, 8.0,
 	})
 
-	if _, err := SafeFeedback(discPlant, controller, -1); !errors.Is(err, ErrFractionalDelay) {
-		t.Fatalf("SafeFeedback without Thiran err = %v, want ErrFractionalDelay", err)
+	if _, err := Feedback(discPlant, controller, -1, WithApproximatedDelays()); !errors.Is(err, ErrFractionalDelay) {
+		t.Fatalf("Feedback without Thiran err = %v, want ErrFractionalDelay", err)
 	}
-	closed, err := SafeFeedback(discPlant, controller, -1, WithThiranOrder(3))
+	closed, err := Feedback(discPlant, controller, -1, WithThiranOrder(3))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if closed.HasDelay() {
-		t.Fatalf("SafeFeedback kept external delay: input=%v output=%v io=%v", closed.InputDelay, closed.OutputDelay, closed.Delay)
+		t.Fatalf("Feedback kept external delay: input=%v output=%v io=%v", closed.InputDelay, closed.OutputDelay, closed.Delay)
 	}
 }
 
@@ -106,7 +106,7 @@ func TestPRD95DelayBankKeepsIntegerDelayExactWithThiranOrder(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	closed, err := SafeFeedback(sys, controller, -1, WithThiranOrder(3))
+	closed, err := Feedback(sys, controller, -1, WithThiranOrder(3))
 	if err != nil {
 		t.Fatal(err)
 	}

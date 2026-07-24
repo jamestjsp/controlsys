@@ -81,7 +81,7 @@ func TestRemainingArchitectureDelayTopologyPublicOperations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	safeSplit, err := SafeFeedback(split, controller, -1, WithPadeOrder(2))
+	safeSplit, err := Feedback(split, controller, -1, WithPadeOrder(2))
 	if err != nil {
 		t.Fatal(err)
 	}

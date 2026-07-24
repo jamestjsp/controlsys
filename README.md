@@ -312,7 +312,7 @@ func main() {
 | `Series` | Cascade connection |
 | `Parallel` | Sum connection |
 | `Feedback` | Closed-loop with feedback |
-| `SafeFeedback` | Feedback with automatic delay handling |
+| `WithApproximatedDelays` / `WithPadeOrder` / `WithThiranOrder` | Feedback options for a delay-free rational closed loop |
 | `Append` | Block diagonal concatenation |
 | `SumBlk` | Sum block from string expression |
 | `Connect` / `ConnectByName` | General interconnection by indices or signal names |

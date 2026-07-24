@@ -39,7 +39,7 @@ flowchart LR
     subgraph interconnection["Interconnection interfaces"]
         seriesOp["Series"]
         parallelOp["Parallel"]
-        feedbackOp["Feedback / SafeFeedback"]
+        feedbackOp["Feedback"]
         connectOps["Append / BlkDiag / Connect<br/>ConnectByName / LFT / SumBlk"]
         frdConnectOps["FRDSeries / FRDParallel<br/>FRDFeedback / FRDConcat"]
         delayOps["PadeDelay / ThiranDelay<br/>PullDelaysToLFT / AbsorbDelay<br/>SetDelayModel / GetDelayModel"]
