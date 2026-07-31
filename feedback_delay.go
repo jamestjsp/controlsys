@@ -125,7 +125,7 @@ func (s feedbackDelayStrategy) requireWellPosedPade(plant, controller *System, s
 		return nil
 	}
 	if _, err := solveFeedbackFeedthrough(plant.D, controller.D, sign, pPlant, "Feedback", ErrAlgebraicLoop); err != nil {
-		return fmt.Errorf("Feedback: Pade approximation creates singular algebraic loop; try a different padeOrder (even vs odd) to flip feedthrough sign")
+		return fmt.Errorf("Feedback: Pade approximation creates singular algebraic loop; try a different padeOrder (even vs odd) to flip feedthrough sign: %w", err)
 	}
 	return nil
 }

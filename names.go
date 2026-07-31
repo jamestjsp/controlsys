@@ -372,5 +372,9 @@ func ConnectByName(systems []*System, connections []Connection, inputs, outputs 
 		Q.Set(toIdx, fromIdx, gain)
 	}
 
-	return Connect(aug, Q, inIdx, outIdx)
+	result, err := Connect(aug, Q, inIdx, outIdx)
+	if err != nil {
+		return nil, withAlgebraicLoopSignals(err, aug.InputName, aug.OutputName)
+	}
+	return result, nil
 }

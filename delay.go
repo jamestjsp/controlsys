@@ -2151,8 +2151,12 @@ func (sys *System) ZeroDelayApprox() (*System, error) {
 
 	var lu mat.LU
 	lu.Factorize(ImD22)
-	if luNearSingular(&lu) {
-		return nil, ErrAlgebraicLoop
+	condition := lu.Cond()
+	if nearSingularCondition(condition) {
+		return nil, fmt.Errorf(
+			"zero delay approximation: %w",
+			newAlgebraicLoopError(ImD22, sys.LFT.D22, condition),
+		)
 	}
 
 	eye := mat.NewDense(N, N, nil)
@@ -2162,7 +2166,10 @@ func (sys *System) ZeroDelayApprox() (*System, error) {
 	}
 	E := mat.NewDense(N, N, nil)
 	if err := lu.SolveTo(E, false, eye); err != nil {
-		return nil, ErrAlgebraicLoop
+		return nil, fmt.Errorf(
+			"zero delay approximation: %w",
+			newAlgebraicLoopError(ImD22, sys.LFT.D22, condition),
+		)
 	}
 
 	EC2 := mat.NewDense(N, n, nil)
