@@ -1121,6 +1121,9 @@ func TestFeedbackApprox_WellPosednessCheck(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected singular algebraic loop error for odd-order Pade with unit gains and negative feedback")
 	}
+	if !errors.Is(err, ErrAlgebraicLoop) {
+		t.Fatalf("err = %v, want ErrAlgebraicLoop", err)
+	}
 
 	// Even-order Pade has D=1: I - (-1)*1*1 = 2 → not singular.
 	cl, err := Feedback(plant, controller, -1, WithPadeOrder(2))
@@ -2308,6 +2311,16 @@ func TestConnect_AlgebraicLoop(t *testing.T) {
 	}
 	if !errors.Is(err, ErrAlgebraicLoop) {
 		t.Errorf("got %v, want ErrAlgebraicLoop", err)
+	}
+	var diagnostic *AlgebraicLoopError
+	if !errors.As(err, &diagnostic) {
+		t.Fatalf("err = %T, want *AlgebraicLoopError", err)
+	}
+	if len(diagnostic.Signals) != 0 {
+		t.Errorf("signals = %v, want none for indexed connection", diagnostic.Signals)
+	}
+	if !math.IsInf(diagnostic.Condition, 1) {
+		t.Errorf("condition = %g, want +Inf", diagnostic.Condition)
 	}
 }
 

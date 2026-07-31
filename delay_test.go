@@ -3298,6 +3298,13 @@ func TestZeroDelayApproxSingular(t *testing.T) {
 	if !errors.Is(err, ErrAlgebraicLoop) {
 		t.Errorf("expected ErrAlgebraicLoop, got %v", err)
 	}
+	var diagnostic *AlgebraicLoopError
+	if !errors.As(err, &diagnostic) {
+		t.Fatalf("err = %T, want *AlgebraicLoopError", err)
+	}
+	if !math.IsInf(diagnostic.Condition, 1) {
+		t.Errorf("condition = %g, want +Inf", diagnostic.Condition)
+	}
 }
 
 func TestZeroDelayApproxNoInternal(t *testing.T) {

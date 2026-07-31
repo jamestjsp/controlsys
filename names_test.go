@@ -2,6 +2,7 @@ package controlsys
 
 import (
 	"errors"
+	"math"
 	"math/cmplx"
 	"reflect"
 	"strings"
@@ -494,6 +495,114 @@ func TestConnectByName_Feedback(t *testing.T) {
 	hWant := evalTF(ref, s)
 	if cmplx.Abs(hGot[0][0]-hWant[0][0]) > nameTol {
 		t.Errorf("H(s)=%v, want %v", hGot[0][0], hWant[0][0])
+	}
+}
+
+func TestConnectByName_AlgebraicLoopDiagnostic(t *testing.T) {
+	first, _ := NewGain(mat.NewDense(1, 1, []float64{1}), 0)
+	first.InputName = []string{"first.input"}
+	first.OutputName = []string{"first.output"}
+	second, _ := NewGain(mat.NewDense(1, 1, []float64{1}), 0)
+	second.InputName = []string{"second.input"}
+	second.OutputName = []string{"second.output"}
+
+	_, err := ConnectByName(
+		[]*System{first, second},
+		[]Connection{
+			{From: "first.output", To: "second.input"},
+			{From: "second.output", To: "first.input"},
+		},
+		[]string{"first.input"},
+		[]string{"first.output"},
+	)
+	if !errors.Is(err, ErrAlgebraicLoop) {
+		t.Fatalf("err = %v, want ErrAlgebraicLoop", err)
+	}
+
+	var diagnostic *AlgebraicLoopError
+	if !errors.As(err, &diagnostic) {
+		t.Fatalf("err = %T, want *AlgebraicLoopError", err)
+	}
+	wantSignals := []string{
+		"first.input",
+		"second.input",
+		"first.output",
+		"second.output",
+	}
+	if !reflect.DeepEqual(diagnostic.Signals, wantSignals) {
+		t.Errorf("signals = %v, want %v", diagnostic.Signals, wantSignals)
+	}
+	if !math.IsInf(diagnostic.Condition, 1) {
+		t.Errorf("condition = %g, want +Inf", diagnostic.Condition)
+	}
+}
+
+func TestConnectByName_NearSingularDiagnostic(t *testing.T) {
+	model, _ := NewGain(mat.NewDense(3, 3, []float64{
+		0, 0, 0,
+		0, 0, -1,
+		0, -1, -2 * eps(),
+	}), 0)
+	model.InputName = []string{"stable.input", "critical1.input", "critical2.input"}
+	model.OutputName = []string{"stable.output", "critical1.output", "critical2.output"}
+
+	_, err := ConnectByName(
+		[]*System{model},
+		[]Connection{
+			{From: "stable.output", To: "stable.input"},
+			{From: "critical1.output", To: "critical1.input"},
+			{From: "critical2.output", To: "critical2.input"},
+		},
+		[]string{"stable.input"},
+		[]string{"stable.output"},
+	)
+	if !errors.Is(err, ErrAlgebraicLoop) {
+		t.Fatalf("err = %v, want ErrAlgebraicLoop", err)
+	}
+
+	var diagnostic *AlgebraicLoopError
+	if !errors.As(err, &diagnostic) {
+		t.Fatalf("err = %T, want *AlgebraicLoopError", err)
+	}
+	wantSignals := []string{
+		"critical1.input",
+		"critical2.input",
+		"critical1.output",
+		"critical2.output",
+	}
+	if !reflect.DeepEqual(diagnostic.Signals, wantSignals) {
+		t.Errorf("signals = %v, want %v", diagnostic.Signals, wantSignals)
+	}
+	if math.IsInf(diagnostic.Condition, 0) || diagnostic.Condition*eps() < 1 {
+		t.Errorf("condition = %g, want finite rejected condition", diagnostic.Condition)
+	}
+}
+
+func TestConnectByName_DynamicFeedbackIsWellPosed(t *testing.T) {
+	dynamic, _ := New(
+		mat.NewDense(1, 1, []float64{-1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{1}),
+		mat.NewDense(1, 1, []float64{0}),
+		0,
+	)
+	dynamic.InputName = []string{"dynamic.input"}
+	dynamic.OutputName = []string{"dynamic.output"}
+	static, _ := NewGain(mat.NewDense(1, 1, []float64{1}), 0)
+	static.InputName = []string{"static.input"}
+	static.OutputName = []string{"static.output"}
+
+	_, err := ConnectByName(
+		[]*System{dynamic, static},
+		[]Connection{
+			{From: "dynamic.output", To: "static.input"},
+			{From: "static.output", To: "dynamic.input"},
+		},
+		[]string{"dynamic.input"},
+		[]string{"dynamic.output"},
+	)
+	if err != nil {
+		t.Fatalf("dynamic feedback: %v", err)
 	}
 }
 

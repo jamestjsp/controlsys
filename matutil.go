@@ -79,7 +79,10 @@ func eps() float64 {
 }
 
 func luNearSingular(lu *mat.LU) bool {
-	cond := lu.Cond()
+	return nearSingularCondition(lu.Cond())
+}
+
+func nearSingularCondition(cond float64) bool {
 	return math.IsNaN(cond) || math.IsInf(cond, 1) || cond*eps() >= 1
 }
 

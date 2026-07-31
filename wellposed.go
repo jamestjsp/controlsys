@@ -1,6 +1,7 @@
 package controlsys
 
 import (
+	"errors"
 	"fmt"
 
 	"gonum.org/v1/gonum/mat"
@@ -21,15 +22,28 @@ func solveIdentityMinusScaledProduct(left, right *mat.Dense, scale float64, size
 
 	var lu mat.LU
 	lu.Factorize(loop)
-	if luNearSingular(&lu) {
-		return nil, fmt.Errorf("%s: direct feedthrough loop is singular: %w", context, singular)
+	condition := lu.Cond()
+	if nearSingularCondition(condition) {
+		return nil, directFeedthroughSolveError(
+			context, "is singular", singular, loop, right, condition,
+		)
 	}
 
 	result := mat.NewDense(size, size, nil)
 	if err := lu.SolveTo(result, false, eye); err != nil {
-		return nil, fmt.Errorf("%s: direct feedthrough loop solve failed: %w", context, singular)
+		return nil, directFeedthroughSolveError(
+			context, "solve failed", singular, loop, right, condition,
+		)
 	}
 	return result, nil
+}
+
+func directFeedthroughSolveError(context, failure string, singular error, loop, feedthrough *mat.Dense, condition float64) error {
+	cause := singular
+	if errors.Is(singular, ErrAlgebraicLoop) {
+		cause = newAlgebraicLoopError(loop, feedthrough, condition)
+	}
+	return fmt.Errorf("%s: direct feedthrough loop %s: %w", context, failure, cause)
 }
 
 func solveFeedbackFeedthrough(plantD, controllerD *mat.Dense, sign float64, size int, context string, singular error) (*mat.Dense, error) {
