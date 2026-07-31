@@ -414,7 +414,7 @@ func TestFeedback_MATLAB_PID_DeadTime(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	T, err := SafeFeedback(P, C, -1, WithPadeOrder(5))
+	T, err := Feedback(P, C, -1, WithPadeOrder(5))
 	if err != nil {
 		t.Fatal(err)
 	}

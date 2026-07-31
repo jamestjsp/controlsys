@@ -540,14 +540,14 @@ func BenchmarkDiscretizeWithOpts_IODelayThiran(b *testing.B) {
 	}
 }
 
-func BenchmarkSafeFeedback(b *testing.B) {
+func BenchmarkFeedbackApproximatedDelays(b *testing.B) {
 	plant := benchSys(10, 3, 3)
 	plant.Dt = 1.0
 	ctrl := benchSys(5, 3, 3)
 	ctrl.Dt = 1.0
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		SafeFeedback(plant, ctrl, -1)
+		Feedback(plant, ctrl, -1, WithApproximatedDelays())
 	}
 }
 

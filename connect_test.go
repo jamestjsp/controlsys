@@ -847,7 +847,7 @@ func TestAppend_WithDelay(t *testing.T) {
 	}
 }
 
-func TestSafeFeedback_DiscreteInputDelay(t *testing.T) {
+func TestFeedbackApprox_DiscreteInputDelay(t *testing.T) {
 	plant, _ := New(
 		mat.NewDense(1, 1, []float64{0.5}),
 		mat.NewDense(1, 1, []float64{1}),
@@ -858,7 +858,7 @@ func TestSafeFeedback_DiscreteInputDelay(t *testing.T) {
 	_ = plant.SetInputDelay([]float64{3})
 	controller, _ := NewGain(mat.NewDense(1, 1, []float64{0.8}), 0.1)
 
-	cl, err := SafeFeedback(plant, controller, -1)
+	cl, err := Feedback(plant, controller, -1, WithApproximatedDelays())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -883,11 +883,11 @@ func TestSafeFeedback_DiscreteInputDelay(t *testing.T) {
 	clResp, _ := cl.Simulate(u, nil, nil)
 	manualResp, _ := clManual.Simulate(u, nil, nil)
 	if !matEqual(clResp.Y, manualResp.Y, 1e-10) {
-		t.Error("SafeFeedback != manual absorb+feedback")
+		t.Error("Feedback != manual absorb+feedback")
 	}
 }
 
-func TestSafeFeedback_DiscreteOutputDelay(t *testing.T) {
+func TestFeedbackApprox_DiscreteOutputDelay(t *testing.T) {
 	plant, _ := New(
 		mat.NewDense(1, 1, []float64{0.5}),
 		mat.NewDense(1, 1, []float64{1}),
@@ -898,7 +898,7 @@ func TestSafeFeedback_DiscreteOutputDelay(t *testing.T) {
 	_ = plant.SetOutputDelay([]float64{2})
 	controller, _ := NewGain(mat.NewDense(1, 1, []float64{0.5}), 0.1)
 
-	cl, err := SafeFeedback(plant, controller, -1)
+	cl, err := Feedback(plant, controller, -1, WithApproximatedDelays())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -907,7 +907,7 @@ func TestSafeFeedback_DiscreteOutputDelay(t *testing.T) {
 	}
 }
 
-func TestSafeFeedback_DiscreteIODelay(t *testing.T) {
+func TestFeedbackApprox_DiscreteIODelay(t *testing.T) {
 	plant, _ := New(
 		mat.NewDense(2, 2, []float64{0.8, 0.1, 0, 0.9}),
 		mat.NewDense(2, 1, []float64{1, 0.5}),
@@ -918,7 +918,7 @@ func TestSafeFeedback_DiscreteIODelay(t *testing.T) {
 	plant.Delay = mat.NewDense(1, 1, []float64{4})
 	controller, _ := NewGain(mat.NewDense(1, 1, []float64{0.3}), 0.1)
 
-	cl, err := SafeFeedback(plant, controller, -1)
+	cl, err := Feedback(plant, controller, -1, WithApproximatedDelays())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -927,7 +927,7 @@ func TestSafeFeedback_DiscreteIODelay(t *testing.T) {
 	}
 }
 
-func TestSafeFeedback_DiscreteControllerDelay(t *testing.T) {
+func TestFeedbackApprox_DiscreteControllerDelay(t *testing.T) {
 	plant, _ := New(
 		mat.NewDense(1, 1, []float64{0.5}),
 		mat.NewDense(1, 1, []float64{1}),
@@ -944,7 +944,7 @@ func TestSafeFeedback_DiscreteControllerDelay(t *testing.T) {
 	)
 	_ = controller.SetInputDelay([]float64{2})
 
-	cl, err := SafeFeedback(plant, controller, -1)
+	cl, err := Feedback(plant, controller, -1, WithApproximatedDelays())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -953,7 +953,7 @@ func TestSafeFeedback_DiscreteControllerDelay(t *testing.T) {
 	}
 }
 
-func TestSafeFeedback_NoDelay(t *testing.T) {
+func TestFeedbackApprox_NoDelay(t *testing.T) {
 	plant, _ := New(
 		mat.NewDense(1, 1, []float64{0.5}),
 		mat.NewDense(1, 1, []float64{1}),
@@ -963,7 +963,7 @@ func TestSafeFeedback_NoDelay(t *testing.T) {
 	)
 	controller, _ := NewGain(mat.NewDense(1, 1, []float64{0.8}), 0.1)
 
-	cl, err := SafeFeedback(plant, controller, -1)
+	cl, err := Feedback(plant, controller, -1, WithApproximatedDelays())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -976,7 +976,7 @@ func TestSafeFeedback_NoDelay(t *testing.T) {
 	}
 }
 
-func TestSafeFeedback_ContinuousPade(t *testing.T) {
+func TestFeedbackApprox_ContinuousPade(t *testing.T) {
 	plant, _ := New(
 		mat.NewDense(1, 1, []float64{-1}),
 		mat.NewDense(1, 1, []float64{5}),
@@ -987,7 +987,7 @@ func TestSafeFeedback_ContinuousPade(t *testing.T) {
 	plant.Delay = mat.NewDense(1, 1, []float64{0.3})
 	controller, _ := NewGain(mat.NewDense(1, 1, []float64{0.8}), 0)
 
-	cl, err := SafeFeedback(plant, controller, -1, WithPadeOrder(3))
+	cl, err := Feedback(plant, controller, -1, WithPadeOrder(3))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1016,7 +1016,7 @@ func TestSafeFeedback_ContinuousPade(t *testing.T) {
 	}
 }
 
-func TestSafeFeedback_ContinuousInputDelay(t *testing.T) {
+func TestFeedbackApprox_ContinuousInputDelay(t *testing.T) {
 	plant, _ := New(
 		mat.NewDense(1, 1, []float64{-2}),
 		mat.NewDense(1, 1, []float64{1}),
@@ -1027,7 +1027,7 @@ func TestSafeFeedback_ContinuousInputDelay(t *testing.T) {
 	_ = plant.SetInputDelay([]float64{0.5})
 	controller, _ := NewGain(mat.NewDense(1, 1, []float64{1}), 0)
 
-	cl, err := SafeFeedback(plant, controller, -1, WithPadeOrder(5))
+	cl, err := Feedback(plant, controller, -1, WithPadeOrder(5))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1040,7 +1040,7 @@ func TestSafeFeedback_ContinuousInputDelay(t *testing.T) {
 	}
 }
 
-func TestSafeFeedback_ContinuousOutputDelay(t *testing.T) {
+func TestFeedbackApprox_ContinuousOutputDelay(t *testing.T) {
 	plant, _ := New(
 		mat.NewDense(1, 1, []float64{-2}),
 		mat.NewDense(1, 1, []float64{1}),
@@ -1051,7 +1051,7 @@ func TestSafeFeedback_ContinuousOutputDelay(t *testing.T) {
 	_ = plant.SetOutputDelay([]float64{0.4})
 	controller, _ := NewGain(mat.NewDense(1, 1, []float64{1}), 0)
 
-	cl, err := SafeFeedback(plant, controller, -1, WithPadeOrder(3))
+	cl, err := Feedback(plant, controller, -1, WithPadeOrder(3))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1064,17 +1064,17 @@ func TestSafeFeedback_ContinuousOutputDelay(t *testing.T) {
 	}
 }
 
-func TestSafeFeedback_SingularAlgebraicLoop(t *testing.T) {
+func TestFeedbackApprox_SingularAlgebraicLoop(t *testing.T) {
 	plant, _ := NewGain(mat.NewDense(1, 1, []float64{1}), 0.1)
 	controller, _ := NewGain(mat.NewDense(1, 1, []float64{1}), 0.1)
 
-	_, err := SafeFeedback(plant, controller, 1)
+	_, err := Feedback(plant, controller, 1, WithApproximatedDelays())
 	if !errors.Is(err, ErrSingularTransform) {
 		t.Errorf("expected ErrSingularTransform, got %v", err)
 	}
 }
 
-func TestSafeFeedback_DomainMismatch(t *testing.T) {
+func TestFeedbackApprox_DomainMismatch(t *testing.T) {
 	plant, _ := New(
 		mat.NewDense(1, 1, []float64{-1}),
 		mat.NewDense(1, 1, []float64{1}),
@@ -1084,13 +1084,13 @@ func TestSafeFeedback_DomainMismatch(t *testing.T) {
 	)
 	controller, _ := NewGain(mat.NewDense(1, 1, []float64{1}), 0.1)
 
-	_, err := SafeFeedback(plant, controller, -1)
+	_, err := Feedback(plant, controller, -1, WithApproximatedDelays())
 	if !errors.Is(err, ErrDomainMismatch) {
 		t.Errorf("expected ErrDomainMismatch, got %v", err)
 	}
 }
 
-func TestSafeFeedback_PositiveFeedback(t *testing.T) {
+func TestFeedbackApprox_PositiveFeedback(t *testing.T) {
 	plant, _ := New(
 		mat.NewDense(1, 1, []float64{0.5}),
 		mat.NewDense(1, 1, []float64{1}),
@@ -1101,7 +1101,7 @@ func TestSafeFeedback_PositiveFeedback(t *testing.T) {
 	_ = plant.SetInputDelay([]float64{2})
 	controller, _ := NewGain(mat.NewDense(1, 1, []float64{0.3}), 0.1)
 
-	cl, err := SafeFeedback(plant, controller, 1)
+	cl, err := Feedback(plant, controller, 1, WithApproximatedDelays())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1110,20 +1110,20 @@ func TestSafeFeedback_PositiveFeedback(t *testing.T) {
 	}
 }
 
-func TestSafeFeedback_WellPosednessCheck(t *testing.T) {
+func TestFeedbackApprox_WellPosednessCheck(t *testing.T) {
 	// Odd-order Pade has D=(-1)^N=-1. With negative feedback and unit gains:
 	// I - (-1)*(-1)*1 = I - 1 = 0 → singular.
 	plant, _ := NewGain(mat.NewDense(1, 1, []float64{1}), 0)
 	plant.InputDelay = []float64{0.5}
 	controller, _ := NewGain(mat.NewDense(1, 1, []float64{1}), 0)
 
-	_, err := SafeFeedback(plant, controller, -1, WithPadeOrder(3))
+	_, err := Feedback(plant, controller, -1, WithPadeOrder(3))
 	if err == nil {
 		t.Fatal("expected singular algebraic loop error for odd-order Pade with unit gains and negative feedback")
 	}
 
 	// Even-order Pade has D=1: I - (-1)*1*1 = 2 → not singular.
-	cl, err := SafeFeedback(plant, controller, -1, WithPadeOrder(2))
+	cl, err := Feedback(plant, controller, -1, WithPadeOrder(2))
 	if err != nil {
 		t.Fatalf("even-order Pade should work: %v", err)
 	}
@@ -1132,7 +1132,7 @@ func TestSafeFeedback_WellPosednessCheck(t *testing.T) {
 	}
 }
 
-func TestSafeFeedback_DefaultPadeOrder(t *testing.T) {
+func TestFeedbackApprox_DefaultPadeOrder(t *testing.T) {
 	plant, _ := New(
 		mat.NewDense(1, 1, []float64{-1}),
 		mat.NewDense(1, 1, []float64{1}),
@@ -1143,7 +1143,7 @@ func TestSafeFeedback_DefaultPadeOrder(t *testing.T) {
 	plant.Delay = mat.NewDense(1, 1, []float64{0.2})
 	controller, _ := NewGain(mat.NewDense(1, 1, []float64{0.5}), 0)
 
-	cl, err := SafeFeedback(plant, controller, -1)
+	cl, err := Feedback(plant, controller, -1, WithApproximatedDelays())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1153,7 +1153,7 @@ func TestSafeFeedback_DefaultPadeOrder(t *testing.T) {
 	}
 }
 
-func TestSafeFeedback_WithThiranOrder(t *testing.T) {
+func TestFeedbackApprox_WithThiranOrder(t *testing.T) {
 	plant, _ := New(
 		mat.NewDense(1, 1, []float64{0.5}),
 		mat.NewDense(1, 1, []float64{1}),
@@ -1165,7 +1165,7 @@ func TestSafeFeedback_WithThiranOrder(t *testing.T) {
 
 	controller, _ := NewGain(mat.NewDense(1, 1, []float64{0.5}), 0.1)
 
-	cl, err := SafeFeedback(plant, controller, -1, WithThiranOrder(2))
+	cl, err := Feedback(plant, controller, -1, WithThiranOrder(2))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1179,7 +1179,7 @@ func TestSafeFeedback_WithThiranOrder(t *testing.T) {
 	}
 }
 
-func TestSafeFeedback_DiscreteWithThiranOrder(t *testing.T) {
+func TestFeedbackApprox_DiscreteWithThiranOrder(t *testing.T) {
 	plant, _ := New(
 		mat.NewDense(1, 1, []float64{0.9}),
 		mat.NewDense(1, 1, []float64{1}),
@@ -1191,7 +1191,7 @@ func TestSafeFeedback_DiscreteWithThiranOrder(t *testing.T) {
 
 	controller, _ := NewGain(mat.NewDense(1, 1, []float64{0.1}), 0.1)
 
-	cl, err := SafeFeedback(plant, controller, -1, WithThiranOrder(3))
+	cl, err := Feedback(plant, controller, -1, WithThiranOrder(3))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1205,7 +1205,7 @@ func TestSafeFeedback_DiscreteWithThiranOrder(t *testing.T) {
 	}
 }
 
-func TestSafeFeedback_DiscreteFractionalDelayRequiresThiranOrder(t *testing.T) {
+func TestFeedbackApprox_DiscreteFractionalDelayRequiresThiranOrder(t *testing.T) {
 	plant, _ := New(
 		mat.NewDense(1, 1, []float64{0.7}),
 		mat.NewDense(1, 1, []float64{1}),
@@ -1216,11 +1216,11 @@ func TestSafeFeedback_DiscreteFractionalDelayRequiresThiranOrder(t *testing.T) {
 	plant.InputDelay = []float64{3.5}
 	controller, _ := NewGain(mat.NewDense(1, 1, []float64{0.2}), 0.1)
 
-	if _, err := SafeFeedback(plant, controller, -1); !errors.Is(err, ErrFractionalDelay) {
-		t.Fatalf("SafeFeedback fractional delay error = %v, want ErrFractionalDelay", err)
+	if _, err := Feedback(plant, controller, -1, WithApproximatedDelays()); !errors.Is(err, ErrFractionalDelay) {
+		t.Fatalf("Feedback fractional delay error = %v, want ErrFractionalDelay", err)
 	}
 
-	cl, err := SafeFeedback(plant, controller, -1, WithThiranOrder(3))
+	cl, err := Feedback(plant, controller, -1, WithThiranOrder(3))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1233,7 +1233,7 @@ func TestSafeFeedback_DiscreteFractionalDelayRequiresThiranOrder(t *testing.T) {
 	}
 }
 
-func TestSafeFeedback_DiscreteThiranRejectsResidualIODelay(t *testing.T) {
+func TestFeedbackApprox_DiscreteThiranRejectsResidualIODelay(t *testing.T) {
 	plant, _ := New(
 		mat.NewDense(2, 2, []float64{0.7, 0.2, -0.1, 0.6}),
 		mat.NewDense(2, 2, []float64{1, 0, 0, 1}),
@@ -1247,12 +1247,12 @@ func TestSafeFeedback_DiscreteThiranRejectsResidualIODelay(t *testing.T) {
 	})
 	controller, _ := NewGain(mat.NewDense(2, 2, []float64{0.1, 0, 0, 0.2}), 0.1)
 
-	if _, err := SafeFeedback(plant, controller, -1, WithThiranOrder(2)); !errors.Is(err, ErrFeedbackDelay) {
-		t.Fatalf("SafeFeedback residual IODelay error = %v, want ErrFeedbackDelay", err)
+	if _, err := Feedback(plant, controller, -1, WithThiranOrder(2)); !errors.Is(err, ErrFeedbackDelay) {
+		t.Fatalf("Feedback residual IODelay error = %v, want ErrFeedbackDelay", err)
 	}
 }
 
-func TestSafeFeedback_ContinuousMIMO(t *testing.T) {
+func TestFeedbackApprox_ContinuousMIMO(t *testing.T) {
 	plant, _ := New(
 		mat.NewDense(2, 2, []float64{-1, 0.5, 0, -2}),
 		mat.NewDense(2, 2, []float64{1, 0, 0, 1}),
@@ -1269,7 +1269,7 @@ func TestSafeFeedback_ContinuousMIMO(t *testing.T) {
 		0,
 	)
 
-	cl, err := SafeFeedback(plant, controller, -1, WithPadeOrder(3))
+	cl, err := Feedback(plant, controller, -1, WithPadeOrder(3))
 	if err != nil {
 		t.Fatal(err)
 	}

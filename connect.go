@@ -382,7 +382,13 @@ func sliceOrZeros(s []float64, n int) []float64 {
 	return make([]float64, n)
 }
 
-func Feedback(plant, controller *System, sign float64) (*System, error) {
+// Feedback returns the closed-loop model of plant with controller in the
+// feedback path. sign is -1 for negative feedback, +1 for positive; a nil
+// controller closes unit feedback. The result is exact by default: delays
+// are carried as internal delays when the loop topology supports them.
+// Pass WithApproximatedDelays, WithPadeOrder, or WithThiranOrder to receive
+// a delay-free rational model instead.
+func Feedback(plant, controller *System, sign float64, opts ...FeedbackOption) (*System, error) {
 	if plant == nil {
 		return nil, fmt.Errorf("feedback: plant cannot be nil")
 	}
@@ -403,6 +409,9 @@ func Feedback(plant, controller *System, sign float64) (*System, error) {
 	}
 	if err := domainMatch(plant, controller); err != nil {
 		return nil, err
+	}
+	if cfg := newFeedbackConfig(opts); cfg.approximateDelays {
+		return feedbackWithApproximatedDelays(plant, controller, sign, cfg)
 	}
 	n1, m1, p1 := plant.Dims()
 	n2, m2, p2 := controller.Dims()

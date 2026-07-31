@@ -83,9 +83,8 @@ ownership clarity, and release readiness, not shrinking the toolbox shape.
 | `ConnectByName` | `view-in`, `returns-mutable` | Uses named signals and builds through `BlkDiag`/`Connect`. |
 | `Inv` | `pure`, `returns-mutable` | Returns inverse model. |
 | `LFT` | `pure`, `returns-mutable` | Builds LFT model or visible extraction. |
-| `SafeFeedback` | `pure`, `returns-mutable` | Builds feedback model with delay approximation policy. |
-| `WithPadeOrder` | `mutates` | Option closure configures `SafeFeedback` approximation order. |
-| `WithThiranOrder` | `mutates` | Option closure configures `SafeFeedback` fractional-delay policy. |
+| `WithPadeOrder` | `mutates` | Option closure configures `Feedback` delay approximation order. |
+| `WithThiranOrder` | `mutates` | Option closure configures `Feedback` fractional-delay policy. |
 | `Loopsens` | `pure`, `returns-mutable` | Returns four new loop-sensitivity models. |
 | `SS2SS` | `view-in`, `returns-mutable` | Uses transform matrix and returns transformed copy. |
 | `Xperm` | `view-in`, `returns-mutable` | Returns permuted copy. |
@@ -396,7 +395,7 @@ ownership clarity, and release readiness, not shrinking the toolbox shape.
 | Model containers | `ModelArray`, `GeneralizedModel`, `GeneralizedClosedLoop`, `TunableReal`, `TunableGain`, `TunablePID`, `TunableTF`, `TunableSS` | Mostly private fields with mutating methods; `FreeParameters` exposes parameter pointers. |
 | Options/workspaces | `C2DOptions`, `TransferFuncOpts`, `StateSpaceOpts`, `FreqRespEstOpts`, `StepInfoOptions`, `SimulateOpts`, `RiccatiOpts`, `RiccatiWorkspace`, `LyapunovOpts`, `LyapunovWorkspace`, `PidtuneOptions`, `SystuneOptions`, `PassivityOptions`, `ReduceOpts`, `ModalTruncateOptions` | Options are caller-owned; workspaces and simulation buffers are mutable and should not be shared concurrently. |
 | Result structs | `BalrealResult`, `CanonResult`, `GramResult`, `H2SynResult`, `HinfSynResult`, `LqgResult`, `LoopsensResult`, `MarginResult`, `AllMarginResult`, `DiskMarginResult`, `ReduceResult`, `ModalReductionResult`, `ModsepResult`, `PrescaleResult`, `PzmapResult`, `TimeResponse`, `StepInfoResult`, `RiccatiResult`, `RootLocusResult`, `Response`, `SsbalResult`, `StabsepResult`, `StaircaseResult`, `StateSpaceResult`, `TransferFuncResult`, `SystuneResult`, `TuningGoalResult`, `ZerosResult`, `ZPKResult`, `ERAResult`, `FRDPeakGainResult`, `FreqRespEstResult`, `ModelArrayFreqResponse`, `ModelArrayTimeResponse` | Results are mutable data containers; callers should treat them as owned outputs unless workspace-backed docs say otherwise. |
-| Value and enum types | `BalredMethod`, `CanonForm`, `AbsorbScope`, `GramType`, `PhysicalPortKind`, `PIDForm`, `PidtuneType`, `C2DMethod`, `C2DDelayModeling`, `FreqRespEstMethod`, `ReduceMode`, `TuningGoalType`, `TuningGoalSpec`, `TuningGoal`, `TunableBounds`, `AnalysisPointLocation`, `AnalysisPoint`, `PhysicalPort`, `PhysicalConnection`, `Connection`, `DampInfo`, `StepMetric`, `NonlinearModel`, `EKFModel`, `NumericBlock`, `TunableBlock`, `FRDResponseMapper`, `PIDOption`, `SafeFeedbackOption` | Mostly value types; callback and option function types may retain references through user code. |
+| Value and enum types | `BalredMethod`, `CanonForm`, `AbsorbScope`, `GramType`, `PhysicalPortKind`, `PIDForm`, `PidtuneType`, `C2DMethod`, `C2DDelayModeling`, `FreqRespEstMethod`, `ReduceMode`, `TuningGoalType`, `TuningGoalSpec`, `TuningGoal`, `TunableBounds`, `AnalysisPointLocation`, `AnalysisPoint`, `PhysicalPort`, `PhysicalConnection`, `Connection`, `DampInfo`, `StepMetric`, `NonlinearModel`, `EKFModel`, `NumericBlock`, `TunableBlock`, `FRDResponseMapper`, `PIDOption`, `FeedbackOption` | Mostly value types; callback and option function types may retain references through user code. |
 
 ## Release Gates
 
