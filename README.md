@@ -138,6 +138,7 @@ func main() {
 | Method | Description |
 |--------|-------------|
 | `FreqResponse` | H(jw) at given frequencies |
+| `FreqResponsePointwise` | H(jw) with each frequency bit-identical to a single-point `FreqResponse` call, regardless of sweep length |
 | `Bode` | Magnitude (dB) and phase (deg) vs frequency |
 | `Nyquist` | Nyquist plot with encirclement counting |
 | `Nichols` | Nichols chart (magnitude vs phase) |

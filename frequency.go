@@ -113,6 +113,19 @@ func (sys *System) FreqResponse(omega []float64) (*FreqResponseMatrix, error) {
 	return newFrequencyEvaluator(sys).response(omega)
 }
 
+// FreqResponsePointwise evaluates the frequency response with guaranteed
+// per-frequency single-point arithmetic: the value at each omega[k] is
+// bit-identical to FreqResponse([]float64{omega[k]}), regardless of
+// len(omega). FreqResponse may switch long sweeps of delay-free
+// state-space models to a transfer-function conversion whose values are
+// close but not bit-identical to the single-point path;
+// FreqResponsePointwise never does, at the cost of one dense solve per
+// frequency. Use it when downstream comparisons require sweep results to
+// reproduce single-point evaluations exactly.
+func (sys *System) FreqResponsePointwise(omega []float64) (*FreqResponseMatrix, error) {
+	return newFrequencyEvaluator(sys).responsePointwise(omega)
+}
+
 func (sys *System) Bode(omega []float64, nPoints int) (*BodeResult, error) {
 	if omega == nil {
 		var err2 error
@@ -189,6 +202,45 @@ func (e frequencyEvaluator) response(omega []float64) (*FreqResponseMatrix, erro
 		return nil, err
 	}
 	applyIODelayPhase(e.sys, omega, data, e.p, e.m, false)
+	return e.matrix(data, omega), nil
+}
+
+// responsePointwise evaluates each frequency exactly as response would for
+// a one-element sweep: direct state-space solve first, per-point
+// transfer-function fallback on solve failure, with the delay phase applied
+// per point using the flag of whichever path produced the value.
+func (e frequencyEvaluator) responsePointwise(omega []float64) (*FreqResponseMatrix, error) {
+	if len(omega) == 0 {
+		return nil, nil
+	}
+	if e.sys.HasInternalDelay() || e.sys.IsDescriptor() {
+		// These paths already evaluate one frequency at a time with
+		// batch-size-independent arithmetic.
+		return e.response(omega)
+	}
+
+	pm := e.p * e.m
+	data := make([]complex128, len(omega)*pm)
+	ws := newSSEvalWorkspace(e.n, e.p, e.m)
+	var tf *TransferFunc
+	for k, w := range omega {
+		s := e.sAt(w)
+		dst := data[k*pm : (k+1)*pm]
+		if err := evalFrSSInto(ws, e.sys, s, e.n, e.p, e.m); err == nil {
+			copy(dst, ws.g[:pm])
+			applyIODelayAtS(e.sys, s, dst, e.p, e.m, true)
+			continue
+		}
+		if tf == nil {
+			res, err := e.sys.TransferFunction(nil)
+			if err != nil {
+				return nil, err
+			}
+			tf = res.TF
+		}
+		tf.evalInto(s, dst)
+		applyIODelayAtS(e.sys, s, dst, e.p, e.m, false)
+	}
 	return e.matrix(data, omega), nil
 }
 
