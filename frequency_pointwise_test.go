@@ -175,6 +175,43 @@ func TestFreqResponsePointwise_PerPointFallback(t *testing.T) {
 	assertBitIdenticalToSinglePoint(t, sys, omega)
 }
 
+// The pointwise sweep reuses one workspace (solve buffers and effective
+// delay matrices) across omega points, so allocations per sweep must stay
+// constant as the sweep grows: only the result buffer scales with
+// len(omega), and that is a single allocation. A per-point allocation
+// regression (like rebuilding the delay matrix inside the loop) makes the
+// long-sweep count scale with n and fails this test.
+func TestFreqResponsePointwise_AllocsAmortizeAcrossSweepLengths(t *testing.T) {
+	sys, err := New(
+		mat.NewDense(2, 2, []float64{-0.125, 0, 0.125, -1.0 / 3.0}),
+		mat.NewDense(2, 1, []float64{0.1875, 0}),
+		mat.NewDense(1, 2, []float64{0, 1}),
+		mat.NewDense(1, 1, []float64{0}),
+		0,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := sys.SetInputDelay([]float64{1.5}); err != nil {
+		t.Fatal(err)
+	}
+
+	allocsAt := func(n int) float64 {
+		omega := pointwiseTestGrid(0.001, 10.0, n)
+		return testing.AllocsPerRun(20, func() {
+			if _, err := sys.FreqResponsePointwise(omega); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+
+	short := allocsAt(10)
+	long := allocsAt(1000)
+	if long > short {
+		t.Fatalf("allocations scale with sweep length: %v allocs at 10 points, %v at 1000 (want constant)", short, long)
+	}
+}
+
 func TestFreqResponsePointwise_EmptyOmega(t *testing.T) {
 	sys, err := New(
 		mat.NewDense(1, 1, []float64{-1}),
