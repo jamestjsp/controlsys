@@ -222,13 +222,21 @@ func (e frequencyEvaluator) responsePointwise(omega []float64) (*FreqResponseMat
 	pm := e.p * e.m
 	data := make([]complex128, len(omega)*pm)
 	ws := newSSEvalWorkspace(e.n, e.p, e.m)
+	// The effective delay matrices are pure functions of sys, which is
+	// not mutated across the sweep, so hoisting them out of the loop
+	// keeps every per-point value bit-identical while dropping the
+	// per-omega allocations applyIODelayAtS would repeat.
+	delaySS := effectiveIODelayMatrix(e.sys, e.p, e.m, true)
+	var delayTF *mat.Dense
 	var tf *TransferFunc
 	for k, w := range omega {
 		s := e.sAt(w)
 		dst := data[k*pm : (k+1)*pm]
 		if err := evalFrSSInto(ws, e.sys, s, e.n, e.p, e.m); err == nil {
 			copy(dst, ws.g[:pm])
-			applyIODelayAtS(e.sys, s, dst, e.p, e.m, true)
+			if delaySS != nil {
+				applyIODelayMatrixAtS(e.sys, s, dst, e.p, e.m, delaySS)
+			}
 			continue
 		}
 		if tf == nil {
@@ -237,9 +245,12 @@ func (e frequencyEvaluator) responsePointwise(omega []float64) (*FreqResponseMat
 				return nil, err
 			}
 			tf = res.TF
+			delayTF = effectiveIODelayMatrix(e.sys, e.p, e.m, false)
 		}
 		tf.evalInto(s, dst)
-		applyIODelayAtS(e.sys, s, dst, e.p, e.m, false)
+		if delayTF != nil {
+			applyIODelayMatrixAtS(e.sys, s, dst, e.p, e.m, delayTF)
+		}
 	}
 	return e.matrix(data, omega), nil
 }
