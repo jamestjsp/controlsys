@@ -1,6 +1,9 @@
 package controlsys
 
-import "fmt"
+import (
+	"fmt"
+	"slices"
+)
 
 type ModelArray struct {
 	models     []*System
@@ -284,13 +287,13 @@ func (a *ModelArray) flatIndex(index []int) (int, error) {
 	}
 	flat := 0
 	stride := 1
-	for dim := len(a.shape) - 1; dim >= 0; dim-- {
+	for dim, v := range slices.Backward(a.shape) {
 		idx := index[dim]
-		if idx < 0 || idx >= a.shape[dim] {
+		if idx < 0 || idx >= v {
 			return 0, fmt.Errorf("ModelArray.Model: index %d out of range for dimension %d: %w", idx, dim, ErrDimensionMismatch)
 		}
 		flat += idx * stride
-		stride *= a.shape[dim]
+		stride *= v
 	}
 	return flat, nil
 }
