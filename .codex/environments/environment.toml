@@ -86,7 +86,7 @@ cd "$tmp"
 go mod init example.com/controlsys-consumer
 go mod edit -require=github.com/jamestjsp/controlsys@v0.0.0
 go mod edit -replace=github.com/jamestjsp/controlsys="$repo_path"
-go mod edit -replace=gonum.org/v1/gonum=github.com/jamestjsp/gonum@v0.17.3-fork
+go mod edit -replace=gonum.org/v1/gonum=github.com/jamestjsp/gonum@v0.19.0-fork
 cat > controlsys_consumer_test.go <<'EOF'
 package controlsysconsumer
 
