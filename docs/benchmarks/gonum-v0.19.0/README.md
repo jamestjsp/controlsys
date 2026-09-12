@@ -1,5 +1,9 @@
 # Gonum v0.19.0-fork upgrade: performance evidence
 
+For the updated PR requiring Go 1.27.1, see the [full follow-up](go1.27.1-full/README.md).
+It substantially reduces the large regressions below, but confirms residual
+slowdowns up to 6.17%. This original Go 1.26.4 report remains historical evidence.
+
 Measured on 2026-09-12 for PR #171. The upgrade has mixed performance on this
 machine. The complete 236-case timing geomean improves 0.75%, but reproducible
 slowdowns remain. This is not a regression-free performance approval. Assess the
