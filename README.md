@@ -12,7 +12,7 @@ go get github.com/jamestjsp/controlsys
 
 > **Note:** This package depends on a [gonum fork](https://github.com/jamestjsp/gonum) for additional LAPACK routines. Because `replace` directives do not propagate to downstream modules, applications that import `controlsys` must add this to their own `go.mod`:
 > ```
-> replace gonum.org/v1/gonum => github.com/jamestjsp/gonum v0.17.3-fork
+> replace gonum.org/v1/gonum => github.com/jamestjsp/gonum v0.19.0-fork
 > ```
 
 ## Production Readiness
